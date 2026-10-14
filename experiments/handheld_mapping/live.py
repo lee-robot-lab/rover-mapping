@@ -1,0 +1,283 @@
+# ================================================================
+# live.py
+# 설명: 원본 기록을 기다리게 하지 않는 native ORB worker와 잠정 관측 지도를 관리한다.
+# 사용법: from experiments.handheld_mapping.live import LiveMapper
+# ================================================================
+import csv
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import threading
+import time
+
+import cv2
+import numpy as np
+
+from experiments.handheld_mapping.compare import ROOT, runner_environment, vocabularies
+from experiments.handheld_mapping.coverage import CoverageGrid, StereoMailbox
+from experiments.handheld_mapping.offline import write_settings
+from experiments.handheld_mapping.overlap import overlap_image
+from experiments.handheld_mapping.reconstruct import pose_matrix
+from experiments.handheld_mapping.storage import atomic_json
+
+
+class LiveMapper:
+    """작은 최신 입력 큐로 추적하며 실패해도 raw 수집과 독립적으로 종료하는 노트북 worker."""
+
+    def __init__(self, run: Path, command: list[str] | None = None, result_timeout: float = 30.,
+                 demo: bool = False) -> None:
+        self.run = Path(run).resolve()
+        self.folder = self.run/'orb_live'
+        self.folder.mkdir(exist_ok=False)
+        calibration = json.loads((self.run/'capture_calibration.json').read_text())
+        self.info = calibration['depth']
+        self.left_info = calibration.get('stereo',{}).get('left')
+        self.mailbox = StereoMailbox(self.run)
+        self.grid = CoverageGrid()
+        self.lock = threading.RLock()
+        self.error = None
+        self.processed = self.no_depth = 0
+        self.tracking_state = -1
+        self.lag_ms = self.process_ms = 0.
+        self.last_result_at = 0.
+        self.result_timeout = result_timeout
+        self.map_changes = 0
+        self.finished = False
+        self.overlay = self.overlay_original = None
+        self.overlay_stamp_ns = None
+        self.overlay_error = None
+        self.overlay_ms = 0.
+        self.overlay_generated_at = 0.
+        self.overlay_map_id = None
+        self.demo = demo
+        self.process = self.thread = None
+        if demo:
+            return
+        if command is None:
+            settings = write_settings(self.run, self.folder)
+            orb_voc, line_voc = vocabularies()
+            command = [str(ROOT/'outputs/handheld_mapping/orb3_comparison_build/rover_orb3_compare'),
+                       str(orb_voc), str(line_voc), str(settings), '-', str(self.folder)]
+        self.log = (self.folder/'runner.log').open('wb')
+        try:
+            self.process = subprocess.Popen(command, cwd=self.folder, env=runner_environment(True),
+                                            stdin=subprocess.PIPE, stdout=self.log, stderr=self.log,
+                                            text=True, bufsize=1, start_new_session=True)
+        except Exception:
+            self.log.close()
+            raise
+        self.thread = threading.Thread(target=self._work, name='live-orb', daemon=False)
+        self.thread.start()
+
+    def offer(self, header: dict) -> None:
+        if not self.demo or header['stream'] == 'depth':
+            self.mailbox.offer(header)
+
+    def offer_pose(self, header: dict) -> None:
+        """합성 시험의 알려진 pose만 표시하며 native 추정 결과로 취급하지 않는다."""
+        if not self.demo:
+            return
+        frame = self.mailbox.depth_for(header['stamp_ns'])
+        if frame is None:
+            return
+        values = [*header['position'], *header['quaternion_xyzw']]
+        pose = pose_matrix(dict(zip(('x','y','z','qx','qy','qz','qw'),values)))
+        depth = cv2.imread(frame['path'],cv2.IMREAD_UNCHANGED)
+        with self.lock:
+            self.grid.update(header['map_id'],pose,depth,self.info)
+            self._set_overlay(header['stamp_ns'],str(self.run/'raw/left'/f"{header['stamp_ns']}.png"),pose,depth)
+            self.processed += 1
+            self.tracking_state = 2
+            self.last_result_at = time.monotonic()
+
+    def snapshot(self) -> dict:
+        with self.lock:
+            result = {**self.grid.snapshot(), 'error':self.error, 'processed':self.processed,
+                      'tracking_state':self.tracking_state, 'no_depth':self.no_depth,
+                      'lag_ms':self.lag_ms, 'process_ms':self.process_ms,
+                      'stale':not self.last_result_at or time.monotonic()-self.last_result_at > 1.,
+                      'map_changes':self.map_changes, 'finished':self.finished, 'synthetic':self.demo}
+            result.update(overlay=self.overlay.copy() if self.overlay is not None else None,
+                          overlay_original=self.overlay_original.copy() if self.overlay_original is not None else None,
+                          overlay_stamp_ns=self.overlay_stamp_ns, overlay_error=self.overlay_error,
+                          overlay_ms=self.overlay_ms)
+        return {**result, **self.mailbox.snapshot()}
+
+    def _set_overlay(self, stamp: int, left_path: str, pose: np.ndarray | None, depth: np.ndarray | None) -> None:
+        """같은 processed frame의 영상 두 장만 유지하며 overlay 오류를 추적 오류와 분리한다."""
+        if (pose is not None and depth is not None and self.overlay is not None
+                and self.overlay_map_id == self.grid.map_id
+                and time.monotonic()-self.overlay_generated_at < .2):
+            return
+        started = time.perf_counter()
+        self.overlay_generated_at = time.monotonic()
+        self.overlay_map_id = self.grid.map_id
+        self.overlay_original = None
+        self.overlay_stamp_ns = stamp
+        self.overlay = None
+        self.overlay_error = None
+        try:
+            self.overlay_original = cv2.imread(left_path,cv2.IMREAD_GRAYSCALE)
+            if self.overlay_original is None:
+                raise ValueError('오버레이 IR 원본 읽기 실패')
+            if pose is not None and depth is not None:
+                if self.left_info is None:
+                    raise ValueError('오버레이 IR 보정값 없음')
+                self.overlay = overlap_image(self.overlay_original,depth,self.info,self.left_info,pose,self.grid)
+        except Exception as error:
+            self.overlay_error = str(error)
+        self.overlay_ms = (time.perf_counter()-started)*1000
+
+    def _line(self, stream) -> str:
+        deadline = time.monotonic()+self.result_timeout
+        value = ''
+        while time.monotonic() < deadline:
+            value += stream.readline()
+            if len(value) > 65536:
+                raise ValueError('live pose row too large')
+            if value.endswith('\n'):
+                return value
+            if self.process.poll() is not None:
+                raise RuntimeError(f'실시간 ORB 종료: exit={self.process.returncode}')
+            time.sleep(.005)
+        raise TimeoutError('실시간 ORB pose 대기 시간 초과')
+
+    def _save_grid(self) -> None:
+        if self.grid.map_id is not None:
+            np.savez_compressed(self.folder/f'coverage_map_{self.grid.map_id}.npz',
+                                observations=self.grid.counts, bounds=self.grid.bounds,
+                                resolution=self.grid.resolution,
+                                coordinate_system='initial_camera_optical_XZ_not_gravity_aligned')
+
+    def _work(self) -> None:
+        reader = None
+        fields = None
+        try:
+            while True:
+                pair = self.mailbox.take()
+                if pair is None:
+                    if self.mailbox.closed: break
+                    if self.process.poll() is not None:
+                        raise RuntimeError(f'실시간 ORB 종료: exit={self.process.returncode}')
+                    continue
+                self.process.stdin.write(f"{pair['stamp_ns']}\t{pair['left']}\t{pair['right']}\n")
+                self.process.stdin.flush()
+                if reader is None:
+                    path = self.folder/'live_poses.csv'
+                    deadline = time.monotonic()+self.result_timeout
+                    while not path.exists():
+                        if self.process.poll() is not None:
+                            raise RuntimeError(f'실시간 ORB 종료: exit={self.process.returncode}')
+                        if time.monotonic() > deadline:
+                            raise TimeoutError('실시간 ORB 시작 시간 초과')
+                        time.sleep(.01)
+                    reader = path.open()
+                    fields = next(csv.reader([self._line(reader)]))
+                values = next(csv.reader([self._line(reader)]))
+                if len(fields) != 20 or len(values) != 20:
+                    raise ValueError('invalid live pose columns')
+                row = dict(zip(fields,values))
+                stamp, state, map_id = int(row['stamp_ns']), int(row['state']), int(row['map_id'])
+                if stamp != pair['stamp_ns']:
+                    raise ValueError('live pose/image timestamp mismatch')
+                pose = np.array([float(row[f'm{i}{j}']) for i in range(4) for j in range(4)]).reshape(4,4)
+                process_ms = float(row['process_ms'])
+                if not np.isfinite(process_ms) or process_ms < 0:
+                    raise ValueError('invalid live processing time')
+                pose_received_at = time.monotonic()
+                frame = self.mailbox.depth_for(stamp)
+                end = time.monotonic()+.15
+                while frame is None and time.monotonic()<end and not self.mailbox.closed:
+                    time.sleep(.005)
+                    frame = self.mailbox.depth_for(stamp)
+                with self.lock:
+                    depth = None
+                    self.processed += 1
+                    self.tracking_state = state
+                    self.process_ms = process_ms
+                    self.last_result_at = pose_received_at
+                    self.lag_ms = (self.last_result_at-pair['offered_at'])*1000
+                    if state == 2 and map_id >= 0:
+                        if self.grid.map_id is not None and self.grid.map_id != map_id:
+                            self._save_grid()
+                            self.map_changes += 1
+                        self.grid.update_pose(map_id,pose)
+                        if frame is None:
+                            self.no_depth += 1
+                        else:
+                            depth = cv2.imread(frame['path'], cv2.IMREAD_UNCHANGED)
+                            if depth is None: raise ValueError('실시간 depth 파일 읽기 실패')
+                            self.grid.update(map_id,pose,depth,self.info)
+                    self._set_overlay(stamp,pair['left'],pose if state == 2 and map_id >= 0 else None,depth)
+            self.process.stdin.close()
+            code = self.process.wait(timeout=20)
+            if code != 0:
+                raise RuntimeError(f'실시간 ORB 종료: exit={code}')
+        except Exception as error:
+            with self.lock: self.error = str(error)
+        finally:
+            if reader is not None: reader.close()
+            if not self.process.stdin.closed:
+                try: self.process.stdin.close()
+                except OSError: pass
+            # Parent가 먼저 종료해도 같은 owned group에 남은 descendant를 정리한다.
+            try:
+                os.killpg(self.process.pid,signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                self.process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(self.process.pid,signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                self.process.wait()
+            deadline = time.monotonic()+.3
+            while time.monotonic() < deadline:
+                try:
+                    os.killpg(self.process.pid,0)
+                except ProcessLookupError:
+                    break
+                time.sleep(.01)
+            else:
+                try:
+                    os.killpg(self.process.pid,signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            self.log.close()
+            with self.lock:
+                try: self._save_grid()
+                except Exception as error: self.error = self.error or str(error)
+                self.finished = True
+            self._write_summary()
+
+    def _write_summary(self) -> None:
+        summary = self.snapshot()
+        for key in ('image','path','camera','overlay','overlay_original'): summary.pop(key)
+        summary.update(status='failed' if self.error else 'complete',
+                       coordinate_system='initial_camera_optical_XZ_not_gravity_aligned',
+                       lag_scope='laptop stereo saved to live pose received; excludes sensor/network/display',
+                       final_map=False)
+        try: atomic_json(self.folder/'summary.json',summary)
+        except OSError as error:
+            with self.lock: self.error = self.error or str(error)
+
+    def finish(self) -> None:
+        self.mailbox.close()
+        if self.demo:
+            with self.lock:
+                self._save_grid()
+                self.finished = True
+            self._write_summary()
+            return
+        self.thread.join(timeout=8)
+        if self.thread.is_alive():
+            with self.lock: self.error = self.error or '실시간 ORB 종료 시간 초과'
+            if self.process.poll() is None: os.killpg(self.process.pid, signal.SIGTERM)
+            self.thread.join(timeout=5)
+            if self.thread.is_alive() and self.process.poll() is None:
+                os.killpg(self.process.pid, signal.SIGKILL)
+                self.thread.join(timeout=3)

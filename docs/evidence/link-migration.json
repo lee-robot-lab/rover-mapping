@@ -1,0 +1,49 @@
+{
+  "rebased_markdown_files": 42,
+  "unshipped_targets_redirected_to_data_assets": [
+    {
+      "document": "docs/superpowers/specs/2026-09-23-rover-localization-slip-mapping-design.md",
+      "original_target": "../../../reports/규사%20지형%20검증%20환경%20비교.md"
+    },
+    {
+      "document": "docs/evidence/20261014_multia_debug/orb/README.md",
+      "original_target": "/home/su/rover/outputs/handheld_mapping/20261014_multia_debug/orb/comparison.csv"
+    },
+    {
+      "document": "docs/evidence/20261014_multia_debug/orb/README.md",
+      "original_target": "/home/su/rover/outputs/handheld_mapping/20261014_multia_debug/orb/environment_provenance.json"
+    },
+    {
+      "document": "docs/evidence/20261014_multia_debug/orb/README.md",
+      "original_target": "/home/su/rover/outputs/handheld_mapping/20261014_multia_debug/orb/replay_probe.py"
+    },
+    {
+      "document": "docs/evidence/20261013_server_validation/README.md",
+      "original_target": "results/input/orbline/comparison.json"
+    },
+    {
+      "document": "docs/experiments/headless-pi-manual-mapping.md",
+      "original_target": "../../outputs/handheld_mapping/20261011_pi_check/README.md"
+    },
+    {
+      "document": "docs/experiments/headless-pi-manual-mapping.md",
+      "original_target": "../../outputs/headless_mapping/20261009_replay/stereo05_map_preview.png"
+    },
+    {
+      "document": "docs/experiments/mapping-viewer.md",
+      "original_target": "/home/su/rover/outputs/handheld_mapping/20261014_overlap_validation/optimized/ui_recorded_during_capture.png"
+    },
+    {
+      "document": "docs/experiments/2026-10-13-reference-map-roadmap.md",
+      "original_target": "/home/su/rover/docs/experiments/handheld-mapping-status-2026-10-13.md"
+    },
+    {
+      "document": "docs/experiments/2026-10-13-reference-map-roadmap.md",
+      "original_target": "/home/su/rover/experiments/orbslam3_offline/fused_localization.py:212"
+    },
+    {
+      "document": "docs/experiments/2026-10-13-reference-map-roadmap.md",
+      "original_target": "/home/su/rover/docs/superpowers/specs/2026-09-23-rover-localization-slip-mapping-design.md:36"
+    }
+  ]
+}

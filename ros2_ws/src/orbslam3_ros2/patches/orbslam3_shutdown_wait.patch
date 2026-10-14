@@ -1,0 +1,50 @@
+--- a/src/System.cc
++++ b/src/System.cc
+@@ -19,6 +19,8 @@
+ 
+ 
+ #include "System.h"
++#include <chrono>
++#include <stdexcept>
+ #include "Converter.h"
+ #include <thread>
+ #include <pangolin/pangolin.h>
+@@ -33,6 +35,9 @@
+ #include <boost/archive/xml_iarchive.hpp>
+ #include <boost/archive/xml_oarchive.hpp>
+ 
++// Link-time marker: adapter rejects an unpatched shared library.
++extern "C" bool orbslam3_has_bounded_shutdown_wait() { return true; }
++
+ namespace ORB_SLAM3
+ {
+ 
+@@ -530,20 +535,14 @@
+             usleep(5000);
+     }*/
+ 
+-    // Wait until all thread have effectively stopped
+-    /*while(!mpLocalMapper->isFinished() || !mpLoopCloser->isFinished() || mpLoopCloser->isRunningGBA())
+-    {
+-        if(!mpLocalMapper->isFinished())
+-            cout << "mpLocalMapper is not finished" << endl;*/
+-        /*if(!mpLoopCloser->isFinished())
+-            cout << "mpLoopCloser is not finished" << endl;
+-        if(mpLoopCloser->isRunningGBA()){
+-            cout << "mpLoopCloser is running GBA" << endl;
+-            cout << "break anyway..." << endl;
+-            break;
+-        }*/
+-        /*usleep(5000);
+-    }*/
++    // Bounded worker shutdown before reading or serializing Atlas.
++    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
++    while(!mpLocalMapper->isFinished() || !mpLoopCloser->isFinished() || mpLoopCloser->isRunningGBA())
++    {
++        if(std::chrono::steady_clock::now() >= deadline)
++            throw std::runtime_error("ORB workers did not finish; Atlas not saved");
++        std::this_thread::sleep_for(std::chrono::milliseconds(5));
++    }
+ 
+     if(!mStrSaveAtlasToFile.empty())
+     {

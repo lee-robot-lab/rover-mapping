@@ -1,0 +1,2 @@
+# unified diff의 빈 context 줄에 필요한 공백을 보존한다.
+*.patch -whitespace

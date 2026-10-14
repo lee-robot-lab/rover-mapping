@@ -1,0 +1,273 @@
+{
+  "runs": {
+    "original_session": {
+      "frames": 3604,
+      "state_counts": {
+        "2": 3559,
+        "3": 44,
+        "0": 1
+      },
+      "map_counts": {
+        "0": 2379,
+        "421": 1180
+      },
+      "non_ok_intervals": [
+        {
+          "frames": 45,
+          "start_s": 160.616112793,
+          "end_s": 163.679791992,
+          "states": {
+            "3": 44,
+            "0": 1
+          }
+        }
+      ],
+      "process_ms_median": 16.353845,
+      "process_ms_p95": 19.39226,
+      "gt_accuracy_evaluated": false,
+      "runner_complete": {
+        "status": "complete",
+        "frames": 3604,
+        "keyframes": 815
+      },
+      "exit_code": null,
+      "wall_seconds": null,
+      "final_map_files": [
+        "map_0_keyframes.csv",
+        "map_421_keyframes.csv"
+      ],
+      "non_ok_frames": 45,
+      "observed_map_ids": [
+        0,
+        421
+      ],
+      "atlas_exists": true,
+      "atlas_bytes": 183260663,
+      "final_keyframes": 815,
+      "successful_completion": true,
+      "folder": "/home/su/rover/outputs/handheld_mapping/sessions/20261013_204443_766235/orb_offline"
+    },
+    "baseline_repeat": {
+      "frames": 3604,
+      "state_counts": {
+        "2": 3528,
+        "3": 74,
+        "0": 2
+      },
+      "map_counts": {
+        "0": 2377,
+        "407": 1026,
+        "763": 125
+      },
+      "non_ok_intervals": [
+        {
+          "frames": 29,
+          "start_s": 159.417277832,
+          "end_s": 162.480957275,
+          "states": {
+            "3": 28,
+            "0": 1
+          }
+        },
+        {
+          "frames": 47,
+          "start_s": 230.870772217,
+          "end_s": 233.934017822,
+          "states": {
+            "3": 46,
+            "0": 1
+          }
+        }
+      ],
+      "process_ms_median": 16.775535,
+      "process_ms_p95": 19.781739,
+      "gt_accuracy_evaluated": false,
+      "exit_code": 0,
+      "wall_seconds": 89.49832241400145,
+      "runner_complete": {
+        "status": "complete",
+        "frames": 3604,
+        "keyframes": 782
+      },
+      "final_map_files": [
+        "map_0_keyframes.csv",
+        "map_407_keyframes.csv",
+        "map_763_keyframes.csv"
+      ],
+      "non_ok_frames": 76,
+      "observed_map_ids": [
+        0,
+        407,
+        763
+      ],
+      "atlas_exists": true,
+      "atlas_bytes": 175821806,
+      "final_keyframes": 782,
+      "successful_completion": true,
+      "folder": "/home/su/rover/outputs/handheld_mapping/20261014_multia_debug/orb/baseline_repeat"
+    },
+    "baseline_repeat2": {
+      "frames": 3604,
+      "state_counts": {
+        "2": 3558,
+        "3": 45,
+        "0": 1
+      },
+      "map_counts": {
+        "0": 2379,
+        "413": 1179
+      },
+      "non_ok_intervals": [
+        {
+          "frames": 45,
+          "start_s": 160.616112793,
+          "end_s": 163.679791992,
+          "states": {
+            "3": 44,
+            "0": 1
+          }
+        },
+        {
+          "frames": 1,
+          "start_s": 230.870772217,
+          "end_s": 230.870772217,
+          "states": {
+            "3": 1
+          }
+        }
+      ],
+      "process_ms_median": 16.543334,
+      "process_ms_p95": 20.278531,
+      "gt_accuracy_evaluated": false,
+      "exit_code": 0,
+      "wall_seconds": 88.08639492292423,
+      "runner_complete": {
+        "status": "complete",
+        "frames": 3604,
+        "keyframes": 788
+      },
+      "final_map_files": [
+        "map_0_keyframes.csv",
+        "map_413_keyframes.csv"
+      ],
+      "non_ok_frames": 46,
+      "observed_map_ids": [
+        0,
+        413
+      ],
+      "atlas_exists": true,
+      "atlas_bytes": 177914274,
+      "final_keyframes": 788,
+      "successful_completion": true,
+      "folder": "/home/su/rover/outputs/handheld_mapping/20261014_multia_debug/orb/baseline_repeat2"
+    },
+    "features2400": {
+      "frames": 3604,
+      "state_counts": {
+        "2": 3559,
+        "3": 44,
+        "0": 1
+      },
+      "map_counts": {
+        "0": 2379,
+        "247": 1180
+      },
+      "non_ok_intervals": [
+        {
+          "frames": 45,
+          "start_s": 160.616112793,
+          "end_s": 163.679791992,
+          "states": {
+            "3": 44,
+            "0": 1
+          }
+        }
+      ],
+      "process_ms_median": 23.173071,
+      "process_ms_p95": 29.334947,
+      "gt_accuracy_evaluated": false,
+      "exit_code": -11,
+      "wall_seconds": 110.74202974990476,
+      "runner_complete": null,
+      "final_map_files": [],
+      "non_ok_frames": 45,
+      "observed_map_ids": [
+        0,
+        247
+      ],
+      "atlas_exists": false,
+      "atlas_bytes": 0,
+      "final_keyframes": 0,
+      "successful_completion": false,
+      "folder": "/home/su/rover/outputs/handheld_mapping/20261014_multia_debug/orb/features2400"
+    },
+    "features2400_repeat_gdb": {
+      "frames": 3604,
+      "state_counts": {
+        "2": 3558,
+        "3": 45,
+        "0": 1
+      },
+      "map_counts": {
+        "0": 2378,
+        "241": 1180
+      },
+      "non_ok_intervals": [
+        {
+          "frames": 1,
+          "start_s": 159.417277832,
+          "end_s": 159.417277832,
+          "states": {
+            "3": 1
+          }
+        },
+        {
+          "frames": 45,
+          "start_s": 160.616112793,
+          "end_s": 163.679791992,
+          "states": {
+            "3": 44,
+            "0": 1
+          }
+        }
+      ],
+      "process_ms_median": 23.366235,
+      "process_ms_p95": 30.282855,
+      "gt_accuracy_evaluated": false,
+      "exit_code": 0,
+      "wall_seconds": 113.59395830600988,
+      "runner_complete": {
+        "status": "complete",
+        "frames": 3604,
+        "keyframes": 459
+      },
+      "final_map_files": [
+        "map_0_keyframes.csv",
+        "map_241_keyframes.csv"
+      ],
+      "non_ok_frames": 46,
+      "observed_map_ids": [
+        0,
+        241
+      ],
+      "atlas_exists": true,
+      "atlas_bytes": 180827311,
+      "final_keyframes": 459,
+      "successful_completion": true,
+      "folder": "/home/su/rover/outputs/handheld_mapping/20261014_multia_debug/orb/features2400_repeat_gdb"
+    }
+  },
+  "validation": {
+    "all_runs_exactly_3604_original_timestamps": true,
+    "input_pairs_settings_binary_runtime_vocab_hashes_unchanged": true,
+    "completed_run_keyframe_counts_match_export": true,
+    "native_runs_sequential": true,
+    "core_dump_created": false,
+    "raw_images_modified_by_experiment": false,
+    "production_modified_by_experiment": false,
+    "gdb_repeat_crash_reproduced": false,
+    "gdb_repeat_observer_effect_possible": true,
+    "original_session_native_environment_known": false,
+    "gt_accuracy_evaluated": false
+  }
+}

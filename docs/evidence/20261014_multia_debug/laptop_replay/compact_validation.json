@@ -1,0 +1,75 @@
+{
+  "state": "complete",
+  "source": "recorded_real_D435_replay",
+  "counts": {
+    "left": 298,
+    "right": 300,
+    "depth": 293
+  },
+  "saved_frames": 891,
+  "offline": {
+    "frames": 298,
+    "tracking_ok_fraction": 1.0,
+    "map_ids": [
+      0
+    ],
+    "process_ms_median": 15.316543,
+    "process_ms_p95": 17.650391299999995,
+    "scope": "offline tracking-call elapsed time on executing machine; not Pi FPS or display latency",
+    "gt_accuracy_evaluated": false,
+    "status": "complete",
+    "backend": "orb_offline",
+    "paired_frames": 298,
+    "source": "/home/su/rover/outputs/handheld_mapping/20261014_multia_debug/laptop_replay/ui_recorded_runs/20261014_014125_30994d",
+    "raw_preserved": true,
+    "input_calibration_sha256": "06f67d4f7a6899e570d386c9161fa189fffe9ab5b949526a0e4ee38ec500051c"
+  },
+  "dense_status": "complete",
+  "dense_maps": [
+    {
+      "map_id": 0,
+      "integrated_frames": 98,
+      "keyframes": 98
+    }
+  ],
+  "laptop_capture": {
+    "packets": 894,
+    "read_wait_ms_total": 11205.56469599999,
+    "read_wait_ms_max": 269.328393,
+    "writer_accept_ms_total": 8981.268166000007,
+    "writer_accept_ms_max": 15.76674,
+    "packet_process_ms_max": 15.881585,
+    "packet_process_ms_max_kind": "image",
+    "packet_process_ms_max_stamp_ns": 1791891901467526367,
+    "images": {
+      "left": {
+        "images": 298,
+        "decode_ms_total": 451.2331719999999,
+        "decode_ms_max": 3.358163,
+        "png_write_ms_total": 2244.759577,
+        "png_write_ms_max": 11.516759
+      },
+      "right": {
+        "images": 300,
+        "decode_ms_total": 587.2355080000007,
+        "decode_ms_max": 4.239933,
+        "png_write_ms_total": 2462.483882,
+        "png_write_ms_max": 13.261773
+      },
+      "depth": {
+        "images": 293,
+        "decode_ms_total": 447.80932500000006,
+        "decode_ms_max": 2.98257,
+        "png_write_ms_total": 2627.443375999999,
+        "png_write_ms_max": 12.388109
+      }
+    }
+  },
+  "live_lag_ms_p50": 25.91225306969136,
+  "live_lag_ms_p95": 45.1301799621433,
+  "live_drops_at_10s": 59,
+  "live_drops_final": 59,
+  "metadata_checks_passed": true,
+  "limit": "Archived images through local subprocess, not Pi/USB/network test or end-to-end latency; pre-existing source omissions remain in replay; worker drop=0 does not imply original camera drop=0",
+  "replay_worker_reported_dropped": 0
+}

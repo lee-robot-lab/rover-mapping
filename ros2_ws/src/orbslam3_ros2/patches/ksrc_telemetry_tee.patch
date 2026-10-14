@@ -1,0 +1,108 @@
+--- a/pi/common/udp_spi_bridge.py
++++ b/pi/common/udp_spi_bridge.py
+@@ -24,6 +24,8 @@
+ import struct
+ import time
+ 
++from telemetry_tee import TelemetryTee
++
+ from nucleo_link import SpiLink, TLM_FLAG_GATE_PENDING, TLM_FLAG_WATCHDOG
+ 
+ MAGIC = b"KSRC"
+@@ -40,13 +42,18 @@
+     ap.add_argument("--speed", type=int, default=1_000_000)
+     ap.add_argument("--max-lin", type=float, default=0.32, help="받은 값 상한 m/s (안전 클램프)")
+     ap.add_argument("--max-ang", type=float, default=2.0, help="받은 값 상한 rad/s")
++    ap.add_argument("--telemetry-socket", default=None, help="optional nonblocking UNIX datagram collector")
++    ap.add_argument("--run-id", default="", help="mapping run directory name")
+     args = ap.parse_args()
++    tee = TelemetryTee(args.telemetry_socket) if args.telemetry_socket else None
+ 
+     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+     sock.bind(("0.0.0.0", args.port))
+     sock.setblocking(False)
+     link = SpiLink(args.bus, args.dev, args.speed)
+ 
++    udp_cmd = (0.0, 0.0, 0.0)
++    last_loop_work_ns = 0
+     cmd = (0.0, 0.0, 0.0)
+     last_rx = 0.0
+     last_seq = None
+@@ -81,6 +88,7 @@
+                     n_drop += 1
+                     continue
+                 last_seq, peer = seq, addr
++                udp_cmd = (vx, vy, w)
+                 cmd = (clamp(vx, args.max_lin), clamp(vy, args.max_lin), clamp(w, args.max_ang))
+                 last_rx = t0
+                 n_rx += 1
+@@ -95,6 +103,15 @@
+                 n_bad += 1
+             else:
+                 tlm = r
++
++            if tee is not None:
++                tee.emit({"schema": 1, "run_id": args.run_id,
++                          "host_receipt_ns": time.time_ns(), "host_monotonic_ns": time.monotonic_ns(),
++                          "udp_seq": last_seq, "udp_age_s": None if peer is None else t0-last_rx,
++                          "selected_cmd": list(send), "udp_nominal_cmd": list(udp_cmd), "stale": stale,
++                          "decode_failures": n_bad, "tee_drops": tee.dropped, "telemetry": r,
++                          "loop_previous_work_ns": last_loop_work_ns, "tee_previous_emit_ns": tee.last_emit_ns,
++                          "poll_only": peer is None})
+ 
+             now = time.monotonic()
+             if peer is not None and tlm is not None and now >= next_reply:
+@@ -118,6 +135,8 @@
+                 print(f"[{src}] 보냄 v {send[0] + 0.0:+.3f} {send[1] + 0.0:+.3f} {send[2] + 0.0:+.3f} "
+                       f"[{tags}] rx={n_rx} drop={n_drop} crc_bad={n_bad}")
+                 next_print = now + 0.5
++            if tee is not None:
++                last_loop_work_ns = int((time.monotonic()-t0)*1e9)
+             time.sleep(max(0.0, period - (time.monotonic() - t0)))
+     except KeyboardInterrupt:
+         pass
+@@ -127,6 +146,8 @@
+             time.sleep(0.02)
+         link.close()
+         sock.close()
++        if tee is not None:
++            tee.close()
+ 
+ 
+ if __name__ == "__main__":
+--- /dev/null
++++ b/pi/common/telemetry_tee.py
+@@ -0,0 +1,33 @@
++# ================================================================
++# telemetry_tee.py
++# 설명: SPI owner가 이미 디코딩한 telemetry를 UNIX datagram으로 비차단 분기한다.
++# 사용법: tee = TelemetryTee(path); tee.emit(payload); tee.close()
++# ================================================================
++import json
++import socket
++import time
++from pathlib import Path
++
++class TelemetryTee:
++    """수신자 부재/포화/잘못된 JSON을 누락으로 집계하고 제어 루프로 즉시 복귀한다."""
++    def __init__(self, path: Path | str) -> None:
++        self.path = str(path)
++        self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
++        self.socket.setblocking(False)
++        self.dropped = 0
++        self.last_emit_ns = 0
++
++    def emit(self, payload: dict) -> bool:
++        started = time.perf_counter_ns()
++        try:
++            data = json.dumps(payload, separators=(',', ':'), allow_nan=False).encode()
++            self.socket.sendto(data, self.path)
++            return True
++        except (OSError, ValueError, TypeError):
++            self.dropped += 1
++            return False
++        finally:
++            self.last_emit_ns = time.perf_counter_ns() - started
++
++    def close(self) -> None:
++        self.socket.close()

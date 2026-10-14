@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "checks": [
+    "20261013_204443_766235: original counts/CSV counts/loss accounting verified",
+    "20261013_203820_847029: original counts/CSV counts/loss accounting verified",
+    "Original timings: first bad state immediately follows 932429932 ns gap; reset/map421 rows verified",
+    "41 original metadata/log/CSV SHA256 still unchanged",
+    "README, analysis script, timeline and critical-window plot exist"
+  ]
+}

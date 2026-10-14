@@ -1,0 +1,8 @@
+# ================================================================
+# requirements.txt
+# 설명: Ubuntu 22.04/Python 3.10의 매핑 venv와 화면 조이스틱 의존성이다.
+# 사용법: PYTHONNOUSERSITE=1 .venv-mapping/bin/python -m pip install -r requirements.txt
+# PyQt5/OpenCV/matplotlib/pytest/PyYAML은 docs/installation.md의 apt 단계를 따른다.
+# ================================================================
+-r experiments/handheld_mapping/requirements.txt
+pygame==2.6.1

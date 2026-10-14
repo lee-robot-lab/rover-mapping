@@ -1,0 +1,6 @@
+# 센서 QoS는 실제 publisher에 따라 rosbag2가 선택한다. latched static TF는 명시한다.
+/tf_static:
+  history: keep_last
+  depth: 100
+  reliability: reliable
+  durability: transient_local

@@ -1,0 +1,10 @@
+# SDD ledger — plan: docs/superpowers/plans/2026-10-14-camera-overlap-viewer.md
+Ruling: 기존 live 흐름과 adhoc Open3D 시각화를 확장하는 제한된 작업. 사용자가 제안한 위아래 배치와 영상 overlay를 승인했으므로 현재 세션에서 직접 진행한다. Git 작업 없음.
+Pre-flight: Task1은 camera-to-world pose와 depth-to-left extrinsic을 사용한다. Task2는 동일 processed IR/overlay를 snapshot 한쌍으로 제공한다. Task3는 saved summary만 읽으며 capture/native 계산을 건드리지 않는다.
+Task1: geometry tests4 RED(ModuleNotFound)→GREEN. Known extrinsic pixel shift, nearest-depth occlusion, invalid/behind/outside depth and untouched raw checked.
+Task2: live cache/UI vertical2 tests RED(missing overlay/stamp/widget)→GREEN; stale/fresh same-frame and empty session clear RED(stale pixmap remained)→GREEN. UI uses last paired original+overlay, no overlay ON/OFF toggle.
+Task3: saved-map selector3 tests RED→GREEN. Latest missing map fails explicitly, backend/map/cloud/directPLY selection and path-escape checks pass. Added standalone X11-aware viewer and app 3D button.
+Performance ruling: initial full-resolution overlay per frame cost~42ms and produced5 additional live skips after10sec; fixed by limiting only overlay rendering to the existing Qt5Hz rate. Native ORB remains continuous, raw/camera unaffected. Throttle regression RED(stamp incorrectly advanced everyframe)→GREEN; newmap forces fresh overlay. Optimized actual-recorded replay running.
+Final: optimized20sec recorded replay follows~15FPS after startup (skip54 at10sec and54 atfinish), pose lag UI median20.52ms/p9525.60ms; overlay computed<=5Hz with same originalpair. Screenshot viewed. Latest real Map0/421 viewer windows READY via permanentlauncher.
+Review: fresh reviewer found no Critical/Important, one malformed-summary Minor. Ruling: UI callback exception deserves fixing in this input-validation task; five malformed-schema tests RED(KeyError/TypeError/AttributeError)→GREEN(ValueError guidance).
+Final verification:162passed in9.60s; pyflakes/compileall/bash-n GREEN. Owned previous Qtapp had no children/active capture, gracefully closed; new vertical-overlay app opened idle. Motor/SPI unchanged. Pi currentnetwork/GT/gravity/IMU integration still unverified or pending.

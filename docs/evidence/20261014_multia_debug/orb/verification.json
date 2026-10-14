@@ -1,0 +1,13 @@
+{
+  "all_runs_exactly_3604_original_timestamps": true,
+  "input_pairs_settings_binary_runtime_vocab_hashes_unchanged": true,
+  "completed_run_keyframe_counts_match_export": true,
+  "native_runs_sequential": true,
+  "core_dump_created": false,
+  "raw_images_modified_by_experiment": false,
+  "production_modified_by_experiment": false,
+  "gdb_repeat_crash_reproduced": false,
+  "gdb_repeat_observer_effect_possible": true,
+  "original_session_native_environment_known": false,
+  "gt_accuracy_evaluated": false
+}

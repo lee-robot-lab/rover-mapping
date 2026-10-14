@@ -1,0 +1,7 @@
+{
+  "captured_on": "2026-10-14",
+  "ORB_SLAM3": {"url": "https://github.com/UZ-SLAMLab/ORB_SLAM3", "commit": "4452a3c4ab75b1cde34e5505a36ec3f9edcdc4c4", "license": "GPL-3.0"},
+  "ORB_LINE_SLAM": {"url": "https://github.com/Giannis-Alamanos/ORB-LINE-SLAM", "commit": "a351dbd1e7cfdba622891723d1b3533359f92264", "license": "GPL-3.0"},
+  "Pangolin": {"url": "https://github.com/stevenlovegrove/Pangolin", "tag": "v0.8", "tag_ref": "aff6883c83f3fd7e8268a9715e84266c42e2efe3"},
+  "KSRC": {"commit": "4bd158b1125cee32c5851f74ecc0c8f3d71013b1", "scope": "selected control sources, not complete firmware"}
+}

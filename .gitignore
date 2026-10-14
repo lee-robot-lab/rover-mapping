@@ -1,0 +1,24 @@
+# 로컬 환경·촬영·빌드 결과는 공유 소스와 분리한다.
+/.venv*/
+/outputs/
+/external/
+/ros2_ws/build/
+/ros2_ws/install/
+/ros2_ws/log/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.so
+*.a
+*.o
+*.mcap
+*.bag
+*.osa
+.env
+.env.*
+!.env.example
+.ssh/
+*.pem
+*.key

@@ -1,0 +1,137 @@
+{
+  "configById": {
+    "Image!left": {
+      "imageMode": {
+        "imageTopic": "/camera/camera/infra1/image_rect_raw"
+      },
+      "title": "LEFT IR / cam0"
+    },
+    "Image!right": {
+      "imageMode": {
+        "imageTopic": "/camera/camera/infra2/image_rect_raw"
+      },
+      "title": "RIGHT IR / cam1"
+    },
+    "Image!features": {
+      "imageMode": {
+        "imageTopic": "/orbslam3/tracked_image"
+      },
+      "title": "ORB tracked features"
+    },
+    "3D!bird": {
+      "cameraState": {
+        "distance": 5,
+        "perspective": false,
+        "phi": 55,
+        "thetaOffset": 45,
+        "fovy": 45,
+        "near": 0.01,
+        "far": 100
+      },
+      "followTf": "orb_map_0",
+      "fixedFrame": "orb_map_0",
+      "followMode": "follow-none",
+      "topics": {
+        "/orbslam3/map_points": {
+          "visible": true
+        },
+        "/orbslam3/keyframes": {
+          "visible": true
+        },
+        "/orbslam3/base_pose": {
+          "visible": true
+        },
+        "/orbslam3/path": {
+          "visible": true
+        }
+      }
+    },
+    "3D!oblique": {
+      "cameraState": {
+        "distance": 5,
+        "perspective": true,
+        "phi": 55,
+        "thetaOffset": 45,
+        "fovy": 45,
+        "near": 0.01,
+        "far": 100
+      },
+      "followTf": "orb_map_0",
+      "fixedFrame": "orb_map_0",
+      "followMode": "follow-none",
+      "topics": {
+        "/orbslam3/map_points": {
+          "visible": true
+        },
+        "/orbslam3/keyframes": {
+          "visible": true
+        },
+        "/orbslam3/base_pose": {
+          "visible": true
+        },
+        "/orbslam3/path": {
+          "visible": true
+        }
+      }
+    },
+    "RawMessages!tracking": {
+      "topicPath": "/orbslam3/diagnostics"
+    },
+    "RawMessages!imu": {
+      "topicPath": "/rover/telemetry_diagnostics"
+    },
+    "RawMessages!recording": {
+      "topicPath": "/mapping/recording_status"
+    },
+    "Plot!imu": {
+      "paths": [
+        {
+          "value": "/rover/imu/data_raw_receipt.angular_velocity.z"
+        },
+        {
+          "value": "/rover/imu/data_raw_receipt.linear_acceleration.z"
+        }
+      ]
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "linkedGlobalVariables": [],
+  "playbackConfig": {
+    "speed": 1,
+    "messageOrder": "receiveTime"
+  },
+  "layout": {
+    "direction": "column",
+    "first": {
+      "direction": "row",
+      "first": "Image!left",
+      "second": "Image!right"
+    },
+    "second": {
+      "direction": "row",
+      "first": {
+        "direction": "column",
+        "first": "3D!bird",
+        "second": "3D!oblique"
+      },
+      "second": {
+        "direction": "column",
+        "first": "Image!features",
+        "second": {
+          "direction": "column",
+          "first": "RawMessages!tracking",
+          "second": {
+            "direction": "row",
+            "first": "Plot!imu",
+            "second": {
+              "direction": "column",
+              "first": "RawMessages!imu",
+              "second": "RawMessages!recording"
+            }
+          }
+        }
+      }
+    }
+  }
+}

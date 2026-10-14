@@ -1,0 +1,8 @@
+{
+  "tracked_files": 176,
+  "tracked_bytes": 1014416,
+  "forbidden_paths": [],
+  "potential_secrets_files": [],
+  "oversized_files": [],
+  "scope": "pattern/path check, not a guarantee against every possible secret"
+}

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ================================================================
+fastdds_stereo_local.xml
+설명: 같은 호스트의 stereo 대용량 메시지에 SHM 32 MiB를 제공한다. UDP discovery는 유지한다.
+사용법: RMW_IMPLEMENTATION=rmw_fastrtps_cpp와 FASTRTPS_DEFAULT_PROFILES_FILE=이_파일의_절대경로를
+        카메라·ORB·recorder·bridge 시작 전에 같은 셸 환경에 설정한다. QoS·source stamp는 변경하지 않는다.
+================================================================ -->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>stereo_shm</transport_id>
+      <type>SHM</type>
+      <segment_size>33554432</segment_size>
+    </transport_descriptor>
+    <transport_descriptor>
+      <transport_id>stereo_udp</transport_id>
+      <type>UDPv4</type>
+    </transport_descriptor>
+  </transport_descriptors>
+  <participant profile_name="rover_stereo_local" is_default_profile="true">
+    <rtps>
+      <userTransports>
+        <transport_id>stereo_shm</transport_id>
+        <transport_id>stereo_udp</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+    </rtps>
+  </participant>
+</profiles>

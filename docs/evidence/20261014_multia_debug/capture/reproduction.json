@@ -1,0 +1,56 @@
+{
+  "blocked_sender": {
+    "offered": 91,
+    "left_callback_count": 31,
+    "drops_by_stream": {
+      "right": 26,
+      "left": 27,
+      "depth": 27
+    },
+    "before_drain": {
+      "queued_bytes": 3996497,
+      "peak_bytes": 3996497,
+      "max_bytes": 4194304,
+      "dropped": 80,
+      "scope": "queued raw payload/header bytes; excludes ROS/current frame and Python object overhead"
+    },
+    "sent_after_finish": {
+      "left": 4,
+      "right": 4,
+      "depth": 3
+    },
+    "final_queue": {
+      "queued_bytes": 0,
+      "peak_bytes": 3996497,
+      "max_bytes": 4194304,
+      "dropped": 80,
+      "scope": "queued raw payload/header bytes; excludes ROS/current frame and Python object overhead"
+    },
+    "normal_shutdown_accepted_frame_loss": 0
+  },
+  "depth_starvation": {
+    "simulated_seconds": 3,
+    "service": "one IR-sized queue slot per 15 Hz tick",
+    "admitted": {
+      "right": 45
+    },
+    "drops_by_stream": {
+      "left": 45,
+      "depth": 45
+    },
+    "queue": {
+      "queued_bytes": 3997396,
+      "peak_bytes": 3997396,
+      "max_bytes": 4194304,
+      "dropped": 90,
+      "scope": "queued raw payload/header bytes; excludes ROS/current frame and Python object overhead"
+    },
+    "note": "Deterministic mechanism reproduction, not measured Pi scheduling."
+  },
+  "upstream_gap": {
+    "callback_stamp_gap_s": 1.0,
+    "reported_transport_dropped": 0,
+    "received_callback_count": 2,
+    "note": "Camera/driver/DDS delivery gaps are absent from transport drop accounting."
+  }
+}
