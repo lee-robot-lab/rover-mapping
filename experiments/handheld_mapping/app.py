@@ -22,7 +22,8 @@ from experiments.handheld_mapping.live_preview import CoverageView
 class MappingWindow(QWidget):
     """촬영 상태를 표시하고 blocking 작업을 session thread에 맡기는 노트북 제어창."""
 
-    def __init__(self, session: Session, output_root: Path | None = None, demo: bool = False) -> None:
+    def __init__(self, session: Session, output_root: Path | None = None, demo: bool = False,
+                 imu_calibration: Path | None = None) -> None:
         super().__init__()
         self.session = session
         self.close_pending = False
@@ -63,6 +64,11 @@ class MappingWindow(QWidget):
         self.live_mapping = QCheckBox('실시간 촬영 범위 표시 · 노트북에서 ORB 동시 실행')
         self.live_mapping.setChecked(self.point_ready)
         self.live_mapping.setToolTip('원본 저장과 별도로 최신 입력을 추적하며 종료 후 최종 지도를 다시 계산합니다.')
+        calibration = imu_calibration or ROOT / "outputs/handheld_mapping/calibration/imu_calibration.json"
+        self.imu_enabled = QCheckBox("보정 IMU 함께 기록")
+        self.imu_enabled.setChecked(calibration.expanduser().is_file() and not demo)
+        self.imu_enabled.setToolTip("raw·보정 IMU를 원본 영상과 같은 폴더에 저장합니다. ORB 융합과 시계 동기화는 검증되지 않았습니다.")
+        self.imu_calibration = QLineEdit(str(calibration))
         fields.addWidget(QLabel("Pi 연결"), 0, 0)
         fields.addWidget(self.host, 0, 1)
         fields.addWidget(QLabel("저장 폴더"), 1, 0)
@@ -75,6 +81,9 @@ class MappingWindow(QWidget):
         fields.addWidget(self.demo, 3, 1)
         fields.addWidget(self.sensors_only, 4, 1)
         fields.addWidget(self.live_mapping, 5, 1)
+        fields.addWidget(self.imu_enabled, 6, 1)
+        fields.addWidget(QLabel("IMU 보정 파일"), 7, 0)
+        fields.addWidget(self.imu_calibration, 7, 1)
         self.choose_button = choose
         layout.addLayout(fields)
         self.status_label = QLabel("준비 · 시작 버튼을 누르세요")
@@ -83,6 +92,9 @@ class MappingWindow(QWidget):
         layout.addWidget(self.status_label)
         self.metrics = QLabel("촬영 시간 00:00   |   저장 프레임 0   |   추적 대기")
         layout.addWidget(self.metrics)
+        self.imu_status = QLabel("IMU 기록 꺼짐 · ORB 융합 안 함 · 시계 동기화 미검증")
+        self.imu_status.setWordWrap(True)
+        layout.addWidget(self.imu_status)
         self.preview = QLabel("카메라 미리보기\n촬영을 시작하면 좌측 IR 영상이 표시됩니다")
         self.preview.setObjectName("preview")
         self.preview.setAlignment(Qt.AlignCenter)
@@ -126,6 +138,7 @@ class MappingWindow(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
         self.timer.start(200)
+        self.demo.toggled.connect(self.refresh)
         self.refresh()
 
     def choose_output(self) -> None:
@@ -138,7 +151,9 @@ class MappingWindow(QWidget):
             self.session.start({"host": self.host.text().strip(), "output_root": self.output.text(),
                                 "demo": self.demo.isChecked(), "compare_lines": self.mode.currentData(),
                                 "sensors_only": self.sensors_only.isChecked(),
-                                "live_mapping": self.live_mapping.isChecked()})
+                                "live_mapping": self.live_mapping.isChecked(),
+                                "imu_enabled": self.imu_enabled.isChecked() and not self.demo.isChecked(),
+                                "imu_calibration": self.imu_calibration.text().strip()})
         except Exception as error:
             self.status_label.setText(str(error))
         self.refresh()
@@ -185,6 +200,22 @@ class MappingWindow(QWidget):
             widget.setEnabled(not active)
         self.sensors_only.setEnabled(not active and self.point_ready)
         self.live_mapping.setEnabled(not active and self.point_ready)
+        if self.demo.isChecked():
+            self.imu_enabled.setChecked(False)
+        self.imu_enabled.setEnabled(not active and not self.demo.isChecked())
+        self.imu_calibration.setEnabled(not active and not self.demo.isChecked())
+        imu = status.get("imu")
+        imu_text = "IMU 유효 샘플 대기" if self.imu_enabled.isChecked() else "IMU 기록 꺼짐"
+        if imu:
+            imu_text = (f"IMU 기록 {imu.get('state', '대기')} · 유효 {imu.get('valid', 0)}"
+                        f" · 고유 {imu.get('unique', 0)} / {imu.get('hz', 0):.1f} Hz")
+            if imu.get("roll_deg") is not None and imu.get("pitch_deg") is not None:
+                imu_text += f" · roll {imu['roll_deg']:.1f}° / pitch {imu['pitch_deg']:.1f}°"
+            if imu.get("stale") or status.get("imu_warning"):
+                imu_text += " · 수신 지연"
+            if imu.get("error"):
+                imu_text += " · 오류: "+str(imu["error"])
+        self.imu_status.setText(imu_text+" · ORB 융합 안 함 · 시계 동기화 미검증")
         live = self.session.live_snapshot()
         self.coverage.set_snapshot(live)
         label = status["message"]
@@ -256,12 +287,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--demo", action="store_true")
     parser.add_argument("--output-root", type=Path)
+    parser.add_argument("--imu-calibration", type=Path)
     parser.add_argument("--auto-stop", type=float)
     parser.add_argument("--screenshot", type=Path)
     parser.add_argument("--quit-after-save", action="store_true")
     args = parser.parse_args()
     app = QApplication(sys.argv[:1])
-    window = MappingWindow(Session(), args.output_root, args.demo)
+    window = MappingWindow(Session(), args.output_root, args.demo, args.imu_calibration)
     signal.signal(signal.SIGINT, lambda *_: window.close())
     signal.signal(signal.SIGTERM, lambda *_: window.close())
     window.show()

@@ -23,12 +23,14 @@
 | TSDF | 실제 D435 depth + 최종 keyframe pose로 map별 mesh/cloud | 중력 정렬, 재방문 중복 표면·거리·단차 검증 |
 | 촬영 화면 | 원본 위/관측색 아래, 오른쪽 관측 격자·경로 | 현 Pi/USB/무선에서 새 기능 전체 부하 검증 |
 | 조이스틱·STM | UDP → SPI 통신, 사용자 조작·정지 응답 확인 | 매 시험 연결·정지·조향 gate 상태 재확인 |
-| IMU·encoder | STM SPI telemetry 경로는 있음 | 현재 매핑 RUN 동시 기록·clock/extrinsic 검증·SLAM 융합 |
+| IMU·encoder | 보정 IMU·원본 telemetry의 encoder 필드를 영상과 같은 RUN에 기록, 실제 짧은 촬영 확인 | acquisition clock·축/장착변환 검증·관성 융합 |
 | ORB-LINE | 독립 offline 실행기, 노트북·서버 기능 재생 확인 | 공정한 정확도 비교, 실제 D435 이득, Pi 실시간 배포 |
 | 지형/costmap | 고정 크기 격자·기록 재생·합성 검증 | 실제 중력/지면 분리·로버 한계 검증·live 연결 |
 | 기준 mesh/STL 위치 보정 | 기존 벽/방향 실험과 로드맵 | 일반 스캔/STL 공통 입력과 별도 주행 보정 통합 |
 | AI HAT | 이전에 Hailo-8 인식 확인 | 현재 ORB/LSD/TSDF 가속 연결 없음 |
 | COLMAP | 촬영 후 pose/형상 비교 후보로 정리 | 설치·실행·통합·동일 기록 비교 전 |
+
+IMU 동시 기록의 실행·저장·검증 범위는 [사용법](../experiments/2026-10-14-imu-co-recording.md)을 따른다. Qt에 IMU 옵션을 추가했으며, ORB는 계속 stereo다.
 
 ## 2. 현재 알고리즘과 데이터 흐름
 
@@ -432,7 +434,7 @@ repository 전체 `pytest -q --maxfail=1`은 과거 output snapshot의 `pi/commo
 ## 12. 다음 담당자의 우선순위와 이전할 자료
 
 1. **입력 연속성:** Pi 재연결 후 새 앱으로 정지·느린 회전·이동을 구분해 촬영하고 단계별 계측으로 최초 병목을 찾는다. 해당 단계만 수정하고 같은 조건에서 재검증한다.
-2. **IMU/encoder 기록:** 영상과 동일 RUN으로 기록하고 실제 acquisition 시각·주기·clock·축·장착 extrinsic·bias/noise를 확인한다. 50 Hz SPI telemetry를 IMU의 검증된 acquisition rate로 간주하지 않는다. 기존 headless collector/tee 초안은 있지만 현재 Qt 흐름에 자동 연결된 것은 아니다.
+2. **IMU/encoder 검증:** Qt의 같은 RUN 동시 기록은 연결했다. 실제 acquisition 시각·주기·clock·축·장착 extrinsic·bias/noise를 확인하고 영상과 맞춘다. 50 Hz SPI telemetry를 센서 원시 acquisition rate로 간주하지 않는다. 원본 telemetry의 encoder 필드는 보존하지만 encoder 정합·융합은 검증 전이다.
 3. **지도 품질:** 알려진 거리·단차·시작점 재방문·중복 벽으로 검사한다. 영상단독/검증 후 관성융합/CLAHE/ORB-LINE/COLMAP은 같은 기록과 조건으로 비교한다.
 4. **중력 정렬·지형:** 실제 z-up 정렬·지면 구분을 정하고 높이·경사·단차와 실측을 대조한다. 실제 로버 조건으로 cost 한계를 보정한다.
 5. **고정 기준 맵 보정:** 선택한 촬영 A의 mesh를 고정하고 별도 B를 정합한다. 스캔 mesh와 경기 STL의 단위·축·원점·불일치를 공통 처리한다. ORB Atlas 재지역화만으로 STL 보정 검증을 대신하지 않는다.

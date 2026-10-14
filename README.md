@@ -2,7 +2,7 @@
 
 D435와 Raspberry Pi로 영상을 수집하고, 노트북에서 ORB-SLAM3·TSDF 기준 3D 맵을 만드는 프로젝트다. 촬영 중 coverage/오버레이, 촬영 후 지형 층·prototype costmap 분석, 기존 STM 조이스틱 연동을 포함한다.
 
-**현재는 기준 맵 품질을 검증하는 단계다.** IMU/encoder 동시 기록·융합, 중력 정렬 자동화, 범용 스캔/STL 위치 보정, live costmap은 후속 작업이다. 현재 실제 Pi의 입력 공백 원인을 새 계측으로 확인해야 한다.
+**현재는 기준 맵 품질을 검증하는 단계다.** 보정 IMU와 원본 encoder telemetry를 영상과 같은 RUN에 기록하는 경로를 실제 Pi에서 확인했다. 관성 융합, 중력 정렬 자동화, 범용 스캔/STL 위치 보정, live costmap은 후속 작업이다. 실제 주행의 입력 공백 원인도 새 계측으로 확인해야 한다.
 
 ## 먼저 읽을 문서
 
@@ -15,6 +15,7 @@ D435와 Raspberry Pi로 영상을 수집하고, 노트북에서 ORB-SLAM3·TSDF 
 | 제외된 원본/실행 자산 | [데이터·runtime 안내](docs/data-assets.md) |
 | 입력 공백 조사 | [조사 보고](docs/experiments/2026-10-14-input-gap-investigation.md) |
 | 최신 20° 카메라 장착 URDF | [기구 기준·보정 적용 범위](docs/experiments/2026-10-14-rover-extrinsics-update.md) |
+| 보정 IMU와 D435 동시 기록 | [실행·검증 결과](docs/experiments/2026-10-14-imu-co-recording.md) |
 | upstream 버전·patch | [외부 의존성](third_party/README.md) |
 
 ## 빠른 시작

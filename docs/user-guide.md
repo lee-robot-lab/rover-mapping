@@ -43,6 +43,8 @@ native가 준비되면 다음 두 옵션을 사용한다.
 
 ## 3. 촬영 시작·이동·종료
 
+IMU를 함께 기록하려면 [IMU 동시 기록 절차](experiments/2026-10-14-imu-co-recording.md)에 따라 `tools/mapping_imu_bridge.sh`로 Pi 중계를 실행하고, 앱의 **보정 IMU 함께 기록**과 실제 보정 JSON 경로를 확인한다. IMU 유효 샘플 확인 후 카메라가 시작되며 데이터는 같은 RUN에 저장된다. ORB는 계속 stereo이고 자동 중력 정렬은 아직 아니다.
+
 1. 저장 폴더를 선택한다. 기본값은 clone 경로의 `outputs/handheld_mapping/sessions`다.
 2. **매핑 시작**을 누른다. 매번 새 RUN을 만들고 worker를 Pi RAM disk에 배포한다.
 3. 정지 상태에서 카메라 준비와 오른쪽 추적 정상 표시를 기다린다. 초기 vocabulary 로딩으로 live pair를 일부 건너뛸 수 있다.

@@ -1,5 +1,14 @@
 # 공유본 검증 — 2026-10-14
 
+## IMU 동시 기록 추가 검증
+
+- 최신 공유본 전체 `pytest -q`: **205 passed, 1 skipped (14.69초)**. 선택 native 실행기 검사는 설치 자산이 없어 skip이다.
+- 원본의 매핑 범위 검사: **205 passed (18.89초)**. source manifest 111개 hash, 변경 문서 링크49개·shell block28개 확인.
+- 실제 Pi: 보정 IMU와 D435 각122프레임 동시 저장·정상 종료, IMU957개 고유 샘플, 영상/tee 누락0, ORB/TSDF 생성 확인. 짧은 정지 연결 시험이며 주행 정확도 검증은 아니다.
+- 시계 동기화·관성 융합은 false로 유지한다. 원본·장비별 보정 JSON은 Git에서 제외했다. [사용법과 검증 범위](experiments/2026-10-14-imu-co-recording.md).
+
+아래는 최초 공유본 생성 때의 검증 기록이다.
+
 별도 공유 체크아웃 `/home/su/rover-mapping`에서 원본의 Python 환경을 사용해 검증한다. 소스·테스트·wrapper는 원본 hash와 대조하고, native 바이너리/촬영 데이터가 없는 공유본의 결과를 따로 기록한다. 새 PC의 전체 native/RealSense 설치 및 현재 Pi 실기는 이 검증에 포함되지 않는다.
 
 ## 실제 결과

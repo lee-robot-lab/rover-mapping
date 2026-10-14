@@ -78,6 +78,7 @@ class Session:
         self.generation = 0
         self.left_receipts = deque(maxlen=30)
         self.live = None
+        self.imu = None
 
     def live_snapshot(self) -> dict | None:
         with self.lock:
@@ -92,7 +93,10 @@ class Session:
             receipts = self.left_receipts
             result["left_receipt_fps"] = ((len(receipts)-1)/(receipts[-1]-receipts[0])
                 if len(receipts) >= 2 and result["state"] == "recording" and time.monotonic()-receipts[-1] < 1 else 0.)
-            return result
+            imu = self.imu
+        if imu is not None:
+            result["imu"] = imu.snapshot()
+        return result
 
     def update(self, **values) -> None:
         with self.lock:
@@ -109,6 +113,7 @@ class Session:
             self.process = None
             self.preview = None
             self.live = None
+            self.imu = None
             self.left_receipts.clear()
             self.started_at = time.monotonic()
             self.ended_at = 0.
@@ -158,6 +163,7 @@ class Session:
         process = None
         log = None
         live = None
+        imu_partial = False
         try:
             root = Path(config["output_root"]).expanduser().resolve()
             root.mkdir(parents=True, exist_ok=True)
@@ -177,6 +183,19 @@ class Session:
                 command = remote_command(config.get("host", "pi@raspberrypi.local"), run_id,
                                          sensors_only=config.get("sensors_only", False),
                                          queue_mib=config.get("queue_mib", 4.))
+            if config.get("imu_enabled") and not config.get("demo"):
+                from experiments.handheld_mapping.imu import ImuCapture
+                calibration = config.get("imu_calibration")
+                if not calibration:
+                    raise ValueError("IMU 보정 파일 경로가 필요합니다")
+                imu = ImuCapture(config.get("host", "pi@raspberrypi.local"), run,
+                                 Path(calibration).expanduser(),
+                                 ROOT / "ros2_ws/src/rover_description/urdf/rocker_bogie_4wd_rover.urdf")
+                with self.lock:
+                    self.imu = imu
+                self.update(message="보정 IMU의 최신 유효 샘플 대기 중")
+                imu.start()
+                self.update(imu=imu.snapshot(), message="IMU 기록 준비 완료 · 카메라 준비 중")
             if self.stop_requested.is_set():
                 raise RuntimeError("시작 중 종료 요청: 촬영하지 않았습니다")
             log = (run / "worker.log").open("wb")
@@ -194,6 +213,13 @@ class Session:
                               "packet_process_ms_max": 0., "packet_process_ms_max_kind": None,
                               "packet_process_ms_max_stamp_ns": None}
             while True:
+                if self.imu is not None:
+                    imu_status = self.imu.snapshot()
+                    if imu_status.get("error"):
+                        raise RuntimeError("IMU 기록 오류: "+str(imu_status["error"]))
+                    if imu_status.get("stale"):
+                        imu_partial = True
+                        self.update(imu_warning="IMU 수신 지연 · 기록 공백 가능")
                 read_start = time.monotonic_ns()
                 packet = read_packet(process.stdout)
                 receipt_ns = time.monotonic_ns()
@@ -260,6 +286,13 @@ class Session:
                 self.update(laptop_capture={**laptop_capture,
                     'images': {side: dict(stats) for side, stats in writer.image_timings.items()}})
             exitcode = process.wait(timeout=10)
+            imu_status = self._finish_imu()
+            if self.snapshot().get("imu_cleanup_error"):
+                raise RuntimeError("IMU 기록 저장 실패: "+self.snapshot()["imu_cleanup_error"])
+            if imu_status:
+                if imu_status.get("error"):
+                    raise RuntimeError("IMU 기록 오류: "+str(imu_status["error"]))
+                imu_partial = imu_partial or bool(imu_status.get("stale"))
             writer.close()
             writer = None
             if live is not None:
@@ -290,12 +323,13 @@ class Session:
                 comparison = run_orbline(run)
                 self.update(comparison=comparison)
                 line_partial = comparison.get("dense", {}).get("status", "complete") != "complete"
-            partial = dense["status"] != "complete" or finished.get("dropped", 0) > 0 or line_partial
+            partial = dense["status"] != "complete" or finished.get("dropped", 0) > 0 or line_partial or imu_partial
             self.update(state="partial" if partial else "complete", message="일부 누락 있음 · 지도 저장 완료" if partial else "지도 저장 완료",
                         dense=dense, dropped=finished.get("dropped", 0))
         except Exception as error:
             self.update(state="failed", error=str(error), message=str(error))
         finally:
+            self._finish_imu()
             if live is not None:
                 try:
                     live.finish()
@@ -328,6 +362,26 @@ class Session:
                     atomic_json(run / "session.json", self.snapshot())
                 except OSError as error:
                     self.update(state="failed", error=str(error), message="상태 파일 저장 실패: "+str(error))
+
+    def _finish_imu(self) -> dict | None:
+        with self.lock:
+            imu = self.imu
+        if imu is None:
+            return None
+        try:
+            summary = imu.stop()
+            self.update(imu=summary)
+            return summary
+        except Exception as error:
+            self.update(imu_cleanup_error=str(error))
+            try:
+                self.update(imu=imu.snapshot())
+            except Exception:
+                pass
+            return None
+        finally:
+            with self.lock:
+                self.imu = None
 
     def rebuild(self, run_dir: Path) -> None:
         with self.lock:

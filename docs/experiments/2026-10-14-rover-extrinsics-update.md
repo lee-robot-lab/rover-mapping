@@ -2,6 +2,8 @@
 
 2026-10-14 사용자가 `rocker_bogie_4wd_rover`를 전달했고, 실제 카메라 장착각은 **하향 20°**라고 확인했다. 기존 35° URDF는 과거 기록용으로 보존한다.
 
+후속 갱신: Qt에서 [IMU 동시 기록](2026-10-14-imu-co-recording.md)을 켜면 최신 URDF 사본도 같은 RUN에 보존한다. 현재 지도 좌표는 계속 camera optical이며 자동 수평화·관성 융합은 별도다.
+
 ## 반영 파일과 원본
 
 - 최신 참고 사본: [rocker_bogie_4wd_rover.urdf](../../ros2_ws/src/rover_description/urdf/rocker_bogie_4wd_rover.urdf).
