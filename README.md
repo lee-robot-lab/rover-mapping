@@ -14,6 +14,7 @@ D435와 Raspberry Pi로 영상을 수집하고, 노트북에서 ORB-SLAM3·TSDF 
 | 새 담당자/팀원 공유 | [공유·기여 안내](docs/sharing.md) |
 | 제외된 원본/실행 자산 | [데이터·runtime 안내](docs/data-assets.md) |
 | 입력 공백 조사 | [조사 보고](docs/experiments/2026-10-14-input-gap-investigation.md) |
+| 최신 20° 카메라 장착 URDF | [기구 기준·보정 적용 범위](docs/experiments/2026-10-14-rover-extrinsics-update.md) |
 | upstream 버전·patch | [외부 의존성](third_party/README.md) |
 
 ## 빠른 시작

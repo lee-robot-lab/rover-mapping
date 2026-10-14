@@ -2,6 +2,8 @@
 
 갱신: **2026-10-14** · 작업 위치: **`/path/to/rover-mapping`**
 
+최신 기구 기준: 사용자 확인 카메라 **하향 20°**, 새 장착 좌표와 headless 보정 지원은 [URDF 갱신 기록](../experiments/2026-10-14-rover-extrinsics-update.md)을 따른다. Qt 지도는 계속 카메라 기준이며 중력 정렬 자동화는 별도다.
+
 이 문서는 이번 D435/Pi/로버 작업의 현재 상태와 사용법을 합친 기준 문서다. 다른 PC로 옮기면 `/path/to/rover-mapping`와 Pi 경로를 실제 설치 위치로 바꾼다. 기존 날짜별 문서의 “실기 연결 전” 같은 표현은 작성 당시 상태이므로 최신 판단에는 이 문서와 연결된 2026-10-14 검증 자료를 사용한다.
 
 공유본 안내: `/path/to/rover-mapping`은 본인의 clone 경로로 교체한다. 날짜별 RUN/실제 runtime은 Git에 없으며 [별도 자산 안내](../data-assets.md)를 따른다. 처음 사용할 때는 [사용 설명서](../user-guide.md)를 먼저 읽는다.

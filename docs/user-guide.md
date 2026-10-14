@@ -17,6 +17,8 @@ bash tools/handheld_mapping.sh --demo
 
 ## 2. 실제 촬영 준비
 
+최신 로버의 카메라 장착각은 사용자 확인 **하향 20°**다. [최신 URDF·센서 좌표](experiments/2026-10-14-rover-extrinsics-update.md)를 따른다. Qt 매핑은 카메라 기준으로 계산하며 URDF를 자동으로 읽거나 지도를 중력 정렬하지 않는다. headless 로버 pose 보정에는 새 URDF를 명시한다.
+
 | 준비 | 확인 |
 |---|---|
 | 카메라 | D435를 Pi에 연결. 케이블·포트·실제 USB 속도 확인 |

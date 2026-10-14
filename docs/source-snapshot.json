@@ -43,7 +43,7 @@
     "ros2_ws/src/orbslam3_ros2/scripts/mapping_probe.py": "d10893679410a68d35b98ded2562c2140045830afbcde63b994fead606390cad",
     "ros2_ws/src/orbslam3_ros2/scripts/finalize_mapping_run.py": "47a956f3bdfdeee9e4177ad4a9c902daef73ae6c6c0ed5073f0d918cdcfb0397",
     "ros2_ws/src/orbslam3_ros2/scripts/mapping_preflight.py": "fcfc6643a097db80faefeeda91bfc8872d2fbcf786d0cc9e62fd41592259bf34",
-    "ros2_ws/src/orbslam3_ros2/scripts/prepare_mapping_run.py": "c4f60c799559cc68b50968a71220fdfcf21d84d568c223e4779a92a8cec1329f",
+    "ros2_ws/src/orbslam3_ros2/scripts/prepare_mapping_run.py": "3ca9d344e2b57541ae22b399022ba173db9da4db7e6ba17fdff02be63bf493df",
     "ros2_ws/src/orbslam3_ros2/scripts/record_mapping_run.py": "cc1c128893eef4b761bdd4e0299737f31be3a0a379d8ffd30b1aab202689b5bb",
     "ros2_ws/src/orbslam3_ros2/scripts/topic_count_probe.py": "9ed1a9767601f5945a34eb69b36a43c6d6b65af40dfe026c41325dacaff50450",
     "ros2_ws/src/orbslam3_ros2/scripts/ksrc_telemetry_capture.py": "5bb552ccb707799eeab7f10a26d4c41fad470adc360c676ad3546dfb3d54ece4",
@@ -97,7 +97,7 @@
     "tests/headless_mapping/test_prepare_mapping_run.py": "903e4589c42c5a94b34bfc68464dc2c95c07f934ed2a01cab27e2888509138b9",
     "tests/headless_mapping/test_ksrc_bridge.py": "751b7f1be666a84eb578e04e4000c8edd95fc4e56dff02b7c0e3af3da8b90c38",
     "tests/headless_mapping/test_replay.py": "b24743f7033fa769e3ebef0ea8a7d1f8454ecb052e59856d388b31caa4970388",
-    "tests/headless_mapping/test_calibration_probe.py": "dad9212e4ac3d70c16e773ba1f63ae398a5c57ccd47e068eb4cb839361b28d25",
+    "tests/headless_mapping/test_calibration_probe.py": "78ed816c6f37777c7837f69ee1ee9a83884228422ace9c582fe7c5e90dfd73d8",
     "tools/terrain_mapping.sh": "f9cc35ed2cbbac492124f00dc62bdfe824aa264321480724aaa3637dc1f4a4c5",
     "tools/build_mapping_baseline.sh": "0c40590244a0a8b18ff01fff33262b4be80ff6f4c95627c44427662abdaf63ae",
     "tools/handheld_mapping.sh": "207f68341c5b123b0bb44b7fe24c0e5de3c5e38547b723935aef4cdac51cda21",
@@ -107,7 +107,8 @@
     "teleop/ksrc_snapshot/pi/teleop/teleop_joystick.py": "d4658a277558d1102118490f68d6be5d16b7fe6cccca083da17f7fb1050c7be3",
     "teleop/ksrc_snapshot/pi/teleop/joystick_math.py": "f09033f8cfe31039e695a8501fb68dde414e81fb3713d9f225a48377f42de7d1",
     "teleop/ksrc_snapshot/pi/common/nucleo_link.py": "4e9126394af2daf1cd91425102c358bbcafabbb79d83380badfc02ffb7b32ccd",
-    "teleop/ksrc_snapshot/pi/common/udp_spi_bridge.py": "af2a5307c8bc4d6f0c1d8029a9a8a71ea409a4f9c2d5d650aa226ca3efb32915"
+    "teleop/ksrc_snapshot/pi/common/udp_spi_bridge.py": "af2a5307c8bc4d6f0c1d8029a9a8a71ea409a4f9c2d5d650aa226ca3efb32915",
+    "ros2_ws/src/rover_description/urdf/rocker_bogie_4wd_rover.urdf": "e83f95b4d266fa63d29480e86cabf744ce477a4fe19457da82d205260e38c32c"
   },
   "intentional_share_only_changes": [
     {
@@ -121,6 +122,20 @@
       "original_sha256": "47364afcfb13758750cc78701bcde7218431d253b6032a716462fed3a3100e90",
       "shared_sha256": "eed68eda858ea371b11996af9378fd2964968bed1eb0b377314dd78054e65a02",
       "reason": "portable test fixtures for optional native runners; production code unchanged"
+    }
+  ],
+  "updated_on": "2026-10-14",
+  "updates": [
+    {
+      "description": "User-confirmed 20 degree rover mount and left optical frame compatibility",
+      "files": [
+        "ros2_ws/src/orbslam3_ros2/scripts/prepare_mapping_run.py",
+        "tests/headless_mapping/test_calibration_probe.py",
+        "ros2_ws/src/rover_description/urdf/rocker_bogie_4wd_rover.urdf",
+        "docs/experiments/2026-10-14-rover-extrinsics-update.md"
+      ],
+      "provided_urdf_sha256": "107ed258fd7b1c66d6d170dce13bea0106b1f9f962c61965d2fa79214d44bb73",
+      "urdf_note": "Numeric XML unchanged; added Korean header and corrected stale camera pitch comment only."
     }
   ]
 }

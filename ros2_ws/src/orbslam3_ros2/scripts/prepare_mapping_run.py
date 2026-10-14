@@ -213,21 +213,25 @@ def calibration_from_probe(probe: dict, urdf: Path | None, profile: str, rectifi
         t=np.eye(4); t[:3,:3]=[[cy*cp,cy*sp*sr-sy*cr,cy*sp*cr+sy*sr],[sy*cp,sy*sp*sr+cy*cr,sy*sp*cr-cy*sr],[-sp,cp*sr,cp*cr]]; t[:3,3]=xyz
         graph.setdefault(parent,[]).append((child,t,joint.get('type')))
         graph.setdefault(child,[]).append((parent,np.linalg.inv(t),joint.get('type')))
-    queue=deque([('base_link',np.eye(4))]); seen=set(); base_c1=None
+    left_frames = {'camera_infra1_optical_frame', 'camera_left_optical_frame'}
+    queue=deque([('base_link',np.eye(4))]); seen=set(); candidates={}
     while queue:
         frame,t=queue.popleft()
         if frame in seen: continue
         seen.add(frame)
-        if frame=='camera_infra1_optical_frame': base_c1=t; break
+        if frame in left_frames: candidates[frame]=t
         for child,edge,kind in graph.get(frame,[]):
             if kind=='fixed': queue.append((child,t@edge))
-    if base_c1 is None: raise ValueError('URDF fixed path to camera_infra1_optical_frame missing')
+    if not candidates: raise ValueError('URDF fixed path to left optical frame missing')
+    if len(candidates) != 1: raise ValueError('URDF left optical frame ambiguous')
+    left_frame, base_c1 = next(iter(candidates.items()))
     rectification=np.eye(4); rectification[:3,:3]=np.asarray(info['left']['r']).reshape(3,3)
     validate_transform(rectification.tolist(),'CameraInfo.R')
     forward=base_c1[:3,2]
     calibration.update(T_c1_base=(rectification@np.linalg.inv(base_c1)).tolist(),
         pitch_down_deg=math.degrees(math.atan2(-forward[2],math.hypot(*forward[:2]))),
-        extrinsic_source='urdf_provisional',extrinsic_verified=False)
+        extrinsic_source='urdf_provisional',extrinsic_verified=False,
+        urdf_left_optical_frame=left_frame)
     return calibration
 
 

@@ -1,5 +1,7 @@
 # Pi 수동 ORB 지도 생성 — 실행과 검증
 
+> 2026-10-14: 이 문서의 35°/과거 IMU 자세는 당시 모델 기록이다. 새 run의 기구 기준은 사용자 확인 하향 20°인 [최신 URDF 갱신 기록](2026-10-14-rover-extrinsics-update.md)을 따른다. 과거 run의 보정값은 유지한다.
+
 현재 범위는 **수동 조종 + stereo 희소 지도 + 원본 기록 + 노트북 시각화**다. Nav2/RL/live ESKF는 이번 실행에 연결하지 않는다. 희소 점군은 통행 가능 영역이나 occupancy map이 아니다.
 
 현재 실기는 약 **35°**, `urdf_provisional`, `extrinsic_verified=false`다. 원본 URDF는 유지한다. 기존 영상 재생은 **20° 시뮬레이션 기록**이며 35° 실기 성능을 증명하지 않는다.

@@ -4,6 +4,8 @@
 # 사용법: /usr/bin/python3 -m pytest tests/headless_mapping
 # ================================================================
 import copy
+from pathlib import Path
+import numpy as np
 import pytest
 from prepare_mapping_run import calibration_from_probe
 
@@ -42,3 +44,27 @@ def test_handheld_uses_actual_stereo_without_body_extrinsic(probe):
     assert result['T_c1_c2'][0][3]==pytest.approx(.05)
     assert result['source_camera_info']==probe['camera_info']
     assert not {'T_c1_base','pitch_down_deg','extrinsic_source','extrinsic_verified'} & result.keys()
+
+
+def test_updated_rover_left_optical_mount(probe):
+    urdf = Path(__file__).resolve().parents[2] / 'ros2_ws/src/rover_description/urdf/rocker_bogie_4wd_rover.urdf'
+    result = calibration_from_probe(probe, urdf, '640x480x30:Y8', True)
+    # 독립적으로 계산한 광학 중심: camera_link 원점 + Y 방향 17.5 mm.
+    base_from_left = np.linalg.inv(result['T_c1_base'])
+    assert base_from_left[:3, 3] == pytest.approx([.12498574268, .02497451631, .01521787607])
+    assert base_from_left[:3, 2] == pytest.approx([.93969257, 0, -.342020284], abs=1e-8)
+    assert result['pitch_down_deg'] == pytest.approx(20, abs=1e-4)
+    assert result['urdf_left_optical_frame'] == 'camera_left_optical_frame'
+    assert result['extrinsic_verified'] is False
+    assert result['T_c1_c2'][0][3] == pytest.approx(.05)
+
+
+def test_ambiguous_left_optical_mount_rejected(probe, tmp_path):
+    urdf = tmp_path / 'ambiguous.urdf'
+    urdf.write_text('''<robot name="fixture"><link name="base_link"/>
+    <link name="camera_infra1_optical_frame"/><link name="camera_left_optical_frame"/>
+    <joint name="a" type="fixed"><parent link="base_link"/><child link="camera_infra1_optical_frame"/></joint>
+    <joint name="b" type="fixed"><parent link="base_link"/><child link="camera_left_optical_frame"/><origin xyz="0.1 0 0"/></joint>
+    </robot>''')
+    with pytest.raises(ValueError, match='ambiguous'):
+        calibration_from_probe(probe, urdf, '640x480x30:Y8', True)
