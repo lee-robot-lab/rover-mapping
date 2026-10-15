@@ -46,6 +46,27 @@ def test_corrects_clock_rate_even_when_pi_receipts_are_late():
     assert result['scale'] == pytest.approx(.9935, abs=2e-5)
     assert result['rate_difference_ppm'] == pytest.approx(-6500, abs=20)
     assert result['absolute_receipt_delay_known'] is False
+    assert result['receipt_residual_trend_suspect'] is False
+
+
+def test_clock_fit_flags_slow_residual_trend_instead_of_treating_it_as_jitter():
+    from experiments.handheld_mapping.time_alignment import fit_clock
+    mcu = 100000 + np.arange(6000, dtype=np.int64)*20
+    seconds = (mcu-mcu[0])*.001
+    delay = .060*np.sin(2*np.pi*seconds/120)
+    jitter = np.random.default_rng(7).uniform(0, .015, len(mcu))
+    pi = 3_000_000_000_000+np.rint((seconds+delay+jitter)*1e9).astype(np.int64)
+    result = fit_clock(mcu, pi)
+    assert result['receipt_residual_trend_suspect'] is True
+    assert result['receipt_block_median_range_ms'] > 30
+
+
+def test_short_clock_fit_does_not_claim_trend_was_checked():
+    from experiments.handheld_mapping.time_alignment import fit_clock
+    mcu = np.arange(100000, 102000, 20, dtype=np.int64)
+    pi = 3_000_000_000_000 + (mcu-mcu[0])*1_000_000
+    result = fit_clock(mcu, pi)
+    assert result['receipt_residual_trend_suspect'] is None
 
 
 def test_accepts_uint32_wrap_but_rejects_mcu_reset():
@@ -115,9 +136,11 @@ def test_pi_receipt_clock_is_bracketed_and_midpoint_used(monkeypatch):
     stamps = iter([1000, 1200])
     monkeypatch.setattr(pi_worker.time, 'monotonic_ns', lambda: next(stamps))
     monkeypatch.setattr(pi_worker.time, 'time_ns', lambda: 9_000_000)
+    monkeypatch.setattr(pi_worker.time, 'clock_gettime_ns', lambda _: 8000)
     result = pi_worker.receipt_clock()
     assert result == {'pi_receipt_monotonic_ns': 1100,
-                      'pi_receipt_realtime_ns': 9_000_000, 'pi_clock_sample_span_ns': 200}
+                      'pi_receipt_realtime_ns': 9_000_000, 'pi_clock_sample_span_ns': 200,
+                      'pi_receipt_monotonic_raw_ns': 8000}
 
 
 def make_run(path, stationary=False, legacy=False):
@@ -175,6 +198,23 @@ def test_static_run_reports_rejection_without_exporting_candidate(tmp_path):
     result=analyze_run(run)
     assert result['status']=='rejected'
     assert 'insufficient_motion' in result['reasons']
+    assert not (run/'imu_time_alignment/imu_alignment_candidate.csv').exists()
+
+
+def test_changing_clock_relation_blocks_candidate_export(tmp_path):
+    from experiments.handheld_mapping.time_alignment import analyze_run
+    run = make_run(tmp_path/'run')
+    path = run/'imu.jsonl'
+    rows = [json.loads(line) for line in path.open()]
+    for row in rows:
+        clock = row['clock']
+        seconds = (clock['mcu_t_ms']-100000)*.001
+        clock['mcu_t_ms'] += round(60*np.sin(2*np.pi*seconds/50))
+    path.write_text(''.join(json.dumps(row)+'\n' for row in rows))
+    result = analyze_run(run)
+    assert result['status'] == 'rejected'
+    assert 'clock_model_unstable' in result['reasons']
+    assert result['imu_time_correction_s'] is None
     assert not (run/'imu_time_alignment/imu_alignment_candidate.csv').exists()
 
 

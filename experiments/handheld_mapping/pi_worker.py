@@ -90,12 +90,14 @@ class CaptureMetrics:
 
 
 def receipt_clock() -> dict:
-    """Pi realtime을 monotonic 두 조회로 감싸 시계 변환 오차 상한을 남긴다."""
+    """Pi realtime·RAW를 monotonic 두 조회로 감싸 시계 변환 구간 폭을 남긴다."""
     before = time.monotonic_ns()
     realtime = time.time_ns()
+    raw = time.clock_gettime_ns(time.CLOCK_MONOTONIC_RAW)
     after = time.monotonic_ns()
     return {'pi_receipt_monotonic_ns': (before+after)//2,
-            'pi_receipt_realtime_ns': realtime, 'pi_clock_sample_span_ns': after-before}
+            'pi_receipt_realtime_ns': realtime, 'pi_clock_sample_span_ns': after-before,
+            'pi_receipt_monotonic_raw_ns': raw}
 
 
 def depth_parameters(fetch: Callable[[list[str]], list]) -> dict:

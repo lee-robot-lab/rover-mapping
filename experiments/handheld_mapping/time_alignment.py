@@ -51,10 +51,20 @@ def fit_clock(mcu_ms: np.ndarray, pi_ns: np.ndarray) -> dict:
         keep = (residual >= low) & (residual <= high)
     if not .9 < scale < 1.1:
         raise ValueError('implausible MCU/Pi clock rate')
+    # 20ms 제어 주기보다 큰 저주파 잔차 변화는 고정 affine 모델의 근거로 쓰지 않는다.
+    edges = np.linspace(x[0], x[-1], 9)
+    medians = []
+    for i, (low, high) in enumerate(zip(edges[:-1], edges[1:])):
+        mask = (x >= low) & ((x < high) if i < 7 else (x <= high))
+        medians.append(float(np.median(residual[mask])*1000) if mask.sum() >= 20 else None)
+    spread = float(max(medians)-min(medians)) if all(v is not None for v in medians) else None
     return {'scale': float(scale), 'offset_s': float(intercept),
             'mcu_origin_unwrapped_ms': int(unwrapped[0]), 'pi_origin_monotonic_ns': int(pi_ns[0]),
             'rate_difference_ppm': float((scale-1)*1e6),
             'receipt_fit_residual_p5_p50_p95_ms': (np.percentile(residual, [5, 50, 95])*1000).tolist(),
+            'receipt_block_medians_ms': medians, 'receipt_block_median_range_ms': spread,
+            'receipt_residual_trend_suspect': spread > 20 if spread is not None else None,
+            'receipt_trend_limit_ms': 20,
             'absolute_receipt_delay_known': False, 'unwrapped_ms': unwrapped}
 
 
@@ -310,6 +320,9 @@ def analyze_run(run: Path, output: Path | None = None) -> dict:
                       imu_n_median=(float(np.median([v for v in imu['imu_n'] if isinstance(v, (int, float))]))
                                     if any(isinstance(v, (int, float)) for v in imu['imu_n']) else None),
                       gyro_norm_std_rad_s=float(np.std(np.linalg.norm(imu['gyro'], axis=1))))
+        if clock['receipt_residual_trend_suspect']:
+            result.update(status='rejected', imu_time_correction_s=None,
+                          reasons=[*result['reasons'], 'clock_model_unstable'])
         if result['status'] == 'estimated':
             with (output/'imu_alignment_candidate.csv').open('x') as stream:
                 writer = csv.writer(stream)

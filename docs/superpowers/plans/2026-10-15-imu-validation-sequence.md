@@ -10,6 +10,8 @@
 
 **Spec:** `docs/experiments/2026-10-15-imu-time-alignment.md`와 사용자의 “순서대로 이제 나아가자”.
 
+후속 시차 차이 조사는 [조사 결과와 코드 보완](../../experiments/2026-10-15-imu-timing-forensics.md)에 기록했다. yaw의 구간별 clock 잔차 변화가53.689ms여서 새 guard에서 기각됐고, roll/pitch9.752ms는 진단 후보로 남았다. 다음 촬영부터 camera callback의 MONOTONIC_RAW를 함께 저장한다. 고정 offset·관성 융합은 여전히 보류한다.
+
 ## Global Constraints
 
 - 영상·IMU 원본과 지도는 노트북에 저장한다. Pi의 영구 저장공간에 기록을 추가하지 않는다.
