@@ -9,8 +9,8 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 orb_root=${1:?기존 native ORB_SLAM3 소스·라이브러리 경로가 필요합니다}
 prefix="$root/outputs/handheld_mapping/native_dependencies/pangolin"
 build="$root/outputs/handheld_mapping/orb3_comparison_build"
-if ! nm -D --defined-only "$orb_root/lib/libORB_SLAM3.so" | awk '$3 == "orbslam3_has_stereo_recovery_wait" {found=1} END {exit !found}'; then
-  echo 'native stereo recovery patch가 없습니다. orbslam3_stereo_recovery_wait.patch 적용 후 core를 재빌드하세요.' >&2
+if ! nm -D --defined-only "$orb_root/lib/libORB_SLAM3.so" | awk '$3 == "orbslam3_has_stereo_recovery_wait" {wait=1} $3 == "orbslam3_has_initial_stereo_relocalization" {initial=1} $3 == "orbslam3_has_safe_presave_observations" {save=1} END {exit !(wait && initial && save)}'; then
+  echo 'native mapping patch가 없거나 구버전입니다. 최신 stereo_recovery_wait 및 presave_observation_safety patch 적용 후 core를 재빌드하세요.' >&2
   exit 1
 fi
 cmake -S "$root/experiments/handheld_mapping/orbline/baseline" -B "$build" \

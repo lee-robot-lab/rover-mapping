@@ -2,6 +2,8 @@
 
 촬영 중 추적 손실로 지도가 분리되는 문제에 대해 노트북 입력 큐와 stereo 재위치 추정 대기를 수정했다. ORB-SLAM3 non-inertial `STEREO`를 유지하며, 보정 IMU는 동시 기록만 한다. 시계·축 검증과 관성 융합은 이번 범위에 없다.
 
+후속 갱신: 아래에 기록한 KF0-only 초기 지도 복구 실패는 [초기 지도 복구·저장 안전성 수정](2026-10-15-initial-recovery-and-save-safety.md)으로 보완했다. native 설치 patch는 최신 recovery와 PreSave safety까지5개를 사용한다. 아래 비교 수치는 앞선 버전의 검증 기록이다.
+
 ## 조사와 변경
 
 최근 `20261015_000854_aa8850`과 `20261015_001142_c10be6`은 live에서 지도 분리가 있었으나, 저장한 전체 IR의 offline 재생은 각각1081/1742쌍 모두 추적에 성공하고 map0을 유지했다. 첫 기록에는 Pi sender write 2467.7ms와 live 입력 공백이 있었고, 두 번째 손실 시작에서는 입력 간격이 정상15FPS였다. 전송 공백만으로 모든 손실을 설명하지 않으며 native의 비동기 local mapping도 영향을 줄 수 있다.

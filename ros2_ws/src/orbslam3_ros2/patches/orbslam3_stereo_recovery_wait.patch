@@ -1,6 +1,6 @@
 --- a/src/Tracking.cc
 +++ b/src/Tracking.cc
-@@ -33,6 +33,28 @@
+@@ -33,6 +33,29 @@
  
  #include <mutex>
  #include <chrono>
@@ -26,13 +26,16 @@
 +
 +// 설치한 native library가 설정 가능한 stereo 복구 대기를 지원하는지 확인한다.
 +extern "C" bool orbslam3_has_stereo_recovery_wait() { return true; }
++extern "C" bool orbslam3_has_initial_stereo_relocalization() { return true; }
  
  
  using namespace std;
-@@ -94,6 +116,15 @@
-         }
-     }
+@@ -92,6 +115,15 @@
  
+             }
+         }
++    }
++
 +    // 두 parameter loader 경로 모두 같은 stereo 설정을 적용한다. IMU의 5초는 유지한다.
 +    if(mSensor == System::STEREO)
 +    {
@@ -40,12 +43,10 @@
 +        if(!recoverySettings.isOpened())
 +            throw std::runtime_error("Cannot open stereo recovery settings file: " + strSettingPath);
 +        time_recently_lost = StereoRelocalizationWaitSeconds(recoverySettings);
-+    }
-+
+     }
+ 
      initID = 0; lastID = 0;
-     mbInitWith3KFs = false;
-     mnNumDataset = 0;
-@@ -1963,7 +1994,8 @@
+@@ -1963,7 +1995,8 @@
                      {
                          mState = LOST;
                      }
@@ -55,7 +56,7 @@
                      {
                          // cout << "KF in map: " << pCurrentMap->KeyFramesInMap() << endl;
                          mState = RECENTLY_LOST;
-@@ -2003,7 +2035,8 @@
+@@ -2003,7 +2036,8 @@
                          bOK = Relocalization();
                          //std::cout << "mCurrentFrame.mTimeStamp:" << to_string(mCurrentFrame.mTimeStamp) << std::endl;
                          //std::cout << "mTimeStampLost:" << to_string(mTimeStampLost) << std::endl;
@@ -65,3 +66,17 @@
                          {
                              mState = LOST;
                              Verbose::PrintMess("Track Lost...", Verbose::VERBOSITY_NORMAL);
+@@ -2422,6 +2456,13 @@
+ 
+         //cout << "Active map: " << mpAtlas->GetCurrentMap()->GetId() << endl;
+ 
++        // KF0은 LoopClosing queue에서 제외되므로 선택한 stereo 복구용 DB에 직접 등록한다.
++        // LocalMapping thread에 넘기기 전에 BoW를 완성해 중복 계산·등록을 피한다.
++        if(mSensor == System::STEREO && time_recently_lost > 3.0 && pKFini->mnId == 0)
++        {
++            pKFini->ComputeBoW();
++            mpKeyFrameDB->add(pKFini);
++        }
+         mpLocalMapper->InsertKeyFrame(pKFini);
+ 
+         mLastFrame = Frame(mCurrentFrame);

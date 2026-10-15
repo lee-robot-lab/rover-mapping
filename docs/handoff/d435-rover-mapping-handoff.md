@@ -6,6 +6,8 @@
 
 2026-10-15 추적 갱신: 노트북 FIFO256쌍·depth 대기 제거·최대5Hz 관측색 갱신·입력 지연을 포함한 stale 표시와 stereo15초 복구 대기를 추가했다. 기존 설치는 core patch와 runner를 재빌드한다. [복구 비교·검증 범위](../experiments/2026-10-15-tracking-recovery.md). IMU는 계속 동시 기록이며 관성 융합은 별도다.
 
+후속 수정: KF0의 복구 후보 등록과 `Map/MapPoint::PreSave`의 삭제 중 순회 안전성을 추가했다. native6개 실제 검사·종료 충돌 재현과 범위는 [후속 검증](../experiments/2026-10-15-initial-recovery-and-save-safety.md)을 따른다. native 설치 patch는5개이며 초기 복구 marker와 저장 안전성 marker도 요구한다.
+
 이 문서는 이번 D435/Pi/로버 작업의 현재 상태와 사용법을 합친 기준 문서다. 다른 PC로 옮기면 `/path/to/rover-mapping`와 Pi 경로를 실제 설치 위치로 바꾼다. 기존 날짜별 문서의 “실기 연결 전” 같은 표현은 작성 당시 상태이므로 최신 판단에는 이 문서와 연결된 2026-10-14 검증 자료를 사용한다.
 
 공유본 안내: `/path/to/rover-mapping`은 본인의 clone 경로로 교체한다. 날짜별 RUN/실제 runtime은 Git에 없으며 [별도 자산 안내](../data-assets.md)를 따른다. 처음 사용할 때는 [사용 설명서](../user-guide.md)를 먼저 읽는다.

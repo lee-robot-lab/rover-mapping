@@ -1,0 +1,78 @@
+--- a/src/Map.cc
++++ b/src/Map.cc
+@@ -21,6 +21,9 @@
+ 
+ #include<mutex>
+ 
++// 저장 시 관측 정리로 현재 원소가 제거되는 경로를 안전하게 순회한다.
++extern "C" bool orbslam3_has_safe_presave_observations() { return true; }
++
+ namespace ORB_SLAM3
+ {
+ 
+@@ -359,8 +362,10 @@
+ void Map::PreSave(std::set<GeometricCamera*> &spCams)
+ {
+     int nMPWithoutObs = 0;
+-    for(MapPoint* pMPi : mspMapPoints)
+-    {
++    for(auto it = mspMapPoints.begin(); it != mspMapPoints.end();)
++    {
++        // EraseObservation은 현재 point를 mspMapPoints에서 제거할 수 있다.
++        MapPoint* pMPi = *it++;
+         if(!pMPi || pMPi->isBad())
+             continue;
+ 
+@@ -390,13 +395,15 @@
+ 
+     // Backup of MapPoints
+     mvpBackupMapPoints.clear();
+-    for(MapPoint* pMPi : mspMapPoints)
+-    {
++    for(auto it = mspMapPoints.begin(); it != mspMapPoints.end();)
++    {
++        MapPoint* pMPi = *it++;
+         if(!pMPi || pMPi->isBad())
+             continue;
+ 
+-        mvpBackupMapPoints.push_back(pMPi);
+         pMPi->PreSave(mspKeyFrames,mspMapPoints);
++        if(!pMPi->isBad())
++            mvpBackupMapPoints.push_back(pMPi);
+     }
+ 
+     // Backup of KeyFrames
+--- a/src/MapPoint.cc
++++ b/src/MapPoint.cc
+@@ -193,7 +193,7 @@
+             mObservations.erase(pKF);
+ 
+             if(mpRefKF==pKF)
+-                mpRefKF=mObservations.begin()->first;
++                mpRefKF=mObservations.empty() ? nullptr : mObservations.begin()->first;
+ 
+             // If only 2 observations or less, discard point
+             if(nObs<=2)
+@@ -583,13 +583,17 @@
+     mBackupObservationsId1.clear();
+     mBackupObservationsId2.clear();
+     // Save the id and position in each KF who view it
+-    for(std::map<KeyFrame*,std::tuple<int,int> >::const_iterator it = mObservations.begin(), end = mObservations.end(); it != end; ++it)
+-    {
+-        KeyFrame* pKFi = it->first;
++    // EraseObservation은 SetBadFlag를 통해 남은 관측 전체를 비울 수도 있다.
++    const auto observations = mObservations;
++    for(const auto &observation : observations)
++    {
++        if(mObservations.empty())
++            break;
++        KeyFrame* pKFi = observation.first;
+         if(spKF.find(pKFi) != spKF.end())
+         {
+-            mBackupObservationsId1[it->first->mnId] = get<0>(it->second);
+-            mBackupObservationsId2[it->first->mnId] = get<1>(it->second);
++            mBackupObservationsId1[pKFi->mnId] = get<0>(observation.second);
++            mBackupObservationsId2[pKFi->mnId] = get<1>(observation.second);
+         }
+         else
+         {

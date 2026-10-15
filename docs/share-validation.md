@@ -1,5 +1,13 @@
 # 공유본 검증 — 2026-10-15
 
+## 초기 지도 복구·저장 안전성 추가 검증
+
+- 공유본 전체 **219 passed, 7 skipped (34.83초)**. [로그](evidence/initial-recovery-pytest.log). skip은 실제 촬영 기록/native 자산이 필요한 신규6개와 기존 선택 native 검사1개다.
+- 원본에서 신규 실제 native 검사 **6 passed (51.73초)**. [로그](evidence/initial-recovery-native-pytest.log). SIGSEGV 두 경로를 수정 전에 재현하고 같은 allocator 조건에서 수정 후 정상 종료했다. 유효 관측 유지 control과 저장 정리3개를 다시 실행해3통과를 확인했다.
+- 최신 core의1742쌍 offline replay는 map0·정상 저장/종료, tracking OK97.88%였다. 반복 부하·비동기 스케줄에 따른 차이가 있어 추적 손실 제거를 주장하지 않는다.
+- 고정 upstream source의5개 patch 적용과 기존 `51ece58` recovery patch 갱신을 확인했다. core marker3개 실제 로딩·구 core 거절을 확인했고 source hash117개를 대조했다.
+- [변경·한계·재현 방법](experiments/2026-10-15-initial-recovery-and-save-safety.md), [구조화된 검증 결과](evidence/20261015-initial-recovery-and-save-safety.json). 새 Pi 실기·GT 정확도·관성 융합은 별도다.
+
 ## Stereo 추적 복구 추가 검증
 
 - 공유본 전체 `pytest -q`: **219 passed, 1 skipped (34.54초)**. Git에서 제외한 선택 native 자산 검사는 skip이다. [실행 로그](evidence/tracking-recovery-pytest.log).

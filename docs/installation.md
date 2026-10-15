@@ -85,6 +85,8 @@ git -C external/ORB_SLAM3 apply --check "$MAPPING_REPO_DIR/ros2_ws/src/orbslam3_
 git -C external/ORB_SLAM3 apply "$MAPPING_REPO_DIR/ros2_ws/src/orbslam3_ros2/patches/orbslam3_atlas_load_cache.patch"
 git -C external/ORB_SLAM3 apply --check "$MAPPING_REPO_DIR/ros2_ws/src/orbslam3_ros2/patches/orbslam3_stereo_recovery_wait.patch"
 git -C external/ORB_SLAM3 apply "$MAPPING_REPO_DIR/ros2_ws/src/orbslam3_ros2/patches/orbslam3_stereo_recovery_wait.patch"
+git -C external/ORB_SLAM3 apply --check "$MAPPING_REPO_DIR/ros2_ws/src/orbslam3_ros2/patches/orbslam3_presave_observation_safety.patch"
+git -C external/ORB_SLAM3 apply "$MAPPING_REPO_DIR/ros2_ws/src/orbslam3_ros2/patches/orbslam3_presave_observation_safety.patch"
 
 for MAPPING_LIBRARY in DBoW2 g2o; do
   cmake -S "external/ORB_SLAM3/Thirdparty/$MAPPING_LIBRARY" \
@@ -104,7 +106,23 @@ bash tools/build_mapping_baseline.sh "$MAPPING_REPO_DIR/external/ORB_SLAM3"
 
 patch가 이미 적용됐으면 `apply --check`는 실패한다. 실패를 무시해 이중 적용하지 않고 `git diff`와 대상 marker를 확인한다. DBoW2/g2o/core/runner의 Eigen ABI와 arch 설정을 맞춘다. 빌드 메모리를 줄이기 위해 parallel1을 기준으로 한다.
 
-노트북 stereo 설정은 `Tracking.StereoRelocalizationWaitSeconds: 15.0`을 사용한다. 기존 설치도 네 번째 patch 적용 후 core와 비교 실행기를 재빌드해야 한다. 실행기는 `orbslam3_has_stereo_recovery_wait` marker가 없는 core를 거절하며, build wrapper도 이를 검사한다. 복구 대기 설정을 생략한 core 사용처는 기존 stereo 3초 정책을 유지한다. IMU 관성 융합의 정책은 바꾸지 않는다.
+노트북 stereo 설정은 `Tracking.StereoRelocalizationWaitSeconds: 15.0`을 사용한다. 네 번째 patch는 KF0의 복구 후보 등록까지 포함한 최신 버전을 사용하고, 다섯 번째 patch는 저장 중 관측 삭제의 iterator 안전성을 보완한다. 기존 설치도 core와 비교 실행기를 재빌드해야 한다. runner/build wrapper는 `orbslam3_has_stereo_recovery_wait`, `orbslam3_has_initial_stereo_relocalization`, `orbslam3_has_safe_presave_observations` marker를 검사한다. 복구 대기 설정을 생략한 core 사용처는 기존 stereo 3초 정책을 유지한다. IMU 관성 융합의 정책은 바꾸지 않는다.
+
+`51ece58`에서 설치한 네 번째 patch만 이미 적용된 경우에는 아래처럼 그 버전만 되돌린 뒤 최신 네 번째·다섯 번째 patch를 적용한다. 이 명령도 저장소 루트에서 실행한다. `--check`가 실패하면 중단하고 추가 소스 변경을 확인한다. 전체 checkout을 reset하지 않는다.
+
+```bash
+MAPPING_OLD_RECOVERY_PATCH=$(mktemp --suffix=.patch)
+git show 51ece58:ros2_ws/src/orbslam3_ros2/patches/orbslam3_stereo_recovery_wait.patch > "$MAPPING_OLD_RECOVERY_PATCH"
+git -C external/ORB_SLAM3 apply --reverse --check "$MAPPING_OLD_RECOVERY_PATCH"
+git -C external/ORB_SLAM3 apply --reverse "$MAPPING_OLD_RECOVERY_PATCH"
+rm "$MAPPING_OLD_RECOVERY_PATCH"
+git -C external/ORB_SLAM3 apply --check "$PWD/ros2_ws/src/orbslam3_ros2/patches/orbslam3_stereo_recovery_wait.patch"
+git -C external/ORB_SLAM3 apply "$PWD/ros2_ws/src/orbslam3_ros2/patches/orbslam3_stereo_recovery_wait.patch"
+git -C external/ORB_SLAM3 apply --check "$PWD/ros2_ws/src/orbslam3_ros2/patches/orbslam3_presave_observation_safety.patch"
+git -C external/ORB_SLAM3 apply "$PWD/ros2_ws/src/orbslam3_ros2/patches/orbslam3_presave_observation_safety.patch"
+cmake --build external/ORB_SLAM3/build --target ORB_SLAM3 --parallel 1
+bash tools/build_mapping_baseline.sh "$PWD/external/ORB_SLAM3"
+```
 
 ### 선택적 point+line
 

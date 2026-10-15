@@ -1,0 +1,62 @@
+{
+  "verified_on": "2026-10-15",
+  "initial_recovery": {
+    "real_prefix_pairs": 120,
+    "blank_pairs": 61,
+    "synthetic_gap_seconds": 4.066666666666666,
+    "return_pairs": 45,
+    "before_valid_return_pairs": 0,
+    "after_valid_return_pairs": 45,
+    "unknown_scene_valid_return_pairs": 0,
+    "timeout_blank_pairs": 241,
+    "timeout_first_return_map": "1",
+    "blank_valid_poses": 0
+  },
+  "presave_failure_before": {
+    "foreign_observation_exit": -11,
+    "missing_keyframe_exit": -11,
+    "gdb_stack": [
+      "std::_Rb_tree_increment",
+      "ORB_SLAM3::Map::PreSave"
+    ],
+    "allocator_perturb": 165,
+    "tcache_disabled": true
+  },
+  "native_regressions": {
+    "passed": 6,
+    "seconds": 51.73
+  },
+  "presave_positive_control_and_regressions": {
+    "passed": 3,
+    "seconds": 25.75
+  },
+  "shared_pytest": {
+    "passed": 219,
+    "skipped": 7,
+    "seconds": 34.83
+  },
+  "final_offline_replay": {
+    "frames": 1742,
+    "tracking_ok_fraction": 0.978760045924225,
+    "map_ids": [
+      0
+    ],
+    "process_ms_median": 15.3133225,
+    "process_ms_p95": 24.30973809999998,
+    "scope": "offline tracking-call elapsed time on executing machine; not Pi FPS or display latency",
+    "gt_accuracy_evaluated": false
+  },
+  "runtime": {
+    "installed_core_sha256": "68b6f0eb9c7cc059977f0e1de9bb6d068d70db0cd95edd8cd0d789bc369ea213",
+    "all_three_markers_loaded": true,
+    "old_runtime_rejected": true,
+    "old_runtime_error": "Stereo recovery patch missing or outdated: apply orbslam3_stereo_recovery_wait.patch and rebuild native runtime"
+  },
+  "fresh_five_patch_install_verified": true,
+  "previous_patch_upgrade_verified": true,
+  "inlier_thresholds_changed": false,
+  "imu_fused": false,
+  "current_pi_hardware_tested": false,
+  "gt_accuracy_evaluated": false,
+  "all_previous_real_shutdown_sigsegv_causes_verified": false
+}

@@ -25,7 +25,7 @@
     "experiments/handheld_mapping/requirements.txt": "0eb17f43ce7f3921946ff89bfeead6b5c0af69734ab5ebafe6f2fd8235e81a31",
     "experiments/handheld_mapping/app.py": "af9c16ad774b2d9a44ec2ec0018d2c6cf9211a30681446376f361d483d7f341b",
     "experiments/handheld_mapping/orbline/shutdown_wait.patch": "9e71d3dc0bb7b79f8e8b925ea4e2a60449e3183c287437f244363fc47ace2357",
-    "experiments/handheld_mapping/orbline/runner.cpp": "ea0c90b74be401d4cf480bfeeb413a4d547956294b43193c4abbc229b9966b71",
+    "experiments/handheld_mapping/orbline/runner.cpp": "af83203bbe3dd7157da51d2897cd30612ebbfb4e63083fcd8b67ac10bf3d1c1f",
     "experiments/handheld_mapping/orbline/CMakeLists.txt": "45478f2d5f7b2954f05b6506fa8df77c5a51428046fc8f155b46948233408d33",
     "experiments/handheld_mapping/orbline/compat.h": "972aaec3b9d6e0ff5aae9bb1371f456f56be1e667c8b4ae3c2e27fbbaecf0771",
     "experiments/handheld_mapping/orbline/opencv/cv.h": "f2f9de360a79400512925ab6f0c5d1ded5221573f99655f0ec9a43e212c85465",
@@ -99,7 +99,7 @@
     "tests/headless_mapping/test_replay.py": "b24743f7033fa769e3ebef0ea8a7d1f8454ecb052e59856d388b31caa4970388",
     "tests/headless_mapping/test_calibration_probe.py": "78ed816c6f37777c7837f69ee1ee9a83884228422ace9c582fe7c5e90dfd73d8",
     "tools/terrain_mapping.sh": "f9cc35ed2cbbac492124f00dc62bdfe824aa264321480724aaa3637dc1f4a4c5",
-    "tools/build_mapping_baseline.sh": "cd00ad1927c9322674bf19ac6523cc5915df691e110fd9862b15111925210731",
+    "tools/build_mapping_baseline.sh": "7d29ef136f7e0784163473e1df92dc1176bcc91bd2bbc2f90167f648e27fe2e5",
     "tools/handheld_mapping.sh": "207f68341c5b123b0bb44b7fe24c0e5de3c5e38547b723935aef4cdac51cda21",
     "tools/build_orbline.sh": "523c333ae95be9cd6f3c2ae60be7c8e238113aeb7db25d3e218447b0f6ba26d4",
     "tools/view_mapping.sh": "bd5d7b14dd3f8605e8d5874b8234a2df40707767d7d187d799da3ba59e5065d7",
@@ -114,9 +114,12 @@
     "tests/handheld_mapping/test_imu_capture.py": "2dd4c9b81f11242fb96b9442b8ba05883f64cc2c7ff3f551fed38927d724cce0",
     "tests/handheld_mapping/test_imu_session.py": "d87323eb227079db4c7432b8122f926b47217c135b4af902bd2b3cc3286ca1a4",
     "tools/mapping_imu_bridge.sh": "f803fd546375b5291c3840b6e0be3b179e22c2620c5f784bf561338b70abe815",
-    "ros2_ws/src/orbslam3_ros2/patches/orbslam3_stereo_recovery_wait.patch": "355b17091e48c1d00655b7c8909d711d3145e5e77ff5868761e244ecf16dafa3",
+    "ros2_ws/src/orbslam3_ros2/patches/orbslam3_stereo_recovery_wait.patch": "eeb8fda10871b03d7463868c58d23dcf04d8449452d24255bfea4fefc383aa2c",
     "tests/handheld_mapping/test_stereo_recovery_patch.py": "b29338d2e2c6648f75837a5f0ccd2985b16c3a7449f6be67d7ad4d0ba6347660",
-    "tests/handheld_mapping/test_tracking_settings.py": "35894e2b0ff3e05425ac59df4f88baad778aa4dedb2c9a2e829aa365cef68550"
+    "tests/handheld_mapping/test_tracking_settings.py": "35894e2b0ff3e05425ac59df4f88baad778aa4dedb2c9a2e829aa365cef68550",
+    "ros2_ws/src/orbslam3_ros2/patches/orbslam3_presave_observation_safety.patch": "84be235052086570c83b4cbf1bd8fdf0cfdaa351d8a9e9678bcc4354515407d2",
+    "tests/handheld_mapping/test_native_initial_recovery.py": "46bf2975a9ff5d560f47ee68c3950395d149fbb3fe2a284547363163b7a6a324",
+    "tests/handheld_mapping/native/presave_probe.cpp": "f41353ba3e82804c5bd5a957f06c00a68f6dfd87b1b673d2a3f40e305f125ff3"
   },
   "intentional_share_only_changes": [
     {
@@ -178,6 +181,21 @@
       ],
       "native_binaries_included": false,
       "recorded_camera_data_included": false
+    },
+    {
+      "description": "Register initial stereo KF0 for existing-map relocalization; prevent iterator invalidation and empty reference access during Atlas observation cleanup",
+      "files": [
+        "experiments/handheld_mapping/orbline/runner.cpp",
+        "tools/build_mapping_baseline.sh",
+        "ros2_ws/src/orbslam3_ros2/patches/orbslam3_stereo_recovery_wait.patch",
+        "ros2_ws/src/orbslam3_ros2/patches/orbslam3_presave_observation_safety.patch",
+        "tests/handheld_mapping/test_native_initial_recovery.py",
+        "tests/handheld_mapping/native/presave_probe.cpp",
+        "docs/experiments/2026-10-15-initial-recovery-and-save-safety.md"
+      ],
+      "inlier_thresholds_changed": false,
+      "imu_fused": false,
+      "native_binaries_included": false
     }
   ]
 }
