@@ -35,6 +35,10 @@
 - [x] 노트북 `outputs/handheld_mapping/20261015_imu_validation/repeatability_summary.json`과 README에 결과 보존.
 - [ ] 새 callback clock pair를 가진 회전 기록을 같은 부팅에서2개 이상 추가하고, 다른 부팅에서1개 이상 추가.
 
+수동 회전 후속 RUN `20261015_215301_23dbf4`를 추가했다. 초반 MCU reset이1회 있어 전체 RUN 시간 정렬은 기각했다. reset 전76개 accepted를 제외하고 이후segment1의4436샘플/112.429초만 별도 분석해 -40ms/상관0.99531 후보를 얻었다. 이전 -45ms와5ms 차이지만, half 후보는 -35/-50ms이고 clock 수신 잔차 p5/p95가 약-28.9/+33.8ms라 고정 offset 승인은 보류한다. 원본과 전체 기각 결과를 유지했고 후보 CSV는 내보내지 않았다.
+
+이 RUN은 영상 좌우/depth 각1565장, queue 누락0, offline ORB1565쌍 전부 추적·map0 유지, TSDF48keyframe 융합이었다. 함께 기록한 camera metadata는 각stream1409개이며 전부 해당 원본 header와 매칭됐다. domain은 global_time, 노출 중앙값3.212ms/p954.067ms였다. 모든 IMU event의 `poll_only=true`, `selected_cmd=[0,0,0]`를 확인했다. 회전은 yaw 위주여서 roll/pitch 검증은 아직 필요하다. 자세한 파일은 노트북 `outputs/handheld_mapping/20261015_hand_rotation_repeat/README.md`에 있다.
+
 새 기록에서는 5초 정지 후 속도·방향·간격이 다른 회전을 60~90초 수행하고 마지막5초 정지한다. 사용자가 로버를 먼저 정지한 뒤 종료한다. 비교에는 각 half의 상관·peak와 clock rate·잔차를 함께 사용한다. 후보가10ms 넘게 달라지면 고정 offset 적용을 보류하고 metadata와 MCU timing을 먼저 조사한다. 이10ms는 조사 기준이며 동기화 정확도의 보증이 아니다.
 
 기존 분석기는 다음 명령을 사용한다. 이미 있는 출력은 덮어쓰지 않고 `--output`으로 새 경로를 지정한다.
