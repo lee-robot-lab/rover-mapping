@@ -24,7 +24,7 @@ from experiments.handheld_mapping.storage import atomic_json
 
 
 class LiveMapper:
-    """작은 최신 입력 큐로 추적하며 실패해도 raw 수집과 독립적으로 종료하는 노트북 worker."""
+    """bounded FIFO로 연속 IR을 추적하며 최신 시각화와 raw 기록을 분리하는 worker."""
 
     def __init__(self, run: Path, command: list[str] | None = None, result_timeout: float = 30.,
                  demo: bool = False) -> None:
@@ -40,6 +40,8 @@ class LiveMapper:
         self.error = None
         self.processed = self.no_depth = 0
         self.tracking_state = -1
+        self.pose_valid = False
+        self.skipped_visualizations = 0
         self.lag_ms = self.process_ms = 0.
         self.last_result_at = 0.
         self.result_timeout = result_timeout
@@ -90,14 +92,16 @@ class LiveMapper:
             self._set_overlay(header['stamp_ns'],str(self.run/'raw/left'/f"{header['stamp_ns']}.png"),pose,depth)
             self.processed += 1
             self.tracking_state = 2
+            self.pose_valid = True
             self.last_result_at = time.monotonic()
 
     def snapshot(self) -> dict:
         with self.lock:
             result = {**self.grid.snapshot(), 'error':self.error, 'processed':self.processed,
                       'tracking_state':self.tracking_state, 'no_depth':self.no_depth,
+                      'pose_valid':self.pose_valid, 'skipped_visualizations':self.skipped_visualizations,
                       'lag_ms':self.lag_ms, 'process_ms':self.process_ms,
-                      'stale':not self.last_result_at or time.monotonic()-self.last_result_at > 1.,
+                      'stale':not self.last_result_at or self.lag_ms/1000+time.monotonic()-self.last_result_at > 1.,
                       'map_changes':self.map_changes, 'finished':self.finished, 'synthetic':self.demo}
             result.update(overlay=self.overlay.copy() if self.overlay is not None else None,
                           overlay_original=self.overlay_original.copy() if self.overlay_original is not None else None,
@@ -188,35 +192,49 @@ class LiveMapper:
                     raise ValueError('invalid live processing time')
                 pose_received_at = time.monotonic()
                 frame = self.mailbox.depth_for(stamp)
-                end = time.monotonic()+.15
-                while frame is None and time.monotonic()<end and not self.mailbox.closed:
-                    time.sleep(.005)
-                    frame = self.mailbox.depth_for(stamp)
                 with self.lock:
-                    depth = None
                     self.processed += 1
                     self.tracking_state = state
+                    self.pose_valid = state == 2 and map_id >= 0
                     self.process_ms = process_ms
                     self.last_result_at = pose_received_at
                     self.lag_ms = (self.last_result_at-pair['offered_at'])*1000
-                    if state == 2 and map_id >= 0:
+                    if self.pose_valid:
+                        map_changed = self.grid.map_id != map_id
                         if self.grid.map_id is not None and self.grid.map_id != map_id:
                             self._save_grid()
                             self.map_changes += 1
                         self.grid.update_pose(map_id,pose)
+                        if map_changed:
+                            self.overlay = self.overlay_original = None
+                            self.overlay_stamp_ns = None
+                            self.overlay_error = None
+                            self.overlay_generated_at = 0.
                         if frame is None:
                             self.no_depth += 1
+                        if map_changed or time.monotonic()-self.overlay_generated_at >= .2:
+                            depth = None
+                            if frame is not None:
+                                depth = cv2.imread(frame['path'], cv2.IMREAD_UNCHANGED)
+                                if depth is None: raise ValueError('실시간 depth 파일 읽기 실패')
+                                self.grid.update(map_id,pose,depth,self.info)
+                            self._set_overlay(stamp,pair['left'],pose,depth)
                         else:
-                            depth = cv2.imread(frame['path'], cv2.IMREAD_UNCHANGED)
-                            if depth is None: raise ValueError('실시간 depth 파일 읽기 실패')
-                            self.grid.update(map_id,pose,depth,self.info)
-                    self._set_overlay(stamp,pair['left'],pose if state == 2 and map_id >= 0 else None,depth)
+                            self.skipped_visualizations += 1
+                    else:
+                        # 이전 격자·경로는 남기되 손실 프레임을 유효 관측처럼 표시하지 않는다.
+                        self.overlay = self.overlay_original = None
+                        self.overlay_stamp_ns = stamp
+                        self.overlay_error = None
+                        self.overlay_generated_at = 0.
             self.process.stdin.close()
             code = self.process.wait(timeout=20)
             if code != 0:
                 raise RuntimeError(f'실시간 ORB 종료: exit={code}')
         except Exception as error:
-            with self.lock: self.error = str(error)
+            with self.lock:
+                self.error = str(error)
+                self.pose_valid = False
         finally:
             if reader is not None: reader.close()
             if not self.process.stdin.closed:
@@ -273,7 +291,7 @@ class LiveMapper:
                 self.finished = True
             self._write_summary()
             return
-        self.thread.join(timeout=8)
+        self.thread.join(timeout=20)
         if self.thread.is_alive():
             with self.lock: self.error = self.error or '실시간 ORB 종료 시간 초과'
             if self.process.poll() is None: os.killpg(self.process.pid, signal.SIGTERM)

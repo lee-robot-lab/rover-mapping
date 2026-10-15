@@ -156,3 +156,36 @@ def test_overlay_frame_pairing_stale_fallback_and_empty_session_clear():
     assert window.preview.pixmap() is None or window.preview.pixmap().isNull()
     assert window.overlay_preview.pixmap() is None or window.overlay_preview.pixmap().isNull()
     window.close()
+
+
+def test_recovery_message_retains_previous_coverage_and_uses_current_camera():
+    import numpy as np
+    from types import SimpleNamespace
+    from PyQt5.QtWidgets import QApplication
+    from experiments.handheld_mapping.app import MappingWindow
+    from experiments.handheld_mapping.controller import Session
+    from experiments.handheld_mapping.coverage import CoverageGrid
+    app = QApplication.instance() or QApplication([])
+    session = Session()
+    session.preview = np.full((8,8),100,np.uint8)
+    grid = CoverageGrid()
+    grid.update_pose(0,np.eye(4))
+    snapshot = grid.snapshot()
+    snapshot.update(error=None,stale=False,tracking_state=3,processed=12,finished=False,
+                    overlay_original=np.full((8,8),50,np.uint8),
+                    overlay=np.full((8,8,3),[53,175,133],np.uint8))
+    session.live = SimpleNamespace(snapshot=lambda:snapshot)
+    session.update(capture_mode='sensors_only')
+    window = MappingWindow(session)
+    try:
+        window.show()
+        app.processEvents()
+        window.refresh()
+        assert '기존 지도 복구 중 · 정지해서 이전 장면 보기' in window.metrics.text()
+        assert '기존 지도 복구 중' in window.overlay_note.text()
+        assert window.coverage.state['map_id'] == 0
+        assert window.coverage.state['path'] == [(0.,0.)]
+        image = window.preview.pixmap().toImage()
+        assert image.pixelColor(image.width()//2,image.height()//2).red() == 100
+    finally:
+        window.close()

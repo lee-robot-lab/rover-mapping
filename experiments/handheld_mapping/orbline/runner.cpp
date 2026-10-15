@@ -17,6 +17,11 @@
 #include <sstream>
 #include <stdexcept>
 
+#ifdef ROVER_POINT_BASELINE
+// 오래된 runtime이 복구 설정을 조용히 무시하지 않도록 실행 시 지원을 확인한다.
+extern "C" bool orbslam3_has_stereo_recovery_wait() __attribute__((weak));
+#endif
+
 int main(int argc, char** argv) {
     if (argc != 6) { std::cerr << "ORBvoc LSDvoc yaml pairs.tsv output_dir\n"; return 2; }
     try {
@@ -25,6 +30,12 @@ int main(int argc, char** argv) {
         if (live) throw std::runtime_error("stdin live mode requires point baseline");
 #endif
 #ifdef ROVER_POINT_BASELINE
+        {
+            const cv::FileStorage settings(argv[3], cv::FileStorage::READ);
+            if (!settings["Tracking.StereoRelocalizationWaitSeconds"].empty()
+                && (!orbslam3_has_stereo_recovery_wait || !orbslam3_has_stereo_recovery_wait()))
+                throw std::runtime_error("Stereo recovery patch missing: apply orbslam3_stereo_recovery_wait.patch and rebuild native runtime");
+        }
         ORB_SLAM3::System slam(argv[1], argv[3], ORB_SLAM3::System::STEREO, false);
 #else
         ORB_SLAM3::System slam(argv[1], argv[2], argv[3], ORB_SLAM3::System::STEREO, false);

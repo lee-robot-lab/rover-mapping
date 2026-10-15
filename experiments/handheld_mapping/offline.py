@@ -59,7 +59,8 @@ def write_settings(run: Path, folder: Path) -> Path:
     module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(module)
     settings = folder/'settings.yaml'
-    settings.write_text(module.orb_yaml(calibration, False))
+    settings.write_text(module.orb_yaml(calibration, False)
+                        + 'Tracking.StereoRelocalizationWaitSeconds: 15.0\n')
     return settings
 
 

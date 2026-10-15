@@ -63,7 +63,7 @@ def test_invalid_pose_and_grid_limits_are_rejected():
     assert grid.snapshot()['observed_cells'] == 0
 
 
-def test_exact_pairing_bounded_latest_queue_and_depth_tolerance(tmp_path):
+def test_exact_pairing_preserves_consecutive_fifo_and_depth_tolerance(tmp_path):
     from experiments.handheld_mapping.coverage import StereoMailbox
     box = StereoMailbox(tmp_path)
     def offer(side,stamp): box.offer({'stream':side,'stamp_ns':stamp})
@@ -71,19 +71,49 @@ def test_exact_pairing_bounded_latest_queue_and_depth_tolerance(tmp_path):
     assert box.take(.001) is None
     for stamp in range(200,210):
         offer('left',stamp); offer('right',stamp); offer('depth',stamp+1)
-    assert box.snapshot()['queued_pairs'] == 2
-    assert box.snapshot()['dropped_pairs'] == 8
+    assert box.snapshot()['queued_pairs'] == 10
+    assert box.snapshot()['dropped_pairs'] == 0
     pair = box.take(.001)
-    assert pair['stamp_ns'] == 208
-    assert pair['left'] == str(tmp_path/'raw/left/208.png')
+    assert pair['stamp_ns'] == 200
+    assert pair['left'] == str(tmp_path/'raw/left/200.png')
     assert box.depth_for(208)['stamp_ns'] == 208
     assert box.depth_for(3_000_000) is None
-    for stamp in range(1000,1100): offer('left',stamp); offer('depth',stamp)
-    assert box.snapshot()['unmatched_frames'] <= 16
-    assert box.snapshot()['depth_metadata'] == 32
     box.close()
-    assert box.take(.001)['stamp_ns'] == 209
+    assert [box.take(.001)['stamp_ns'] for _ in range(9)] == [201,202,203,204,205,206,207,208,209]
     assert box.take(.001) is None
+
+
+def test_fifo_overflow_drops_new_pairs_and_unmatched_metadata_stays_bounded(tmp_path):
+    from experiments.handheld_mapping.coverage import StereoMailbox
+    box = StereoMailbox(tmp_path)
+    for stamp in range(1,261):
+        for side in ('left','right'):
+            box.offer({'stream':side,'stamp_ns':stamp})
+    state = box.snapshot()
+    assert state['queued_pairs'] == state['pair_limit'] == 256
+    assert state['dropped_pairs'] == 4
+    assert state['overflow_policy'] == 'drop_new'
+    assert [box.take(.001)['stamp_ns'] for _ in range(256)] == list(range(1,257))
+    for stamp in range(1000,1600):
+        box.offer({'stream':'left','stamp_ns':stamp})
+        box.offer({'stream':'right','stamp_ns':stamp+1000})
+        box.offer({'stream':'depth','stamp_ns':stamp})
+    state = box.snapshot()
+    assert state['unmatched_frames'] == 512
+    assert state['unmatched_dropped'] == 688
+    assert state['depth_metadata'] == 512
+    assert box.depth_for(1599)['stamp_ns'] == 1599
+
+
+def test_depth_tolerance_includes_boundary_and_excludes_older_metadata(tmp_path):
+    from experiments.handheld_mapping.coverage import StereoMailbox
+    box = StereoMailbox(tmp_path)
+    box.offer({'stream':'depth','stamp_ns':10_000_000})
+    assert box.depth_for(12_000_000)['stamp_ns'] == 10_000_000
+    assert box.depth_for(12_000_001) is None
+    for stamp in range(20_000_000, 20_000_512):
+        box.offer({'stream':'depth','stamp_ns':stamp})
+    assert box.depth_for(10_000_000) is None
 
 
 def fake_live_command(folder, delay=0., die=False, map_change=False):
@@ -129,11 +159,251 @@ def test_live_result_arrives_before_eof_and_slow_native_does_not_block_offers(tm
         while mapper.snapshot()['processed'] == 0 and time.monotonic()<deadline: time.sleep(.01)
         state = mapper.snapshot()
         assert state['processed'] > 0 and mapper.process.poll() is None
-        assert state['dropped_pairs'] > 0
-        assert state['observed_cells'] > 0
+        assert state['dropped_pairs'] == 0
     finally: mapper.finish()
     assert mapper.process.poll() == 0
     assert not mapper.thread.is_alive()
+    assert mapper.snapshot()['processed'] == 79
+    assert mapper.snapshot()['observed_cells'] > 0
+    import csv
+    with (run/'orb_live/live_poses.csv').open() as source:
+        assert [int(row['stamp_ns']) for row in csv.DictReader(source)] == list(range(1,80))
+
+
+def test_missing_depth_never_delays_ir_tracking_and_finish_drains_fifo(tmp_path):
+    import time
+    from experiments.handheld_mapping.live import LiveMapper
+    run = live_run(tmp_path)
+    mapper = LiveMapper(run,command=fake_live_command(run/'orb_live'),result_timeout=2.)
+    try:
+        for stamp in range(1,21):
+            for side in ('left','right'):
+                mapper.offer({'stream':side,'stamp_ns':stamp})
+        deadline = time.monotonic()+1.
+        while mapper.snapshot()['processed'] < 20 and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert mapper.snapshot()['processed'] == 20, mapper.snapshot()
+        assert mapper.snapshot()['no_depth'] == 20
+    finally:
+        mapper.finish()
+    assert mapper.snapshot()['queued_pairs'] == 0
+    assert mapper.snapshot()['error'] is None
+
+
+def test_backlog_tracks_all_ir_and_throttles_visualization(tmp_path):
+    from experiments.handheld_mapping.live import LiveMapper
+    run = live_run(tmp_path)
+    mapper = LiveMapper(run,command=fake_live_command(run/'orb_live',delay=.02),result_timeout=2.)
+    try:
+        for stamp in range(1,21):
+            for side in ('left','right','depth'):
+                mapper.offer({'stream':side,'stamp_ns':stamp})
+    finally:
+        mapper.finish()
+    snapshot = mapper.snapshot()
+    assert snapshot['error'] is None, snapshot
+    assert snapshot['processed'] == 20
+    assert 0 < snapshot['skipped_visualizations'] < 19
+    assert snapshot['observed_cells'] > 0
+
+
+def test_sustained_backlog_updates_overlay_and_coverage_without_skipping_ir(tmp_path):
+    import cv2
+    import time
+    from experiments.handheld_mapping.live import LiveMapper
+    run = live_run(tmp_path)
+    for stamp in range(1,71):
+        cv2.imwrite(str(run/f'raw/left/{stamp}.png'),np.full((8,8),stamp,np.uint8))
+        if stamp > 1:
+            cv2.imwrite(str(run/f'raw/depth/{stamp}.png'),np.full((8,8),1500,np.uint16))
+    mapper = LiveMapper(run,command=fake_live_command(run/'orb_live',delay=.03),result_timeout=2.)
+    try:
+        for side in ('left','right','depth'):
+            mapper.offer({'stream':side,'stamp_ns':1})
+        deadline = time.monotonic()+2.
+        while mapper.snapshot()['processed'] < 1 and time.monotonic() < deadline:
+            time.sleep(.005)
+        first = mapper.snapshot()
+        assert first['overlay_stamp_ns'] == 1
+        advances = []
+        previous = 1
+        for stamp in range(2,71):
+            for side in ('left','right','depth'):
+                mapper.offer({'stream':side,'stamp_ns':stamp})
+            current = mapper.snapshot()
+            if current['overlay_stamp_ns'] != previous:
+                previous = current['overlay_stamp_ns']
+                advances.append((time.monotonic(),previous))
+            time.sleep(.01)
+        state = mapper.snapshot()
+        assert state['queued_pairs'] > 0 and state['dropped_pairs'] == 0
+        assert len(advances) >= 2, state
+        assert all(stamp > 1 for _,stamp in advances)
+        assert all(later[0]-earlier[0] >= .16 for earlier,later in zip(advances,advances[1:]))
+        assert state['observed_cells'] > first['observed_cells']
+    finally:
+        mapper.finish()
+    assert mapper.snapshot()['processed'] == 70
+    assert mapper.snapshot()['error'] is None
+
+
+def test_old_queued_input_is_stale_despite_recent_result_and_ui_shows_current_raw(tmp_path):
+    import cv2
+    import time
+    from PyQt5.QtWidgets import QApplication
+    from experiments.handheld_mapping.app import MappingWindow
+    from experiments.handheld_mapping.controller import Session
+    from experiments.handheld_mapping.live import LiveMapper
+    run = live_run(tmp_path)
+    for stamp in range(1,13):
+        cv2.imwrite(str(run/f'raw/left/{stamp}.png'),np.full((8,8),50,np.uint8))
+    mapper = LiveMapper(run,command=fake_live_command(run/'orb_live',delay=.2),result_timeout=2.)
+    window = None
+    try:
+        for stamp in range(1,13):
+            for side in ('left','right','depth'):
+                mapper.offer({'stream':side,'stamp_ns':stamp})
+        deadline = time.monotonic()+3.
+        while mapper.snapshot()['processed'] < 6 and time.monotonic() < deadline:
+            time.sleep(.01)
+        state = mapper.snapshot()
+        assert state['processed'] >= 6 and state['lag_ms'] > 1000, state
+        assert time.monotonic()-mapper.last_result_at < .5
+        assert state['pose_valid'] is True
+        assert state['overlay_original'] is not None
+        assert state['stale'] is True
+        app = QApplication.instance() or QApplication([])
+        session = Session()
+        session.preview = np.full((8,8),222,np.uint8)
+        session.live = mapper
+        window = MappingWindow(session)
+        window.show()
+        app.processEvents()
+        window.refresh()
+        image = window.preview.pixmap().toImage()
+        assert image.pixelColor(image.width()//2,image.height()//2).red() == 222
+    finally:
+        if window is not None:
+            window.close()
+        mapper.finish()
+
+
+def test_recovery_rows_keep_previous_grid_without_publishing_invalid_pose(tmp_path):
+    import sys
+    import time
+    from experiments.handheld_mapping.live import LiveMapper
+    run = live_run(tmp_path)
+    code = """import sys
+from pathlib import Path
+out=Path(sys.argv[1])
+with (out/'live_poses.csv').open('w',buffering=1) as f:
+ f.write('stamp_ns,state,map_id,process_ms,'+','.join('m%d%d'%(i,j) for i in range(4) for j in range(4))+'\\n')
+ for line in sys.stdin:
+  stamp=int(line.split('\\t')[0]); state=3 if stamp==2 else 2
+  pose=['nan']*16 if state==3 else [str(stamp/10 if (i,j)==(0,3) else int(i==j)) for i in range(4) for j in range(4)]
+  f.write(str(stamp)+','+str(state)+',0,1,'+','.join(pose)+'\\n')
+"""
+    mapper = LiveMapper(run,command=[sys.executable,'-u','-c',code,str(run/'orb_live')],result_timeout=2.)
+
+    def process(stamp: int) -> dict:
+        for side in ('left','right','depth'):
+            mapper.offer({'stream':side,'stamp_ns':stamp})
+        deadline = time.monotonic()+2.
+        while mapper.snapshot()['processed'] < stamp and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert mapper.snapshot()['processed'] == stamp, mapper.snapshot()
+        return mapper.snapshot()
+
+    try:
+        before = process(1)
+        recovering = process(2)
+        assert recovering['tracking_state'] == 3
+        assert recovering['pose_valid'] is False
+        assert recovering['map_id'] == before['map_id'] == 0
+        assert recovering['camera'] == before['camera']
+        assert recovering['path'] == before['path']
+        assert recovering['observed_cells'] == before['observed_cells'] > 0
+        assert recovering['overlay'] is None and recovering['overlay_original'] is None
+        restored = process(3)
+        assert restored['pose_valid'] is True
+        assert restored['map_changes'] == 0
+        assert restored['path'] == [(.1,0.),(.3,0.)]
+    finally:
+        mapper.finish()
+
+
+def test_shutdown_drains_full_bounded_queue_even_when_processing_exceeds_eight_seconds(tmp_path):
+    from experiments.handheld_mapping.live import LiveMapper
+    run = live_run(tmp_path)
+    mapper = LiveMapper(run,command=fake_live_command(run/'orb_live',delay=.035),result_timeout=2.)
+    for stamp in range(1,257):
+        for side in ('left','right'):
+            mapper.offer({'stream':side,'stamp_ns':stamp})
+    mapper.finish()
+    state = mapper.snapshot()
+    assert state['error'] is None, state
+    assert state['processed'] == 256
+    assert state['dropped_pairs'] == 0 and state['queued_pairs'] == 0
+    assert mapper.process.poll() == 0
+    assert not mapper.thread.is_alive()
+
+
+def test_runtime_native_exit_invalidates_current_pose_but_retains_last_known_grid(tmp_path):
+    import sys
+    import time
+    from experiments.handheld_mapping.live import LiveMapper
+    run = live_run(tmp_path)
+    code = """import sys
+from pathlib import Path
+with (Path(sys.argv[1])/'live_poses.csv').open('w',buffering=1) as f:
+ f.write('stamp_ns,state,map_id,process_ms,'+','.join('m%d%d'%(i,j) for i in range(4) for j in range(4))+'\\n')
+ stamp=sys.stdin.readline().split('\\t')[0]
+ f.write(stamp+',2,0,1,'+','.join(str(int(i==j)) for i in range(4) for j in range(4))+'\\n')
+sys.exit(3)
+"""
+    mapper = LiveMapper(run,command=[sys.executable,'-u','-c',code,str(run/'orb_live')],result_timeout=2.)
+    try:
+        for side in ('left','right','depth'):
+            mapper.offer({'stream':side,'stamp_ns':1})
+        deadline = time.monotonic()+2.
+        while not mapper.snapshot()['error'] and time.monotonic() < deadline:
+            time.sleep(.01)
+        state = mapper.snapshot()
+        assert state['error'] and state['processed'] == 1, state
+        assert state['pose_valid'] is False
+        assert state['camera'] == (0.,0.,0.)
+    finally:
+        mapper.finish()
+
+
+def test_map_change_discards_previous_map_overlay_while_new_map_backlog_drains(tmp_path):
+    import cv2
+    import time
+    from experiments.handheld_mapping.live import LiveMapper
+    run = live_run(tmp_path)
+    cv2.imwrite(str(run/'raw/left/1.png'),np.full((8,8),50,np.uint8))
+    mapper = LiveMapper(run,command=fake_live_command(run/'orb_live',delay=.1,map_change=True),result_timeout=2.)
+
+    def wait_processed(count: int) -> dict:
+        deadline = time.monotonic()+2.
+        while mapper.snapshot()['processed'] < count and time.monotonic() < deadline:
+            time.sleep(.005)
+        return mapper.snapshot()
+
+    try:
+        for side in ('left','right','depth'):
+            mapper.offer({'stream':side,'stamp_ns':1})
+        first = wait_processed(1)
+        assert first['overlay_original'] is not None
+        for stamp in (2,3):
+            for side in ('left','right','depth'):
+                mapper.offer({'stream':side,'stamp_ns':stamp})
+        transition = wait_processed(2)
+        assert transition['processed'] == 2 and transition['map_id'] == 421
+        assert transition['overlay_original'] is None
+        assert transition['overlay'] is None
+    finally:
+        mapper.finish()
 
 
 def test_failed_native_is_reported_and_finish_does_not_leave_child(tmp_path):

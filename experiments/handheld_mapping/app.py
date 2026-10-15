@@ -226,9 +226,11 @@ class MappingWindow(QWidget):
         self.status_label.setText(label)
         elapsed = int(status["elapsed_s"])
         counts = status.get("counts", {})
-        tracking = {2: "정상", 3: "일시 손실", 4: "손실"}.get(status.get("tracking_state"), "대기")
+        recovery = '기존 지도 복구 중 · 정지해서 이전 장면 보기'
+        tracking_labels = {2:'정상',3:recovery,4:'손실'}
+        tracking = tracking_labels.get(status.get("tracking_state"), "대기")
         if status.get('capture_mode') == 'sensors_only':
-            tracking = ({2:'정상',3:'일시 손실',4:'손실'}.get(live.get('tracking_state'),'준비')
+            tracking = (tracking_labels.get(live.get('tracking_state'),'준비')
                         if live and not live.get('error') else '노트북 후처리')
         self.metrics.setText(f"시간 {elapsed//60:02d}:{elapsed%60:02d}  |  저장 IR {counts.get('left', 0)}/{counts.get('right', 0)}"
                              f" · depth {counts.get('depth', 0)}  |  수신 {status.get('left_receipt_fps', 0):.1f} FPS"
@@ -242,7 +244,7 @@ class MappingWindow(QWidget):
         overlay = None
         note = '관측 횟수 오버레이 · 노랑 적음 / 초록 여러 시점'
         if live and not live.get('error') and (not live.get('stale') or live.get('finished')):
-            if live.get('overlay_original') is not None:
+            if live.get('tracking_state') == 2 and live.get('overlay_original') is not None:
                 image = live['overlay_original']
             if live.get('tracking_state') == 2 and not live.get('overlay_error'):
                 overlay = live.get('overlay')
@@ -254,6 +256,8 @@ class MappingWindow(QWidget):
                 note += ' · 촬영 종료 프레임'
         elif live:
             note = '오버레이 색 없음 · '+('실시간 추적 오류' if live.get('error') else '최신 위치 대기')
+        if live and not live.get('error') and live.get('tracking_state') == 3:
+            note = recovery+' · 이전 촬영 범위 유지'
         self.overlay_note.setText(note)
         if image is not None:
             h, w = image.shape

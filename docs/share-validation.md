@@ -1,4 +1,11 @@
-# 공유본 검증 — 2026-10-14
+# 공유본 검증 — 2026-10-15
+
+## Stereo 추적 복구 추가 검증
+
+- 공유본 전체 `pytest -q`: **219 passed, 1 skipped (34.54초)**. Git에서 제외한 선택 native 자산 검사는 skip이다. [실행 로그](evidence/tracking-recovery-pytest.log).
+- 원본 매핑 범위219개 통과, pyflakes·bash 문법·Git whitespace 검사 통과. FIFO backlog 중 화면 갱신과 입력 지연에 따른 stale 표시는 독립 review 후 회귀 검사했다.
+- 실제 native 비교: 성장한 지도에서4.07초 blank 뒤 기존map0으로 즉시 복귀. 설정15초에서16.07초 blank는15.07초에 reset하며 기본 설정은3.07초에 reset한다. blank 구간 유효 pose0.
+- 새 core/runner를 작성 머신에 빌드·설치하고 marker 로딩·hash를 확인했다. 새 PC native 전체 설치나 현재 Pi 실기 완료를 뜻하지 않는다. [변경·재생·한계](experiments/2026-10-15-tracking-recovery.md).
 
 ## IMU 동시 기록 추가 검증
 

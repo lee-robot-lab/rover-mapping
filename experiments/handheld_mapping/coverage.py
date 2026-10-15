@@ -1,6 +1,6 @@
 # ================================================================
 # coverage.py
-# 설명: 고정 크기 관측 격자와 정확한 stereo 시각의 bounded 최신 입력을 관리한다.
+# 설명: 고정 크기 관측 격자와 정확한 stereo 시각의 bounded FIFO 입력을 관리한다.
 # 사용법: from experiments.handheld_mapping.coverage import CoverageGrid, StereoMailbox
 # ================================================================
 from collections import OrderedDict, deque
@@ -98,13 +98,17 @@ class CoverageGrid:
 
 
 class StereoMailbox:
-    """저장된 영상 경로만 보유하며 느린 SLAM으로 원본 기록을 막지 않는 최신 쌍 큐."""
+    """저장된 경로를 FIFO로 보유하고 포화 시 새 쌍만 버려 대기 구간을 보존한다."""
+
+    PAIR_LIMIT = 256
+    UNMATCHED_LIMIT = 256
+    DEPTH_LIMIT = 512
 
     def __init__(self, run: Path) -> None:
         self.run = Path(run)
         self.condition = threading.Condition()
         self.frames = {side: OrderedDict() for side in ('left','right')}
-        self.depths = deque(maxlen=32)
+        self.depths = deque(maxlen=self.DEPTH_LIMIT)
         self.pairs = deque()
         self.closed = False
         self.dropped = 0
@@ -124,12 +128,12 @@ class StereoMailbox:
             own[stamp] = path
             if stamp in other:
                 paths = {side: own.pop(stamp), 'right' if side == 'left' else 'left':other.pop(stamp)}
-                if len(self.pairs) == 2:
-                    self.pairs.popleft()
+                if len(self.pairs) >= self.PAIR_LIMIT:
                     self.dropped += 1
-                self.pairs.append({'stamp_ns':stamp,**paths,'offered_at':time.monotonic()})
-                self.condition.notify_all()
-            while len(own) > 8:
+                else:
+                    self.pairs.append({'stamp_ns':stamp,**paths,'offered_at':time.monotonic()})
+                    self.condition.notify_all()
+            while len(own) > self.UNMATCHED_LIMIT:
                 own.popitem(last=False)
                 self.unmatched_dropped += 1
 
@@ -146,6 +150,7 @@ class StereoMailbox:
     def snapshot(self) -> dict:
         with self.condition:
             return {'queued_pairs':len(self.pairs), 'dropped_pairs':self.dropped,
+                    'pair_limit':self.PAIR_LIMIT, 'overflow_policy':'drop_new',
                     'unmatched_frames':sum(len(rows) for rows in self.frames.values()),
                     'unmatched_dropped':self.unmatched_dropped, 'depth_metadata':len(self.depths)}
 

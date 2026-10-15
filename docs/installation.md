@@ -83,6 +83,8 @@ git -C external/ORB_SLAM3 apply --check "$MAPPING_REPO_DIR/ros2_ws/src/orbslam3_
 git -C external/ORB_SLAM3 apply "$MAPPING_REPO_DIR/ros2_ws/src/orbslam3_ros2/patches/orbslam3_shutdown_wait.patch"
 git -C external/ORB_SLAM3 apply --check "$MAPPING_REPO_DIR/ros2_ws/src/orbslam3_ros2/patches/orbslam3_atlas_load_cache.patch"
 git -C external/ORB_SLAM3 apply "$MAPPING_REPO_DIR/ros2_ws/src/orbslam3_ros2/patches/orbslam3_atlas_load_cache.patch"
+git -C external/ORB_SLAM3 apply --check "$MAPPING_REPO_DIR/ros2_ws/src/orbslam3_ros2/patches/orbslam3_stereo_recovery_wait.patch"
+git -C external/ORB_SLAM3 apply "$MAPPING_REPO_DIR/ros2_ws/src/orbslam3_ros2/patches/orbslam3_stereo_recovery_wait.patch"
 
 for MAPPING_LIBRARY in DBoW2 g2o; do
   cmake -S "external/ORB_SLAM3/Thirdparty/$MAPPING_LIBRARY" \
@@ -101,6 +103,8 @@ bash tools/build_mapping_baseline.sh "$MAPPING_REPO_DIR/external/ORB_SLAM3"
 ```
 
 patch가 이미 적용됐으면 `apply --check`는 실패한다. 실패를 무시해 이중 적용하지 않고 `git diff`와 대상 marker를 확인한다. DBoW2/g2o/core/runner의 Eigen ABI와 arch 설정을 맞춘다. 빌드 메모리를 줄이기 위해 parallel1을 기준으로 한다.
+
+노트북 stereo 설정은 `Tracking.StereoRelocalizationWaitSeconds: 15.0`을 사용한다. 기존 설치도 네 번째 patch 적용 후 core와 비교 실행기를 재빌드해야 한다. 실행기는 `orbslam3_has_stereo_recovery_wait` marker가 없는 core를 거절하며, build wrapper도 이를 검사한다. 복구 대기 설정을 생략한 core 사용처는 기존 stereo 3초 정책을 유지한다. IMU 관성 융합의 정책은 바꾸지 않는다.
 
 ### 선택적 point+line
 

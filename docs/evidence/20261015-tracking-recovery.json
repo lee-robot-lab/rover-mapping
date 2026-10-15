@@ -1,0 +1,216 @@
+{
+  "verified_on": "2026-10-15",
+  "native_recovery_ab": {
+    "fixture": {
+      "source": "saved D435 session 20261015_001142_c10be6",
+      "prefix_frames": 420,
+      "blank_frames": 61,
+      "blank_seconds": 4.066666666666666,
+      "return_frames": 45,
+      "return_source_pair_index": 359,
+      "known_keyframe_id": 54,
+      "frame_content": "real D435 stereo; blank gap then exact historical KF and neighboring real frames",
+      "synthetic_timestamps_after_prefix": true
+    },
+    "candidate_4s": {
+      "exitcode": 0,
+      "frames": 526,
+      "prefix_valid": 420,
+      "return_valid": 45,
+      "maps_before": [
+        0
+      ],
+      "maps_after": [
+        0
+      ],
+      "map_0_keyframes": 81,
+      "recovered_same_map": true,
+      "return_states": {
+        "0": 0,
+        "1": 0,
+        "2": 45,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      },
+      "blank_state": 3,
+      "blank_valid_poses": 0,
+      "first_return_frame_map": 0
+    },
+    "stock_4s": {
+      "exitcode": 0,
+      "frames": 526,
+      "prefix_valid": 420,
+      "return_valid": 45,
+      "maps_before": [
+        0
+      ],
+      "maps_after": [
+        0,
+        75
+      ],
+      "map_0_keyframes": 80,
+      "recovered_same_map": false,
+      "return_states": {
+        "0": 0,
+        "1": 0,
+        "2": 45,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      }
+    },
+    "candidate_16s_timeout": {
+      "exitcode": 0,
+      "frames": 706,
+      "requested_wait_s": 15,
+      "blank_seconds": 16.066666666666666,
+      "blank_valid_poses": 0,
+      "blank_state_transitions": [
+        {
+          "blank_index": 0,
+          "state": 3,
+          "elapsed_from_first_blank_s": 0.0
+        },
+        {
+          "blank_index": 226,
+          "state": 0,
+          "elapsed_from_first_blank_s": 15.066666666666666
+        },
+        {
+          "blank_index": 227,
+          "state": 1,
+          "elapsed_from_first_blank_s": 15.133333333333333
+        }
+      ],
+      "return_first_valid_map": 77,
+      "return_map_ids": [
+        0,
+        77
+      ],
+      "created_new_map_after_timeout": true,
+      "return_valid": 45
+    },
+    "candidate_default3": {
+      "exitcode": 0,
+      "frames": 526,
+      "requested_wait_s": "absent (default3)",
+      "blank_seconds": 4.066666666666666,
+      "blank_valid_poses": 0,
+      "blank_state_transitions": [
+        {
+          "blank_index": 0,
+          "state": 3,
+          "elapsed_from_first_blank_s": 0.0
+        },
+        {
+          "blank_index": 46,
+          "state": 0,
+          "elapsed_from_first_blank_s": 3.066666666666667
+        },
+        {
+          "blank_index": 47,
+          "state": 1,
+          "elapsed_from_first_blank_s": 3.1333333333333333
+        }
+      ],
+      "return_first_valid_map": 79,
+      "return_map_ids": [
+        0,
+        79
+      ],
+      "created_new_map_after_timeout": true,
+      "return_valid": 45
+    },
+    "root_cause_initial_fixture": "The first 120 real frames produced only KF0. Stock LoopClosing::InsertKeyFrame excludes mnId==0, and KeyFrameDatabase::add occurs in LoopClosing; Relocalization has no candidate in a KF0-only map.",
+    "thresholds_changed": false,
+    "native_patch_changes_needed_after_verification": false,
+    "blank_frames_never_produce_valid_poses": true,
+    "stock_and_timeout_note": "The first returned valid frame enters a new map. Later existing ORB loop merge can geometrically merge it back, explaining return map IDs containing both old and new map.",
+    "runtime_installed": false,
+    "hardware_used": false
+  },
+  "final_live_replay": {
+    "map_id": 0,
+    "bounds": [
+      -10.0,
+      10.0,
+      -10.0,
+      10.0
+    ],
+    "resolution": 0.05,
+    "observed_cells": 10518,
+    "max_observations": 20,
+    "outside_points": 0,
+    "grid_bytes": 2240000,
+    "error": null,
+    "processed": 1742,
+    "tracking_state": 2,
+    "no_depth": 118,
+    "pose_valid": true,
+    "skipped_visualizations": 1268,
+    "lag_ms": 20.496134995482862,
+    "process_ms": 11.890364,
+    "stale": false,
+    "map_changes": 0,
+    "finished": true,
+    "synthetic": false,
+    "overlay_stamp_ns": 1791990829069536865,
+    "overlay_error": null,
+    "overlay_ms": 45.06117897108197,
+    "queued_pairs": 0,
+    "dropped_pairs": 0,
+    "pair_limit": 256,
+    "overflow_policy": "drop_new",
+    "unmatched_frames": 37,
+    "unmatched_dropped": 0,
+    "depth_metadata": 512,
+    "status": "complete",
+    "coordinate_system": "initial_camera_optical_XZ_not_gravity_aligned",
+    "lag_scope": "laptop stereo saved to live pose received; excludes sensor/network/display",
+    "final_map": false,
+    "maximum_queue": 74,
+    "wall_seconds": 119.82660582801327,
+    "timings": {
+      "frames": 1742,
+      "tracking_ok_fraction": 0.9827784156142365,
+      "map_ids": [
+        0
+      ],
+      "process_ms_median": 14.487087500000001,
+      "process_ms_p95": 17.522578199999998,
+      "scope": "offline tracking-call elapsed time on executing machine; not Pi FPS or display latency",
+      "gt_accuracy_evaluated": false
+    }
+  },
+  "recovery_windows": [
+    {
+      "start_index": 884,
+      "end_index": 912,
+      "lost_count": 29,
+      "elapsed_s": 1.930203613,
+      "before_map": "0",
+      "returned_map": "0",
+      "first_recovered_index": 913
+    },
+    {
+      "start_index": 936,
+      "end_index": 936,
+      "lost_count": 1,
+      "elapsed_s": 0.066561035,
+      "before_map": "0",
+      "returned_map": "0",
+      "first_recovered_index": 937
+    }
+  ],
+  "shared_pytest": {
+    "passed": 219,
+    "skipped": 1,
+    "seconds": 34.54
+  },
+  "installed_core_sha256": "373f88d1909abda2185dd67cd47687469dcefd1270368e757b6ca20df8b0e1da",
+  "installed_marker_verified": true,
+  "current_pi_hardware_tested": false,
+  "imu_fused": false,
+  "gt_accuracy_evaluated": false
+}

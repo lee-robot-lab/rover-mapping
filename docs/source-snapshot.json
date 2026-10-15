@@ -12,20 +12,20 @@
     "experiments/handheld_mapping/protocol.py": "3f44da36778fc4bd758ef10035caac4e31fb4929189f36aaf14296fa9b5f5e9b",
     "experiments/handheld_mapping/recording.py": "412cdf32e4a815ec70f3a7a8e4de7a49d2a50e739459209b690a7269a0f997dd",
     "experiments/handheld_mapping/reconstruct.py": "8f8a8768e795cecf44a83162835615c22d692dc74ce7a271b8678a8f50d2afae",
-    "experiments/handheld_mapping/offline.py": "d0682d42f921d98e4b8ee8904d2ec94785b5d2bdf32bb0df11fefcb1a3072025",
+    "experiments/handheld_mapping/offline.py": "8a5974409490c0341566c83bef8edd52e906554ee3a4d76faea8dfe9a13ff0bb",
     "experiments/handheld_mapping/compare.py": "1a7fc2665feb0847ae2231499de428e30f98bebb7608c827d00d06cfc5abc690",
     "experiments/handheld_mapping/pi_worker.py": "2ad222de174a13c76baa6db8d8584cc763512ed30a933a2ddaa62900fad3e6d0",
-    "experiments/handheld_mapping/live.py": "dbeedbcbad1cc6e7bb59ebd0c2f94747589f71fc780ed41e1cba9cb879af9e28",
+    "experiments/handheld_mapping/live.py": "61f2cf5d70fa68085cee4a3deeb10ff6c634f564bbc46df91a1c85ca23842a49",
     "experiments/handheld_mapping/overlap.py": "56cd59a39fb01d62acb7ce8698ff7a86c1c319296e92714a891abfdc2ed3be2b",
     "experiments/handheld_mapping/terrain.py": "13fba3f06484a759876520e1d79c73057d271a6280f9404496a8da7a4c27a9af",
     "experiments/handheld_mapping/storage.py": "c5eb0b648c7665d60c39dcb0dd283ef507a41a35398149ba7869562c960f33a5",
-    "experiments/handheld_mapping/coverage.py": "5cb94eed3f6221c788052c2f6ce18014c333476d852e4c8d881f727a019fe23c",
+    "experiments/handheld_mapping/coverage.py": "c04da8eca2db8e29459aa29c5a60778caedc6b251594cccb1ae9b603f3c14555",
     "experiments/handheld_mapping/live_preview.py": "33895a13a0f3b1ce1ccc142675f5ad8d9641113664e5daccc641c57e0c00340a",
     "experiments/handheld_mapping/viewer.py": "a5b4e5ab3898b1f83423adf36e7e5bc466c9580d406a2a0eedf383a487b67249",
     "experiments/handheld_mapping/requirements.txt": "0eb17f43ce7f3921946ff89bfeead6b5c0af69734ab5ebafe6f2fd8235e81a31",
-    "experiments/handheld_mapping/app.py": "35ed4f1d3bd68087f4887d858f8c064bf1bf6abe7de79aa6a94ad10d2dd0629f",
+    "experiments/handheld_mapping/app.py": "af9c16ad774b2d9a44ec2ec0018d2c6cf9211a30681446376f361d483d7f341b",
     "experiments/handheld_mapping/orbline/shutdown_wait.patch": "9e71d3dc0bb7b79f8e8b925ea4e2a60449e3183c287437f244363fc47ace2357",
-    "experiments/handheld_mapping/orbline/runner.cpp": "17d4663523852321ee134e14c794f560d2eadc61dbf92862c9594df136332951",
+    "experiments/handheld_mapping/orbline/runner.cpp": "ea0c90b74be401d4cf480bfeeb413a4d547956294b43193c4abbc229b9966b71",
     "experiments/handheld_mapping/orbline/CMakeLists.txt": "45478f2d5f7b2954f05b6506fa8df77c5a51428046fc8f155b46948233408d33",
     "experiments/handheld_mapping/orbline/compat.h": "972aaec3b9d6e0ff5aae9bb1371f456f56be1e667c8b4ae3c2e27fbbaecf0771",
     "experiments/handheld_mapping/orbline/opencv/cv.h": "f2f9de360a79400512925ab6f0c5d1ded5221573f99655f0ec9a43e212c85465",
@@ -75,10 +75,10 @@
     "ros2_ws/src/rover_description/urdf/rover.urdf": "3c70150888955bb56e33dd45ec35e81c32449fcff2b7fe0bd7233c50aea162fa",
     "tests/handheld_mapping/test_app.py": "49e0ada1d999bb0227b1a0e44affd95d4bced10f4910a2fad4751f18c96e882a",
     "tests/handheld_mapping/test_overlap.py": "71d9efdc9f5871723da97c2d5cf38bff737f54ca40d8d29e7414c234b5d515fd",
-    "tests/handheld_mapping/test_live_session.py": "1900c3ed8f3632c3a9524900626810552b052e52965a03b96863abb90cf3caf0",
+    "tests/handheld_mapping/test_live_session.py": "d00ce981e16fdb28fb529a133279eb83fe6016abc3dc4f632d2482e7baa2a3cc",
     "tests/handheld_mapping/test_offline.py": "eed68eda858ea371b11996af9378fd2964968bed1eb0b377314dd78054e65a02",
     "tests/handheld_mapping/test_capture_metrics.py": "11a82728bd85e6f5fe028c9eb59a8767a7c1abd0deb3a3e7eb1126caa2db6214",
-    "tests/handheld_mapping/test_live.py": "791c8dbd9547e63d96e70248c91259b652af5aa1e34fe4a5802703312414a8d6",
+    "tests/handheld_mapping/test_live.py": "96f8f446f2417454f677aa5a98899fddecad2d860a3223ff5296fb5db7125d49",
     "tests/handheld_mapping/test_capture_timing.py": "547b60564101402aeede4aa3baae79353dcbb798dfe78b504a2a01b24ffefd41",
     "tests/handheld_mapping/test_transport.py": "39cd7dc615f33a8a274f2556ca9042fc762892529621a8d66462e186e1ee3b0e",
     "tests/handheld_mapping/test_core.py": "28cbb881fc64aa725d2ded877333ca14873174fc864e7cc58303dcd11a744a8c",
@@ -99,7 +99,7 @@
     "tests/headless_mapping/test_replay.py": "b24743f7033fa769e3ebef0ea8a7d1f8454ecb052e59856d388b31caa4970388",
     "tests/headless_mapping/test_calibration_probe.py": "78ed816c6f37777c7837f69ee1ee9a83884228422ace9c582fe7c5e90dfd73d8",
     "tools/terrain_mapping.sh": "f9cc35ed2cbbac492124f00dc62bdfe824aa264321480724aaa3637dc1f4a4c5",
-    "tools/build_mapping_baseline.sh": "0c40590244a0a8b18ff01fff33262b4be80ff6f4c95627c44427662abdaf63ae",
+    "tools/build_mapping_baseline.sh": "cd00ad1927c9322674bf19ac6523cc5915df691e110fd9862b15111925210731",
     "tools/handheld_mapping.sh": "207f68341c5b123b0bb44b7fe24c0e5de3c5e38547b723935aef4cdac51cda21",
     "tools/build_orbline.sh": "523c333ae95be9cd6f3c2ae60be7c8e238113aeb7db25d3e218447b0f6ba26d4",
     "tools/view_mapping.sh": "bd5d7b14dd3f8605e8d5874b8234a2df40707767d7d187d799da3ba59e5065d7",
@@ -113,13 +113,16 @@
     "experiments/handheld_mapping/imu_subscriber.py": "0b7d7428bb45c55510909d996bb432dc903c212ff2a81a73bc440117f5d4e10a",
     "tests/handheld_mapping/test_imu_capture.py": "2dd4c9b81f11242fb96b9442b8ba05883f64cc2c7ff3f551fed38927d724cce0",
     "tests/handheld_mapping/test_imu_session.py": "d87323eb227079db4c7432b8122f926b47217c135b4af902bd2b3cc3286ca1a4",
-    "tools/mapping_imu_bridge.sh": "f803fd546375b5291c3840b6e0be3b179e22c2620c5f784bf561338b70abe815"
+    "tools/mapping_imu_bridge.sh": "f803fd546375b5291c3840b6e0be3b179e22c2620c5f784bf561338b70abe815",
+    "ros2_ws/src/orbslam3_ros2/patches/orbslam3_stereo_recovery_wait.patch": "355b17091e48c1d00655b7c8909d711d3145e5e77ff5868761e244ecf16dafa3",
+    "tests/handheld_mapping/test_stereo_recovery_patch.py": "b29338d2e2c6648f75837a5f0ccd2985b16c3a7449f6be67d7ad4d0ba6347660",
+    "tests/handheld_mapping/test_tracking_settings.py": "35894e2b0ff3e05425ac59df4f88baad778aa4dedb2c9a2e829aa365cef68550"
   },
   "intentional_share_only_changes": [
     {
       "file": "tests/handheld_mapping/test_live_session.py",
-      "original_sha256": "b23ef23abc4906d01bab94b8dac8612f7adaccc4b68256297154c03f5cfffe48",
-      "shared_sha256": "1900c3ed8f3632c3a9524900626810552b052e52965a03b96863abb90cf3caf0",
+      "original_sha256": "0840ff3daaa97024fde486605cc2d23406d9983386bc28fd130e143edec9553d",
+      "shared_sha256": "d00ce981e16fdb28fb529a133279eb83fe6016abc3dc4f632d2482e7baa2a3cc",
       "reason": "portable test fixtures for optional native runners; production code unchanged"
     },
     {
@@ -129,7 +132,7 @@
       "reason": "portable test fixtures for optional native runners; production code unchanged"
     }
   ],
-  "updated_on": "2026-10-14",
+  "updated_on": "2026-10-15",
   "updates": [
     {
       "description": "User-confirmed 20 degree rover mount and left optical frame compatibility",
@@ -156,6 +159,25 @@
         "docs/superpowers/plans/2026-10-14-imu-co-recording.md"
       ],
       "device_calibration_included": false
+    },
+    {
+      "description": "Bounded continuous stereo FIFO, latency-aware live display, configurable 15-second existing-map relocalization; IMU fusion remains false",
+      "files": [
+        "experiments/handheld_mapping/coverage.py",
+        "experiments/handheld_mapping/live.py",
+        "experiments/handheld_mapping/app.py",
+        "experiments/handheld_mapping/offline.py",
+        "experiments/handheld_mapping/orbline/runner.cpp",
+        "tools/build_mapping_baseline.sh",
+        "ros2_ws/src/orbslam3_ros2/patches/orbslam3_stereo_recovery_wait.patch",
+        "tests/handheld_mapping/test_stereo_recovery_patch.py",
+        "tests/handheld_mapping/test_tracking_settings.py",
+        "tests/handheld_mapping/test_live.py",
+        "tests/handheld_mapping/test_live_session.py",
+        "docs/experiments/2026-10-15-tracking-recovery.md"
+      ],
+      "native_binaries_included": false,
+      "recorded_camera_data_included": false
     }
   ]
 }
