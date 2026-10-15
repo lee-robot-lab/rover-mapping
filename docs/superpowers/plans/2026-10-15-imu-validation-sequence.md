@@ -85,6 +85,10 @@ ssh -T -o BatchMode=yes -o ConnectTimeout=5 pi@raspberrypi.local \
 
 현재 yaw 진단은 동일 기록에서 추정한 시차와 URDF를 사용했다. 3축 회전 보정과 camera↔IMU translation을 식별한 결과가 아니다. 노트북 전용 진단이며 실기 runtime 입력은 바꾸지 않았다.
 
+수동 roll/pitch RUN `20261015_221059_5e303d`를 추가했다. 영상 좌우/depth 각1630장·누락0, offline ORB1630쌍 모두 추적·map0 유지, IMU accepted4595/reset0/tee 누락0이었다. 시차 후보-55ms/상관0.99632이며 앞·뒤 절반도 동일했다. URDF body 축의 영상/gyro 비교는 roll_X 상관0.99775·크기 회귀비1.00644, pitch_Y 상관0.99477·회귀비1.00734로 방향과 크기가 잘 대응했다. 단, 장착 위치 실측과 독립 extrinsic 검증을 대신하지 않는다.
+
+이전 수동 yaw의 post-reset 후보-40ms와 이번 -55ms는15ms 차이로, 고정 offset 적용을 보류하는 조사 기준10ms를 넘는다. 평균 IMU 구간 시각과 camera 노출 중심·SPI 시차를 추가 확인해야 한다. 사용자의 기울임 동작 기록은 충분히 확보했으며 다음 확인은 원본 기반 소프트웨어 작업이다. 결과·그림·분석 script는 노트북 `outputs/handheld_mapping/20261015_roll_pitch_repeat`에 보존했다.
+
 ## 4. 관성 융합 비교로 넘어가는 조건
 
 단계1~3의 미확인 항목을 먼저 해결한다. 이후 실제 IMU 표본 시각·단위·축·sampling/averaging 특성·noise를 명시한 별도 구현 계획을 작성한다. 같은 영상과 IMU로 stereo baseline과 stereo-inertial을 offline 비교하고, 추적 손실·map 분리·재방문 오차·초기화 안정성을 평가한 후 실시간 적용한다. 비교 실패 시 기존 stereo 경로를 유지한다. 이 문서 시점에는 관성 융합 구현을 시작하지 않았다.
