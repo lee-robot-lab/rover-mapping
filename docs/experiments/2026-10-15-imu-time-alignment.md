@@ -60,7 +60,9 @@ review에서 정지한 절반의 임의 peak를 거부하도록 보완한 뒤 �
 
 ## 아직 필요한 검증
 
-- 카메라 ROS header는 Pi realtime epoch로 변환된 촬영 시각이라고 가정한다. 실제 RealSense timestamp domain·노출/하드웨어 metadata와의 대응은 미검증이다.
+후속 실행 순서와 현재 결과는 [검증 단계표](../superpowers/plans/2026-10-15-imu-validation-sequence.md)에 기록했다. 기존9개 RUN을 현재 분석기로 재검사한 결과6개는 -70~-40ms 후보, 3개는 기각이었다. 최신 RUN의 body 좌표계 yaw 부호 비교는100% 일치하고 상관0.99970이었다. 새 clock pair를 가진 회전 RUN은1개라 고정 offset·3축 외부 보정·다른 부팅 재현성은 아직 미검증이다.
+
+- 첫 회전 RUN에는 실제 camera metadata를 보존하지 않았다. 후속 정지 시험에서는 `global_time` domain과 image/metadata header 대응을 확인했다. 노출 중간 시각을 반영한 회전 시차·MCU 동기화 정확도는 아직 미검증이다.
 - 현재 IMU는 여러 센서 측정의 평균을 제어 패킷에 담는다. 평균 구간·실제 측정 timestamp·SPI 응답 지연의 절대값을 확인해야 한다.
 - 5ms 검색 간격은 5ms 정확도 보증이 아니다. 15FPS 영상과 약50Hz 평균 패킷의 시간 해상도가 제한된다.
 - 다른 회전 기록과 다른 부팅에서 결과를 재검증한다. 실측 clock·축·camera↔IMU 변환과 noise가 확인되기 전 `imu_clock_verified=false`, `orb_fused=false`를 유지한다.
