@@ -1,6 +1,6 @@
 # IMU 평균 표본 읽기 시각 패치
 
-현재 STM이 보내는 IMU 평균값에, 그 평균에 포함된 표본들의 대표 **MCU 읽기 완료 시각**을 붙이는 준비용 패치다. 실제 Pi source 수정·STM flash·ORB IMU fusion은 수행하지 않았다.
+현재 STM이 보내는 IMU 평균값에, 그 평균에 포함된 표본들의 대표 **MCU 읽기 완료 시각**을 붙이는 패치다. 2026-10-15에 ARM 전체 build, STM flash/verify 및 Pi decoder 적용 후 정지 상태 POLL-only 수신을 확인했다. ORB IMU fusion은 아직 수행하지 않았다. [실기 적용 기록](../../docs/experiments/2026-10-15-imu-timestamp-bench-deployment.md)
 
 ## 선택한 방식과 트레이드오프
 
@@ -53,7 +53,7 @@ baseline 환경변수가 없으면 portable C 산술 테스트 6개만 실행하
 
 native C/UBSan 및 실제 driver 함수·SPI pack/parse·신구 Python decoder를 사용하는 테스트 **11개 통과**. 규칙/불규칙 간격, clock wrap, 범위 초과, 빈 표본, 역행, count overflow, 평균값 보존, 순간값 fallback, CRC 및 기존 command 호환성을 확인했다.
 
-ARM 전체 firmware build는 toolchain 부재로 수행하지 못했다. 따라서 flash 가능한 firmware가 검증됐다는 뜻은 아니다. 다음 순서로 적용한다.
+ARM 전체 firmware build와 정지 상태 벤치 적용도 확인했다. 원본 대비 text +656 bytes, bss +48 bytes이며, 30초 시험에서 유효 IMU 고유 표본 1,190개 모두 timing flag가 설정됐다. 디코딩 실패·MCU 시각 역행은 없었다. 추가 연산의 최악 실행 시간과 카메라 동시 운용 부하는 아직 측정하지 않았다. 적용 및 후속 검증 순서는 다음과 같다.
 
 1. 대상 revision에서 ARM target build와 정적 확인.
 2. 실제 구동 전 simulation/mock 검증을 우선 권고한다. 현재 변경은 IMU·telemetry 경로에 한정되며 native mock 검증은 통과했다.
