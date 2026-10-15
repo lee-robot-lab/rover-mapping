@@ -2,6 +2,8 @@
 
 2026-10-14: Qt 매핑 앱에 외부 ISM330DHCX의 원본·보정 telemetry 기록을 연결했고 실제 D435와 같은 RUN 저장·종료·ORB·TSDF 생성까지 확인했다.
 
+2026-10-15 후속: [카메라–IMU 시간 정렬 진단](2026-10-15-imu-time-alignment.md)을 준비하고 실제 회전 기록에서 시계 속도와 -45ms 보정 후보를 추정했다. 카메라 하드웨어 시각과 IMU 평균 구간은 아직 검증 전이며 `imu_clock_verified=false`, `orb_fused=false`를 유지한다.
+
 ## 현재 연결 범위
 
 ```text

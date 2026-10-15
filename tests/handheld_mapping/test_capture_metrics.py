@@ -34,6 +34,7 @@ def capture_node() -> object:
                       if isinstance(node, ast.ClassDef) and node.name == 'CaptureNode')
     namespace = {'Node': FakeNode, 'deque': deque, 'ByteQueue': ByteQueue,
                  'CaptureMetrics': pi_worker.CaptureMetrics, 'queue': queue,
+                 'receipt_clock': pi_worker.receipt_clock,
                  'time': pi_worker.time, 'args': SimpleNamespace(queue_mib=4.),
                  'stop': threading.Event(), 'qos_profile_sensor_data': object(),
                  'tf2_ros': SimpleNamespace(Buffer=lambda: None, TransformListener=lambda *args: None),
@@ -53,7 +54,9 @@ def image_message(stamp_ns: int) -> SimpleNamespace:
 
 def test_capture_excludes_startup_but_legacy_source_frames_includes_it(monkeypatch: pytest.MonkeyPatch) -> None:
     node = capture_node()
-    ticks = iter((1_000_000_000, 2_000_000_000, 2_001_000_000, 2_500_000_000, 2_501_000_000))
+    ticks = iter((999_999_900, 1_000_000_100,
+                  1_999_999_900, 2_000_000_100, 2_001_000_000,
+                  2_499_999_900, 2_500_000_100, 2_501_000_000))
     monkeypatch.setattr(pi_worker.time, 'monotonic_ns', lambda: next(ticks))
     node.image('left', image_message(10_000_000_000))
     node.recording = True
@@ -70,6 +73,8 @@ def test_capture_excludes_startup_but_legacy_source_frames_includes_it(monkeypat
     assert [header['stream_seq'] for header in headers] == [1, 2]
     assert headers[0]['pi_receipt_monotonic_ns'] == 2_000_000_000
     assert headers[0]['pi_enqueue_monotonic_ns'] == 2_001_000_000
+    assert headers[0]['pi_clock_sample_span_ns'] == 200
+    assert isinstance(headers[0]['pi_receipt_realtime_ns'], int)
     assert snapshot['streams']['right']['received'] == 0
 
 

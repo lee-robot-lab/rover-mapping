@@ -89,6 +89,15 @@ class CaptureMetrics:
                              'legacy source_frames includes startup left callbacks'}
 
 
+def receipt_clock() -> dict:
+    """Pi realtime을 monotonic 두 조회로 감싸 시계 변환 오차 상한을 남긴다."""
+    before = time.monotonic_ns()
+    realtime = time.time_ns()
+    after = time.monotonic_ns()
+    return {'pi_receipt_monotonic_ns': (before+after)//2,
+            'pi_receipt_realtime_ns': realtime, 'pi_clock_sample_span_ns': after-before}
+
+
 def depth_parameters(fetch: Callable[[list[str]], list]) -> dict:
     """필수 projector 상태와 선택 sensor 단위를 별도 조회해 검증한다."""
     emitter = fetch(['depth_module.emitter_enabled'])
@@ -201,7 +210,8 @@ def main() -> None:
                 self.capture_metrics.enqueue_result(header, enqueued=True)
 
         def image(self, side: str, msg: Image) -> None:
-            receipt_ns = time.monotonic_ns()
+            clock = receipt_clock()
+            receipt_ns = clock['pi_receipt_monotonic_ns']
             stamp = msg.header.stamp.sec*1_000_000_000+msg.header.stamp.nanosec
             if self.stamps[side] and stamp <= self.stamps[side][-1]:
                 self.error = "카메라 시각이 역행하거나 중복됐습니다"
@@ -220,8 +230,7 @@ def main() -> None:
                       "frame_id": msg.header.frame_id, "is_bigendian": bool(msg.is_bigendian),
                       "compression": "zlib"}
             if self.recording:
-                header.update(pi_receipt_monotonic_ns=receipt_ns,
-                              stream_seq=self.capture_metrics.image_received(side, stamp, receipt_ns))
+                header.update(**clock, stream_seq=self.capture_metrics.image_received(side, stamp, receipt_ns))
             self.enqueue(header, bytes(msg.data))
 
         def tracking(self, msg: Int32) -> None:
