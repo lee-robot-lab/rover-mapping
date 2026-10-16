@@ -143,7 +143,7 @@ def main() -> None:
     parser.add_argument("--queue-mib", type=float, default=4.)
     parser.add_argument("--projector-on", action="store_true", help="D435 IR projector를 켠다 (실험용, 기본 OFF)")
     parser.add_argument("--rgb", action="store_true", help="640x480 15 Hz RGB8 원본을 추가 전송")
-    parser.add_argument("--fps", type=int, choices=(10, 15), default=15, help="IR/depth 입력 FPS (시간 지연 비교 실험용)")
+    parser.add_argument("--fps", type=int, choices=(6, 15), default=15, help="IR/depth 입력 FPS, D435 640x480 지원값 (시간 지연 비교 실험용)")
     args = parser.parse_args()
     if not .25 <= args.queue_mib <= 64:
         raise ValueError("invalid queue MiB limit")

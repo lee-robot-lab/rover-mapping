@@ -434,7 +434,7 @@ def main() -> None:
     parser.add_argument("--imu-calibration", type=Path)
     parser.add_argument("--imu-fusion", action="store_true", help="촬영 종료 후 별도 IMU 융합 시험 (IMU 기록 자동 활성화)")
     parser.add_argument("--projector-on", action="store_true", help="D435 IR projector 켬 (ORB 추적 영향 비교용 실험)")
-    parser.add_argument("--camera-fps", type=int, choices=(10, 15), default=15, help="IR/depth 입력 FPS (시간 지연 비교 실험용)")
+    parser.add_argument("--camera-fps", type=int, choices=(6, 15), default=15, help="IR/depth 입력 FPS, D435 640x480 지원값 (시간 지연 비교 실험용)")
     parser.add_argument("--auto-stop", type=float)
     parser.add_argument("--screenshot", type=Path)
     parser.add_argument("--quit-after-save", action="store_true")

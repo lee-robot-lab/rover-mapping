@@ -186,7 +186,7 @@ def imu_samples(run: Path) -> dict:
             'imu_n': [r[9] for r in rows], 'counts': counts}
 
 
-def visual_samples(run: Path, pi_origin: int, fallback_offset: int) -> dict:
+def visual_samples(run: Path, pi_origin: int, fallback_offset: int, max_dt_s: float = .15) -> dict:
     """영상 ROS epoch를 Pi monotonic으로 옮기고 같은 map의 연속 유효 회전만 사용한다."""
     camera = {}
     offsets, ages, spans = [], [], []
@@ -235,7 +235,7 @@ def visual_samples(run: Path, pi_origin: int, fallback_offset: int) -> dict:
             current = (camera[stamp], map_id, rotation)
             if previous is not None:
                 dt = current[0]-previous[0]
-                if current[1] == previous[1] and .025 <= dt <= .15:
+                if current[1] == previous[1] and .025 <= dt <= max_dt_s:
                     angle = np.arccos(np.clip((np.trace(previous[2].T@rotation)-1)*.5, -1, 1))
                     starts.append(previous[0]); ends.append(current[0]); omega.append(angle/dt)
             previous = current
@@ -288,7 +288,7 @@ def write_report(output: Path, result: dict) -> None:
     (output/'README.md').write_text('\n'.join(lines)+'\n')
 
 
-def analyze_run(run: Path, output: Path | None = None) -> dict:
+def analyze_run(run: Path, output: Path | None = None, max_visual_dt_s: float = .15) -> dict:
     """종료된 RUN을 변경하지 않고 새 폴더에 추정 후보 또는 명시적인 기각 보고서를 만든다."""
     run = Path(run).resolve()
     imu_summary = run/'imu_summary.json'
@@ -311,7 +311,7 @@ def analyze_run(run: Path, output: Path | None = None) -> dict:
         if int(offsets.max())-int(offsets.min()) > 5_000_000:
             raise ValueError('Pi realtime/monotonic clock relation changed over 5ms')
         fallback = int(np.sort(offsets)[len(offsets)//2])
-        visual = visual_samples(run, clock['pi_origin_monotonic_ns'], fallback)
+        visual = visual_samples(run, clock['pi_origin_monotonic_ns'], fallback, max_visual_dt_s)
         result.update(estimate_offset(times, np.linalg.norm(imu['gyro'], axis=1),
                                       visual['start'], visual['end'], visual['omega']))
         result.update(clock_fit=clock, camera_clock={k: v for k, v in visual.items() if k not in ('start', 'end', 'omega')},
@@ -348,8 +348,10 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('run', type=Path)
     parser.add_argument('--output', type=Path)
+    parser.add_argument('--max-visual-dt', type=float, default=.15,
+                        help='연속 영상 pose 간격 상한(s); 6 FPS 비교 실험에서만 .2로 올린다')
     args = parser.parse_args()
-    result = analyze_run(args.run, args.output)
+    result = analyze_run(args.run, args.output, args.max_visual_dt)
     print(json.dumps({k: v for k, v in result.items() if k not in
                      ('lag_grid_s', 'correlations', 'comparison_visual_times_s', 'visual_omega_rad_s', 'matched_gyro_norm_rad_s')},
                      indent=2, allow_nan=False))
