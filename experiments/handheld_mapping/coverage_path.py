@@ -357,7 +357,8 @@ def save_path(result: dict, grid: GridMap, region: np.ndarray, folder: Path) -> 
     waypoints = result["waypoints"]
     meta = {k: v for k, v in result.items() if k != "waypoints"}
     (folder / "path.json").write_text(json.dumps({**meta, "frame": "map", "unit": "m, rad",
-                                                  "waypoints": np.round(waypoints, 4).tolist()}, indent=1))
+                                                  "waypoints": np.round(waypoints, 4).tolist()},
+                                                 indent=1, default=lambda v: np.round(v, 4).tolist() if isinstance(v, np.ndarray) else float(v)))
     np.savetxt(folder / "path.csv", waypoints, delimiter=",", header="x_m,y_m,yaw_rad", comments="", fmt="%.4f")
     import matplotlib
     matplotlib.use("Agg")
