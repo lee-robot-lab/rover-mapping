@@ -56,7 +56,7 @@ def prepare_input(run: Path, folder: Path, profile_path: Path) -> dict:
             values = [float(row[key]) for key in ('ax','ay','az','gx','gy','gz')]
             if not 0 <= stamp < 2**63 or not all(math.isfinite(v) for v in values):
                 raise ValueError('invalid IMU sample values')
-            if last is not None and (stamp <= last or stamp-last > 3e9/frequency):
+            if last is not None and (stamp <= last or stamp-last > min(3e9/frequency, 1e8)):
                 raise ValueError('nonmonotonic IMU clock or missing IMU samples')
             if first is None:first=stamp
             last=stamp; count+=1
