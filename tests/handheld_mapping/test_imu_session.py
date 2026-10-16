@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 import time
 from types import SimpleNamespace
+import io
 
 import pytest
 
@@ -54,6 +55,90 @@ def config(tmp_path: Path) -> dict:
     return {"output_root": str(tmp_path), "imu_enabled": True,
             "imu_calibration": str(tmp_path / "calibration.json"),
             "worker_command": [sys.executable, "-u", "-m", "experiments.handheld_mapping.demo"]}
+
+
+@pytest.fixture
+def fusion_boundary(monkeypatch, imu_boundary):
+    from experiments.handheld_mapping import controller
+    from experiments.handheld_mapping.protocol import write_packet
+    stream = io.BytesIO()
+    write_packet(stream, {"kind": "ready"})
+    write_packet(stream, {"kind": "finished", "status": "saved", "dropped": 0})
+
+    def camera_process(*args, **kwargs):
+        return SimpleNamespace(stdin=io.BytesIO(), stdout=io.BytesIO(stream.getvalue()),
+                               poll=lambda: 0, wait=lambda **options: 0)
+
+    def reconstruct(run: Path, backend: str = "orb", **kwargs) -> dict:
+        folder = run / ("dense_inertial" if backend == "orb_inertial" else "dense")
+        folder.mkdir(exist_ok=True)
+        (folder / "surface.ply").write_text(backend)
+        return {"status": "complete", "backend": backend}
+
+    monkeypatch.setattr(controller.subprocess, "Popen", camera_process)
+    monkeypatch.setitem(sys.modules, "experiments.handheld_mapping.reconstruct", SimpleNamespace(reconstruct=reconstruct))
+    return reconstruct
+
+
+def test_inertial_fusion_default_preserves_baseline_without_calling_helper(tmp_path, fusion_boundary, monkeypatch):
+    def forbidden(run: Path) -> dict:
+        raise AssertionError("default must not run inertial fusion")
+
+    monkeypatch.setitem(sys.modules, "experiments.handheld_mapping.inertial", SimpleNamespace(run_inertial_auto=forbidden))
+    session = Session()
+    session.start(config(tmp_path))
+    session.thread.join(timeout=5)
+    result = session.snapshot()
+    assert result["state"] == "complete", result
+    assert result["dense"]["backend"] == "orb"
+    assert "inertial_fusion" not in result
+
+
+def test_inertial_opt_in_enables_recording_then_saves_separate_dense(tmp_path, fusion_boundary, imu_boundary, monkeypatch):
+    def fuse_after_baseline(run: Path) -> dict:
+        assert (run / "imu_summary.json").is_file()
+        assert (run / "dense/surface.ply").read_text() == "orb"
+        return {"status": "initialized", "orb_fused": True}
+
+    monkeypatch.setitem(sys.modules, "experiments.handheld_mapping.inertial", SimpleNamespace(run_inertial_auto=fuse_after_baseline))
+    session = Session()
+    session.start({**config(tmp_path), "imu_enabled": False, "inertial_fusion": True})
+    session.thread.join(timeout=5)
+    result = session.snapshot()
+    assert result["state"] == "complete", result
+    assert len(imu_boundary.instances) == 1
+    assert result["inertial_fusion"]["orb_fused"] is True
+    assert result["dense"]["backend"] == "orb"
+    assert result["inertial_dense"]["backend"] == "orb_inertial"
+    run = Path(result["run_dir"])
+    assert (run / "dense/surface.ply").read_text() == "orb"
+    assert (run / "dense_inertial/surface.ply").read_text() == "orb_inertial"
+
+
+@pytest.mark.parametrize("failure", ["not_initialized", "runner_failed", "dense_failed"])
+def test_inertial_postprocessing_failure_keeps_baseline(tmp_path, fusion_boundary, monkeypatch, failure):
+    def fuse(run: Path) -> dict:
+        if failure == "runner_failed":
+            raise RuntimeError("inertial runner unavailable")
+        return {"status": "not_initialized" if failure == "not_initialized" else "initialized",
+                "orb_fused": failure != "not_initialized"}
+
+    def reconstruct(run: Path, backend: str = "orb", **kwargs) -> dict:
+        if backend == "orb_inertial":
+            raise RuntimeError("inertial depth unavailable")
+        return fusion_boundary(run, backend, **kwargs)
+
+    monkeypatch.setitem(sys.modules, "experiments.handheld_mapping.inertial", SimpleNamespace(run_inertial_auto=fuse))
+    monkeypatch.setitem(sys.modules, "experiments.handheld_mapping.reconstruct", SimpleNamespace(reconstruct=reconstruct))
+    session = Session()
+    session.start({**config(tmp_path), "inertial_fusion": True})
+    session.thread.join(timeout=5)
+    result = session.snapshot()
+    assert result["state"] == "partial", result
+    assert result["dense"]["status"] == "complete"
+    assert result["inertial_warning"]
+    assert "inertial_dense" not in result
+    assert (Path(result["run_dir"]) / "dense/surface.ply").read_text() == "orb"
 
 
 def test_imu_not_ready_refuses_camera_and_preserves_initial_error(tmp_path, imu_boundary):

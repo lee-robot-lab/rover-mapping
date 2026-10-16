@@ -56,7 +56,7 @@ def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 3.,
                 progress=None, backend: str = "orb") -> dict:
     import open3d as o3d
     run_dir = Path(run_dir).resolve()
-    if backend not in ("orb", "orbline", "orb_offline"):
+    if backend not in ("orb", "orbline", "orb_offline", "orb_inertial"):
         raise ValueError("invalid reconstruction backend")
     if not math.isfinite(voxel_size) or not .002 <= voxel_size <= .1 or not .3 < depth_max <= 10:
         raise ValueError("invalid voxel/depth bounds")
@@ -75,9 +75,15 @@ def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 3.,
     except (KeyError, TypeError, IndexError) as error:
         raise ValueError("depth scale and depth-to-left TF calibration required") from error
     keyfiles = sorted((run_dir / backend).glob("map_*_keyframes.csv"))
+    if backend == 'orb_inertial':
+        fusion = json.loads((run_dir/backend/'summary.json').read_text())
+        identities = fusion.get('exported_imu_initialized_maps')
+        if fusion.get('orb_fused') is not True or not isinstance(identities, list) or not identities or any(type(v) is not int or v < 0 for v in identities):
+            raise ValueError('initialized inertial export required for TSDF')
+        keyfiles = [path for path in keyfiles if path.name in {f'map_{v}_keyframes.csv' for v in identities}]
     if not keyfiles:
         raise ValueError("원본 depth 또는 최종 keyframe이 없습니다")
-    output_name = {"orb": "dense", "orbline": "dense_orbline", "orb_offline": "dense_offline"}[backend]
+    output_name = {"orb": "dense", "orbline": "dense_orbline", "orb_offline": "dense_offline", "orb_inertial": "dense_inertial"}[backend]
     output = run_dir / output_name
     output.mkdir(exist_ok=True)
     # 이전 결과는 원본과 분리한 채 새 summary가 성공한 경우에만 갱신한다.
@@ -87,6 +93,9 @@ def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 3.,
               "depth_max_m": depth_max, "timestamp_tolerance_ns": 2_000_000,
               "coordinate_system": "per-map initial camera optical; gravity alignment not applied",
               "accuracy_verified_on_real_camera": False, "maps": [], "skipped_maps": []}
+    if backend == 'orb_inertial':
+        result.update(coordinate_system='ORB stereo-inertial map; gravity estimate unverified',
+                      imu_clock_verified=False, pose_source='orb_inertial')
     for keyfile in keyfiles:
         map_id = keyfile.name.removeprefix("map_").removesuffix("_keyframes.csv")
         if not map_id.isdecimal():

@@ -36,3 +36,13 @@ def test_available_sensor_depth_units_are_metadata():
         return ([SimpleNamespace(type=2, integer_value=0)] if 'emitter' in names[0]
                 else [SimpleNamespace(type=3, double_value=.001)])
     assert depth_parameters(fetch)['sensor_depth_units_m'] == .001
+
+
+def test_projector_on_is_verified_when_requested():
+    from experiments.handheld_mapping.pi_worker import depth_parameters
+    on = lambda names: [SimpleNamespace(type=2, integer_value=1)] if 'emitter' in names[0] else []
+    assert depth_parameters(on, projector_on=True)['emitter_enabled'] == 1
+    with pytest.raises(RuntimeError, match='projector ON'):
+        depth_parameters(lambda names: [SimpleNamespace(type=2, integer_value=0)], projector_on=True)
+    with pytest.raises(RuntimeError, match='projector OFF'):
+        depth_parameters(on)

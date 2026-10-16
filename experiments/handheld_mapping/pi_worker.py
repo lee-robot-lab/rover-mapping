@@ -100,18 +100,18 @@ def receipt_clock() -> dict:
             'pi_receipt_monotonic_raw_ns': raw}
 
 
-def depth_parameters(fetch: Callable[[list[str]], list]) -> dict:
+def depth_parameters(fetch: Callable[[list[str]], list], projector_on: bool = False) -> dict:
     """필수 projector 상태와 선택 sensor 단위를 별도 조회해 검증한다."""
     emitter = fetch(['depth_module.emitter_enabled'])
-    if len(emitter) != 1 or emitter[0].type != 2 or emitter[0].integer_value != 0:
-        raise RuntimeError('projector OFF 검증 실패')
+    if len(emitter) != 1 or emitter[0].type != 2 or emitter[0].integer_value != int(projector_on):
+        raise RuntimeError('projector ON 검증 실패' if projector_on else 'projector OFF 검증 실패')
     units = fetch(['depth_module.depth_units'])
     scale = None
     if len(units) == 1 and units[0].type == 3:
         value = float(units[0].double_value)
         if math.isfinite(value) and 0 < value < .1:
             scale = value
-    return {'emitter_enabled': 0, 'sensor_depth_units_m': scale}
+    return {'emitter_enabled': int(projector_on), 'sensor_depth_units_m': scale}
 
 
 def stop_child(process: subprocess.Popen | None, timeout: float = 35.) -> None:
@@ -135,6 +135,7 @@ def main() -> None:
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--sensors-only", action="store_true", help="Pi에서는 ORB/Atlas 없이 원본만 전송")
     parser.add_argument("--queue-mib", type=float, default=4.)
+    parser.add_argument("--projector-on", action="store_true", help="D435 IR projector를 켠다 (실험용, 기본 OFF)")
     args = parser.parse_args()
     if not .25 <= args.queue_mib <= 64:
         raise ValueError("invalid queue MiB limit")
@@ -285,7 +286,7 @@ def main() -> None:
                         "-p", "enable_infra1:=true", "-p", "enable_infra2:=true",
                         "-p", "depth_module.infra_profile:=640,480,15", "-p", "depth_module.depth_profile:=640,480,15",
                         "-p", "depth_module.infra1_format:=Y8", "-p", "depth_module.infra2_format:=Y8",
-                        "-p", "depth_module.emitter_enabled:=0", "-p", "enable_sync:=true"], "camera.log")
+                        "-p", f"depth_module.emitter_enabled:={int(args.projector_on)}", "-p", "enable_sync:=true"], "camera.log")
         wait_until(lambda: len(node.infos) == 3 and min(len(values) for values in node.stamps.values()) >= 20, 30)
         def info_dict(msg) -> dict:
             return {"width": msg.width, "height": msg.height, "k": list(msg.k), "p": list(msg.p),
@@ -317,7 +318,7 @@ def main() -> None:
             future = client.call_async(GetParameters.Request(names=names))
             wait_until(future.done, 5)
             return future.result().values
-        parameters = depth_parameters(fetch_parameters)
+        parameters = depth_parameters(fetch_parameters, args.projector_on)
         depth = {**info_dict(node.infos["depth"]), "depth_scale_m": .001,
                  "depth_scale_source": "RealSense ROS fix_depth_scale: Z16 millimetres",
                  "sensor_depth_units_m": parameters['sensor_depth_units_m'], "T_left_depth": left_depth.tolist(),
@@ -329,7 +330,7 @@ def main() -> None:
         if not args.sensors_only:
             prepare_run(prepared, calibration, None)
         send({"kind": "calibration", "source": "D435_Pi", "depth": depth, "stereo": calibration,
-              "emitter_enabled": 0, "sensor_profile": "640x480x15",
+              "emitter_enabled": parameters["emitter_enabled"], "sensor_profile": "640x480x15",
               "capture_mode": "sensors_only" if args.sensors_only else "pi_orb"})
         def transmit() -> None:
             try:

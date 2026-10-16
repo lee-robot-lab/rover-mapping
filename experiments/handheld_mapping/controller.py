@@ -27,7 +27,8 @@ ROOT = Path(__file__).resolve().parents[2]
 ACTIVE = {"starting", "recording", "stopping", "processing", "reconstructing", "comparing"}
 
 
-def remote_command(host: str, run_id: str, sensors_only: bool = False, queue_mib: float = 4.) -> list[str]:
+def remote_command(host: str, run_id: str, sensors_only: bool = False, queue_mib: float = 4.,
+                   projector_on: bool = False) -> list[str]:
     if not re.fullmatch(r"[A-Za-z0-9_.@:-]+", host) or host.startswith("-"):
         raise ValueError("잘못된 SSH 연결 대상")
     if not math.isfinite(queue_mib) or not .25 <= queue_mib <= 64:
@@ -42,6 +43,7 @@ def remote_command(host: str, run_id: str, sensors_only: bool = False, queue_mib
         f"cd {shlex.quote(remote+'/code')}; "
         f"exec /usr/bin/python3 -m experiments.handheld_mapping.pi_worker --run-dir {shlex.quote(remote+'/run')}"
         f" --queue-mib {queue_mib}"+(" --sensors-only" if sensors_only else "")
+        +(" --projector-on" if projector_on else "")
     )
     return ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=5",
             "-o", "ServerAliveCountMax=3", host, shlex.join(["bash", "-c", code])]
@@ -105,6 +107,9 @@ class Session:
             self.status.update(values)
 
     def start(self, config: dict) -> None:
+        config = dict(config)
+        if config.get("inertial_fusion") and not config.get("demo"):
+            config["imu_enabled"] = True
         with self.lock:
             if self.status["state"] in ACTIVE or (self.thread is not None and self.thread.is_alive()):
                 raise RuntimeError("이미 실행 중입니다")
@@ -182,7 +187,8 @@ class Session:
                 deploy(config.get("host", "pi@raspberrypi.local"), run_id)
                 command = remote_command(config.get("host", "pi@raspberrypi.local"), run_id,
                                          sensors_only=config.get("sensors_only", False),
-                                         queue_mib=config.get("queue_mib", 4.))
+                                         queue_mib=config.get("queue_mib", 4.),
+                                         projector_on=config.get("projector_on", False))
             if config.get("imu_enabled") and not config.get("demo"):
                 from experiments.handheld_mapping.imu import ImuCapture
                 calibration = config.get("imu_calibration")
@@ -316,6 +322,31 @@ class Session:
             from experiments.handheld_mapping.reconstruct import reconstruct
             dense = (reconstruct(run, progress=lambda message: self.update(message=message), backend=backend)
                      if backend != 'orb' else reconstruct(run, progress=lambda message: self.update(message=message)))
+            self.update(dense=dense)
+            inertial_partial = False
+            if config.get("inertial_fusion") and not config.get("demo"):
+                fusion_result = None
+                try:
+                    self.update(state="processing", message="저장한 원본으로 IMU 융합 시험 중")
+                    from experiments.handheld_mapping.inertial import run_inertial_auto
+                    fusion_result = run_inertial_auto(run)
+                    self.update(inertial_fusion=fusion_result)
+                    if fusion_result.get("orb_fused"):
+                        self.update(state="reconstructing", message="IMU 융합 경로로 별도 TSDF 지도 생성 중")
+                        inertial_dense = reconstruct(run, backend="orb_inertial",
+                                                     progress=lambda message: self.update(message=message))
+                        self.update(inertial_dense=inertial_dense)
+                        inertial_partial = inertial_dense.get("status") != "complete"
+                        if inertial_partial:
+                            self.update(inertial_warning="IMU 융합 지도 일부 누락 · 기본 지도는 저장됨")
+                    else:
+                        inertial_partial = True
+                        self.update(inertial_warning=fusion_result.get("error") or "IMU 융합 초기화 미완료 · 기본 지도는 저장됨")
+                except Exception as error:
+                    inertial_partial = True
+                    if fusion_result is None:
+                        self.update(inertial_fusion={"status": "failed", "orb_fused": False, "error": str(error)})
+                    self.update(inertial_warning="IMU 융합 후처리 실패 · 기본 지도는 저장됨: "+str(error))
             line_partial = False
             if config.get("compare_lines"):
                 self.update(state="comparing", message="동일 원본으로 점+선 SLAM 비교 중")
@@ -323,7 +354,8 @@ class Session:
                 comparison = run_orbline(run)
                 self.update(comparison=comparison)
                 line_partial = comparison.get("dense", {}).get("status", "complete") != "complete"
-            partial = dense["status"] != "complete" or finished.get("dropped", 0) > 0 or line_partial or imu_partial
+            partial = (dense["status"] != "complete" or finished.get("dropped", 0) > 0
+                       or line_partial or imu_partial or inertial_partial)
             self.update(state="partial" if partial else "complete", message="일부 누락 있음 · 지도 저장 완료" if partial else "지도 저장 완료",
                         dense=dense, dropped=finished.get("dropped", 0))
         except Exception as error:

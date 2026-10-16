@@ -9,7 +9,7 @@ from pathlib import Path
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
-FOLDERS = {'orb_offline':'dense_offline','orb':'dense','orbline':'dense_orbline'}
+FOLDERS = {'orb_offline':'dense_offline','orb':'dense','orbline':'dense_orbline','orb_inertial':'dense_inertial'}
 
 
 def select_maps(target: Path | None, backend: str = 'auto', map_id: int | None = None,

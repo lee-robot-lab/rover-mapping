@@ -23,9 +23,11 @@ class MappingWindow(QWidget):
     """촬영 상태를 표시하고 blocking 작업을 session thread에 맡기는 노트북 제어창."""
 
     def __init__(self, session: Session, output_root: Path | None = None, demo: bool = False,
-                 imu_calibration: Path | None = None) -> None:
+                 imu_calibration: Path | None = None, inertial_fusion: bool = False,
+                 projector_on: bool = False) -> None:
         super().__init__()
         self.session = session
+        self.projector_on = projector_on
         self.close_pending = False
         self.setWindowTitle("D435 · Handheld Mapping")
         self.resize(1200, 980)
@@ -69,6 +71,13 @@ class MappingWindow(QWidget):
         self.imu_enabled.setChecked(calibration.expanduser().is_file() and not demo)
         self.imu_enabled.setToolTip("raw·보정 IMU를 원본 영상과 같은 폴더에 저장합니다. ORB 융합과 시계 동기화는 검증되지 않았습니다.")
         self.imu_calibration = QLineEdit(str(calibration))
+        self.inertial_fusion = QCheckBox("종료 후 IMU 융합 시험")
+        self.inertial_fusion.setToolTip("실시간 기본 stereo, 종료 후 별도 관성 결과")
+        self.inertial_fusion.setChecked(inertial_fusion and not demo)
+        if self.inertial_fusion.isChecked():
+            self.imu_enabled.setChecked(True)
+        self.inertial_fusion.toggled.connect(lambda checked: self.imu_enabled.setChecked(True) if checked else None)
+        self.imu_enabled.toggled.connect(lambda checked: self.inertial_fusion.setChecked(False) if not checked else None)
         fields.addWidget(QLabel("Pi 연결"), 0, 0)
         fields.addWidget(self.host, 0, 1)
         fields.addWidget(QLabel("저장 폴더"), 1, 0)
@@ -84,6 +93,7 @@ class MappingWindow(QWidget):
         fields.addWidget(self.imu_enabled, 6, 1)
         fields.addWidget(QLabel("IMU 보정 파일"), 7, 0)
         fields.addWidget(self.imu_calibration, 7, 1)
+        fields.addWidget(self.inertial_fusion, 8, 1)
         self.choose_button = choose
         layout.addLayout(fields)
         self.status_label = QLabel("준비 · 시작 버튼을 누르세요")
@@ -134,7 +144,7 @@ class MappingWindow(QWidget):
         self.open_button.clicked.connect(self.open_folder)
         self.rebuild_button.clicked.connect(self.rebuild)
         self.view_button.clicked.connect(self.view_map)
-        layout.addWidget(QLabel("입력 요청15 FPS · projector OFF · 1cm voxel · 지도별 별도 저장 | 실기 depth 추가 부하는 연결 후 확인"))
+        layout.addWidget(QLabel(f"입력 요청15 FPS · projector {'ON(실험)' if projector_on else 'OFF'} · 1cm voxel · 지도별 별도 저장 | 실기 depth 추가 부하는 연결 후 확인"))
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
         self.timer.start(200)
@@ -153,7 +163,9 @@ class MappingWindow(QWidget):
                                 "sensors_only": self.sensors_only.isChecked(),
                                 "live_mapping": self.live_mapping.isChecked(),
                                 "imu_enabled": self.imu_enabled.isChecked() and not self.demo.isChecked(),
-                                "imu_calibration": self.imu_calibration.text().strip()})
+                                "inertial_fusion": self.inertial_fusion.isChecked() and not self.demo.isChecked(),
+                                "imu_calibration": self.imu_calibration.text().strip(),
+                                "projector_on": self.projector_on and not self.demo.isChecked()})
         except Exception as error:
             self.status_label.setText(str(error))
         self.refresh()
@@ -201,7 +213,9 @@ class MappingWindow(QWidget):
         self.sensors_only.setEnabled(not active and self.point_ready)
         self.live_mapping.setEnabled(not active and self.point_ready)
         if self.demo.isChecked():
+            self.inertial_fusion.setChecked(False)
             self.imu_enabled.setChecked(False)
+        self.inertial_fusion.setEnabled(not active and not self.demo.isChecked())
         self.imu_enabled.setEnabled(not active and not self.demo.isChecked())
         self.imu_calibration.setEnabled(not active and not self.demo.isChecked())
         imu = status.get("imu")
@@ -215,7 +229,14 @@ class MappingWindow(QWidget):
                 imu_text += " · 수신 지연"
             if imu.get("error"):
                 imu_text += " · 오류: "+str(imu["error"])
-        self.imu_status.setText(imu_text+" · ORB 융합 안 함 · 시계 동기화 미검증")
+        fusion_text = "ORB 융합 안 함"
+        if status.get("inertial_warning"):
+            fusion_text = status["inertial_warning"]
+        elif status.get("inertial_dense", {}).get("status") == "complete":
+            fusion_text = "IMU 융합 지도 저장"
+        elif self.inertial_fusion.isChecked():
+            fusion_text = "종료 후 IMU 융합 시험"
+        self.imu_status.setText(imu_text+" · "+fusion_text+" · 시계 동기화 미검증")
         live = self.session.live_snapshot()
         self.coverage.set_snapshot(live)
         label = status["message"]
@@ -292,12 +313,14 @@ def main() -> None:
     parser.add_argument("--demo", action="store_true")
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--imu-calibration", type=Path)
+    parser.add_argument("--imu-fusion", action="store_true", help="촬영 종료 후 별도 IMU 융합 시험 (IMU 기록 자동 활성화)")
+    parser.add_argument("--projector-on", action="store_true", help="D435 IR projector 켬 (ORB 추적 영향 비교용 실험)")
     parser.add_argument("--auto-stop", type=float)
     parser.add_argument("--screenshot", type=Path)
     parser.add_argument("--quit-after-save", action="store_true")
     args = parser.parse_args()
     app = QApplication(sys.argv[:1])
-    window = MappingWindow(Session(), args.output_root, args.demo, args.imu_calibration)
+    window = MappingWindow(Session(), args.output_root, args.demo, args.imu_calibration, args.imu_fusion, args.projector_on)
     signal.signal(signal.SIGINT, lambda *_: window.close())
     signal.signal(signal.SIGTERM, lambda *_: window.close())
     window.show()
