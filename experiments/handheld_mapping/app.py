@@ -39,16 +39,15 @@ class MappingWindow(QWidget):
             QPushButton:disabled { color:#647382; background:#19232d; border-color:#253340; }
             QPushButton#start { background:#176951; border-color:#259b79; font-weight:bold; }
             QPushButton#stop { background:#713b33; border-color:#a46458; font-weight:bold; }
-            QLabel#heading { font-size:26px; font-weight:bold; }
-            QLabel#status { color:#80d5bb; font-size:20px; padding:10px 0; }
+            QLabel#heading { font-size:20px; font-weight:bold; }
+            QLabel#status { color:#80d5bb; font-size:18px; padding:4px 0; }
             QLabel#preview { background:#090e14; border:1px solid #2c3a48; border-radius:8px; }
         """)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(26, 18, 26, 18)
+        layout.setContentsMargins(26, 10, 26, 10)
         heading = QLabel("D435  /  HANDHELD MAPPING")
         heading.setObjectName("heading")
         layout.addWidget(heading)
-        layout.addWidget(QLabel("노트북 원본 저장  ·  ORB 위치추정  ·  종료 후 TSDF 표면 생성"))
         fields = QGridLayout()
         self.host = QLineEdit("pi@raspberrypi.local")
         self.output = QLineEdit(str(output_root or ROOT / "outputs/handheld_mapping/sessions"))
@@ -97,17 +96,15 @@ class MappingWindow(QWidget):
         fields.addWidget(choose, 1, 2)
         fields.addWidget(QLabel("처리 방식"), 2, 0)
         fields.addWidget(self.mode, 2, 1)
-        fields.addWidget(self.demo, 3, 1)
-        fields.addWidget(self.sensors_only, 4, 1)
-        fields.addWidget(self.live_mapping, 5, 1)
-        fields.addWidget(self.imu_enabled, 6, 1)
-        fields.addWidget(QLabel("IMU 보정 파일"), 7, 0)
-        fields.addWidget(self.imu_calibration, 7, 1)
-        fields.addWidget(self.inertial_fusion, 8, 1)
-        fields.addWidget(self.rgb_enabled, 9, 1)
-        fields.addWidget(self.global_reconstruction, 10, 1)
-        fields.addWidget(self.imu_zero_button,7,2)
-        fields.addWidget(self.gravity_enabled,11,1)
+        options = QGridLayout()
+        for index, widget in enumerate((self.demo, self.sensors_only, self.live_mapping, self.imu_enabled,
+                                        self.inertial_fusion, self.rgb_enabled, self.global_reconstruction,
+                                        self.gravity_enabled)):
+            options.addWidget(widget, index//2, index%2)
+        fields.addLayout(options, 3, 1)
+        fields.addWidget(QLabel("IMU 보정 파일"), 4, 0)
+        fields.addWidget(self.imu_calibration, 4, 1)
+        fields.addWidget(self.imu_zero_button, 4, 2)
         self.choose_button = choose
         layout.addLayout(fields)
         self.status_label = QLabel("준비 · 시작 버튼을 누르세요")
