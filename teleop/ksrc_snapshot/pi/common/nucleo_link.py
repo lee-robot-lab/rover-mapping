@@ -1,3 +1,8 @@
+# ================================================================
+# nucleo_link.py
+# 설명: KSRC serial/SPI 프레임을 처리하고 timing flag로 IMU 시각과 PI readback을 구분한다.
+# 사용법: from nucleo_link import SpiLink, decode_spi_telemetry
+# ================================================================
 """
 라즈베리파이 -> Nucleo 시리얼 링크: 프레이밍, CRC, 메시지 인코딩.
 
@@ -58,6 +63,9 @@ SPI_SYNC1 = 0x5A
 SPI_VERSION = 2
 SPI_TYPE_POLL = 0x00
 SPI_TYPE_VEL_CMD = 0x01
+SPI_TYPE_VEL_RES = 0x02           # 속도 명령 + 바퀴별 잔차 (RL Res8). firmware/common/spi_link.h
+SPI_TYPE_CONFIG = 0x03            # 설정: 바퀴 PI ON/OFF, 보정량 상한 (주행 명령 아님)
+SPI_WPI_KEEP = 0xFF
 SPI_TYPE_TELEMETRY = 0x81
 
 TLM_FLAG_TELEOP_ACTIVE = 1 << 0
@@ -68,11 +76,17 @@ TLM_FLAG_IMU_VALID = 1 << 4
 TLM_FLAG_SERVO_READ_ERR = 1 << 5
 TLM_FLAG_STEER_CLAMPED = 1 << 6
 TLM_FLAG_GATE_TIMEOUT = 1 << 7    # 정렬 대기 1.5초 초과로 강제 해제 (조향 막힘 의심)
+TLM_FLAG_WHEEL_PI = 1 << 8        # 구동이 바퀴 속도 PI (0 = 개루프 duty). firmware/common/wheel_pi.h
+TLM_FLAG_WHEEL_STALL = 1 << 9     # 바퀴 PI 스톨 보호 중 (그 바퀴 FF 만)
+TLM_FLAG_ENC_DIR = 1 << 10        # 엔코더 방향 불일치로 잠김 (FF 만, WPI ON 으로 해제)
+TLM_FLAG_RES_ACTIVE = 1 << 11     # 이번 주기 IK 에 바퀴별 잔차를 더함 (타입 0x02 가 제때 옴)
+
+TLM_FLAG_IMU_READ_TIME_VALID = 1 << 12  # 평균 표본의 MCU 읽기 시각 offset
 
 # [2]..[141] 영역: ver, type, seq_echo, tick, flags, t_ms, cmd x3, ticks x4,
 # wheel_mps x4, steer_cmd x4, duty x4, imu x6, rx_err,
 # steer_meas x4, steer_speed x4, steer_load x4, volt x4, temp x4, status x4, servo_valid, 예약 3
-_TLM_BODY = struct.Struct("<BBBBHI3f4i4f4f4h6hH4f4h4h4B4B4BB3x")
+_TLM_BODY = struct.Struct("<BBBBHI3f4i4f4f4h6hH4f4h4h4B4B4BBBH")
 assert 2 + _TLM_BODY.size == SPI_FRAME_LEN - 2
 
 # 원시값 -> 물리량 (펌웨어 imu_ism330.c 설정: ±500 dps, ±4 g)
@@ -110,6 +124,29 @@ def encode_spi_cmd(vx: float, vy: float, omega: float, seq: int,
     body = struct.pack("<BBBBfff", SPI_VERSION, msg_type, seq & 0xFF, 0, vx, vy, omega)
     head = bytes([SPI_SYNC0, SPI_SYNC1]) + body
     frame = head + struct.pack("<H", crc16(body))
+    return frame + bytes(SPI_FRAME_LEN - len(frame))
+
+
+def encode_spi_res_cmd(vx: float, vy: float, omega: float, d_steer, wheel_gain, seq: int) -> bytes:
+    """SPI 타입 0x02: 차체 명령 + 바퀴별 잔차 (모듈 순서 FL FR RL RR).
+    펌웨어가 지금처럼 IK·접기를 한 뒤 조향각 += d_steer [rad], 바퀴 속도 *= wheel_gain.
+    시뮬 Res8Action 과 같은 뜻: d_steer = a[:4] * RES8_STEER_SCALE_RAD, wheel_gain = 1 + a[4:] * RES8_WHEEL_SCALE."""
+    d_steer, wheel_gain = list(d_steer), list(wheel_gain)
+    if len(d_steer) != 4 or len(wheel_gain) != 4:
+        raise ValueError("d_steer, wheel_gain: 4 개씩")
+    body = struct.pack("<BBBBfff4f4f", SPI_VERSION, SPI_TYPE_VEL_RES, seq & 0xFF, 0, vx, vy, omega,
+                       *d_steer, *wheel_gain)
+    frame = bytes([SPI_SYNC0, SPI_SYNC1]) + body + struct.pack("<H", crc16(body))
+    return frame + bytes(SPI_FRAME_LEN - len(frame))
+
+
+def encode_spi_config(seq: int, wpi_on=None, corr=None) -> bytes:
+    """SPI 타입 0x03: 바퀴 PI 설정. wpi_on True/False/None(그대로), corr [duty] 또는 None(그대로).
+    주행 명령이 아니라 워치독·텔레옵에 영향 없음. 결과는 텔레메트리 flags TLM_FLAG_WHEEL_PI 와 "wpi_corr"."""
+    mode = SPI_WPI_KEEP if wpi_on is None else (1 if wpi_on else 0)
+    c = float("nan") if corr is None else float(corr)
+    body = struct.pack("<BBBBBBf", SPI_VERSION, SPI_TYPE_CONFIG, seq & 0xFF, 0, mode, 0, c)
+    frame = bytes([SPI_SYNC0, SPI_SYNC1]) + body + struct.pack("<H", crc16(body))
     return frame + bytes(SPI_FRAME_LEN - len(frame))
 
 
@@ -152,6 +189,11 @@ def decode_spi_telemetry(frame: bytes):
         "steer_temp": v[48:52],           # 섭씨
         "steer_status": v[52:56],
         "servo_valid": tuple(bool(v[56] >> m & 1) for m in range(4)),
+        "wpi_corr": None if v[4] & TLM_FLAG_IMU_READ_TIME_VALID else v[58],                # 바퀴 PI 보정량 상한 [duty] (10-14 이전 펌웨어는 0)
+        "imu_timing_valid": (v[4] & (TLM_FLAG_IMU_VALID | TLM_FLAG_IMU_READ_TIME_VALID)) == (TLM_FLAG_IMU_VALID | TLM_FLAG_IMU_READ_TIME_VALID),
+        "imu_mean_read_offset_us": struct.unpack_from("<h", frame, 140)[0] if (v[4] & (TLM_FLAG_IMU_VALID | TLM_FLAG_IMU_READ_TIME_VALID)) == (TLM_FLAG_IMU_VALID | TLM_FLAG_IMU_READ_TIME_VALID) else None,
+        "imu_time_source": "mcu_mean_sample_read" if (v[4] & (TLM_FLAG_IMU_VALID | TLM_FLAG_IMU_READ_TIME_VALID)) == (TLM_FLAG_IMU_VALID | TLM_FLAG_IMU_READ_TIME_VALID) else None,
+        "imu_n": v[57],                   # imu 가 이번 20 ms 동안 몇 샘플의 평균인지 (0 = 순간값)
     }
 
 
@@ -162,20 +204,37 @@ class SpiLink:
     tlm = link.exchange(0.1, 0.0, 0.0)   # 명령 보내고, 직전 텔레메트리 받기
     """
 
-    def __init__(self, bus: int = 0, device: int = 0, speed_hz: int = 1_000_000):
+    def __init__(self, bus: int = 0, device: int = 0, speed_hz: int = 1_000_000, spi=None):
+        """spi: xfer2(list) 를 가진 대역 객체 (노트북 시험용 fake_nucleo.FakeSpi). None 이면 spidev."""
+        self._seq = 0
+        if spi is not None:
+            self._spi = spi
+            return
         import spidev  # Pi 에서만 필요하므로 여기서 import
         self._spi = spidev.SpiDev()
         self._spi.open(bus, device)
         self._spi.mode = 0
         self._spi.bits_per_word = 8
         self._spi.max_speed_hz = speed_hz
-        self._seq = 0
 
     def exchange(self, vx: float, vy: float, omega: float, poll_only: bool = False):
         self._seq = (self._seq + 1) & 0xFF
         frame = encode_spi_cmd(vx, vy, omega, self._seq,
                                SPI_TYPE_POLL if poll_only else SPI_TYPE_VEL_CMD)
         rx = bytes(self._spi.xfer2(list(frame)))
+        return decode_spi_telemetry(rx)
+
+    def exchange_res(self, vx: float, vy: float, omega: float, d_steer, wheel_gain):
+        """속도 명령 + 바퀴별 잔차 (RL 정책). 텔레옵은 exchange() 그대로."""
+        self._seq = (self._seq + 1) & 0xFF
+        frame = encode_spi_res_cmd(vx, vy, omega, d_steer, wheel_gain, self._seq)
+        rx = bytes(self._spi.xfer2(list(frame)))
+        return decode_spi_telemetry(rx)
+
+    def config(self, wpi_on=None, corr=None):
+        """바퀴 PI 켜고 끄기 / 보정량 상한 (모래 A/B 등). 텔레메트리를 돌려준다 (적용은 다음 프레임부터 보임)."""
+        self._seq = (self._seq + 1) & 0xFF
+        rx = bytes(self._spi.xfer2(list(encode_spi_config(self._seq, wpi_on, corr))))
         return decode_spi_telemetry(rx)
 
     def close(self):

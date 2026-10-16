@@ -23,6 +23,7 @@ fi
 test -r /home/pi/ksrc/pi/common/nucleo_link.py
 mkdir -p /dev/shm/rover_mapping_imu_bridge/pi/common
 cp /home/pi/ksrc/pi/common/udp_spi_bridge.py /home/pi/ksrc/pi/common/nucleo_link.py /dev/shm/rover_mapping_imu_bridge/pi/common/'
+scp "${ssh_options[@]}" "$root/teleop/ksrc_snapshot/pi/common/nucleo_link.py" "$target_host:$remote_dir/pi/common/nucleo_link.py"
 scp "${ssh_options[@]}" "$root/ros2_ws/src/orbslam3_ros2/patches/ksrc_telemetry_tee.patch" "$target_host:$remote_dir/tee.patch"
 ssh -tt "${ssh_options[@]}" "$target_host" 'set -e
 if fuser -s /dev/spidev0.0; then
@@ -30,6 +31,15 @@ if fuser -s /dev/spidev0.0; then
   exit 23
 fi
 cd /dev/shm/rover_mapping_imu_bridge
+/usr/bin/python3 - << "PY"
+import runpy
+actual = runpy.run_path("/home/pi/ksrc/pi/common/nucleo_link.py")
+reviewed = runpy.run_path("pi/common/nucleo_link.py")
+for key in ("IMU_CHIP_TO_BODY", "IMU_GYRO_DPS_PER_LSB", "IMU_ACC_G_PER_LSB", "SPI_VERSION", "SPI_FRAME_LEN"):
+    if actual.get(key) != reviewed[key]:
+        raise SystemExit("Pi decoder metadata differs from reviewed mapping decoder: " + key)
+print("Reviewed decoder: PI/timing discriminator enabled; source KSRC unchanged")
+PY
 patch --batch --fuzz=0 --forward -p1 -i tee.patch
 exec env PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -u pi/common/udp_spi_bridge.py \
   --hz 50 --max-lin 0.15 --max-ang 0.8 --telemetry-socket /dev/shm/rover-mapping-imu.sock'

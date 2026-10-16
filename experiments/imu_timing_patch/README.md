@@ -1,5 +1,23 @@
 # IMU 평균 표본 읽기 시각 패치
 
+## 2026-10-16 최신 KSRC 통합
+
+기존 `ksrc_imu_mean_time.patch`와 `BASELINE.json`은 배포했던 40499bc용으로 보존한다. 최신 KSRC `07161349eb1cfd765d3efff1da43a5cbac57e24f`에는 **별도** `ksrc_imu_mean_time_latest.patch`와 `LATEST_BASELINE.json`을 사용한다.
+
+최신 upstream이 byte140~141을 `wpi_corr`로 사용하므로 이 위치를 예약 영역으로 취급하면 안 된다. latest patch는 bit12로 구분한다: bit12=0이면 기존 unsigned PI readback, bit12=1이면 signed IMU offset이다. 새 Python decoder는 timing frame에서 `wpi_corr=None`으로 표시하고 IMU_VALID까지 있어야 timing을 유효하게 취급한다. **두 값을 같은 frame에 동시에 제공하지 않는다.** 구형 KSRC decoder는 timing offset을 PI 설정값으로 오해하므로 latest timing firmware와 혼용하면 안 된다. PI 설정 명령 자체는 바뀌지 않지만 timing 모드에서는 PI readback 검증을 수행할 수 없다.
+
+latest patch는 common뿐 아니라 실제 board의 SPI source/header 사본과 Python ctypes CTlm 두 정의도 함께 갱신한다. C 구조체 확장 후 기존 ctypes 정의를 사용하면 buffer 밖 접근이 생긴다. upstream wire test도 timing/PI flag 의미를 구분하도록 수정한다.
+
+```bash
+python experiments/imu_timing_patch/build_patch.py /path/to/ksrc-0716134 --profile latest
+KSRC_LATEST_BASELINE=/path/to/ksrc-0716134 \
+  .venv-mapping/bin/python -m pytest tests/imu_timing/test_ksrc_latest.py -q
+```
+
+generator는 baseline hash를 검사하고 원본을 바꾸지 않는다. `--output NEW_PATCH`로 별도 출력할 수 있다. `tools/mapping_imu_bridge.sh`는 Pi 원본 소스 대신 RAM 사본에 검토된 decoder를 사용하며 metadata 불일치 시 실행을 거부한다. 이번 통합은 실제 flash·SPI·모터 검증이 아니다.
+
+아래는 **기존 40499bc 패치의 역사적 계약·적용 결과**다. 최신 patch에 구형 decoder 공존 주장을 적용하지 않는다.
+
 현재 STM이 보내는 IMU 평균값에, 그 평균에 포함된 표본들의 대표 **MCU 읽기 완료 시각**을 붙이는 패치다. 2026-10-15에 ARM 전체 build, STM flash/verify 및 Pi decoder 적용 후 정지 상태 POLL-only 수신을 확인했다. ORB IMU fusion은 아직 수행하지 않았다. [실기 적용 기록](../../docs/experiments/2026-10-15-imu-timestamp-bench-deployment.md)
 
 ## 선택한 방식과 트레이드오프

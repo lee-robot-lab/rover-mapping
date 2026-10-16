@@ -14,7 +14,7 @@ import types
 import pytest
 
 ROOT=Path(__file__).resolve().parents[2]
-BASE=Path(os.environ.get('KSRC_REVIEW_ROOT','/tmp/rover-ksrc-review-fIZ5v1/ksrc-4bd158b1125cee32c5851f74ecc0c8f3d71013b1'))
+BASE=Path(os.environ.get('KSRC_REVIEW_ROOT', str(ROOT/'teleop/ksrc_snapshot')))
 
 @pytest.mark.parametrize('consumer',['absent','slow'])
 def test_bridge_command_equivalence(monkeypatch,tmp_path,consumer):

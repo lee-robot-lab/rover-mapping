@@ -1,5 +1,9 @@
 # KSRC 소스 사본
 
+2026-10-16 갱신: `https://github.com/YunBeeeen/ksrc`의 `07161349eb1cfd765d3efff1da43a5cbac57e24f` 기준이다. joystick·bridge·math는 기존 사본과 동일하다. `nucleo_link.py`는 최신 residual/config·PI flags·평균 IMU 수를 반영하고 mapping timing flag 해석을 추가했다. 최신 upstream 원본 hash는 `experiments/imu_timing_patch/LATEST_BASELINE.json`, 변경 diff는 `ksrc_imu_mean_time_latest.patch`의 decoder 부분을 따른다. 아래 기록과 `docs/source-snapshot.json`은 10월 14일의 역사적 snapshot이며 현재 hash 목록이 아니다.
+
+SPI bit12가 있으면 byte140~141은 signed IMU 읽기 시각이며 `wpi_corr=None`이다. bit12가 없으면 최신 firmware의 PI readback을 유지한다. 실제 Pi 원본 decoder와 축·scale·version·길이를 비교한 뒤 RAM 사본에만 reviewed decoder를 사용한다. 실제 firmware 교체나 KSRC upstream push는 하지 않았다.
+
 기준: Pi `/home/pi/ksrc`의 확인된 `4bd158b1125cee32c5851f74ecc0c8f3d71013b1`.
 
 `teleop_joystick.py`, `joystick_math.py`, `test_joystick_math.py`, `nucleo_link.py`는 실제 확인한 Pi 소스를 보존한 노트북 사본에서 가져왔다. `udp_spi_bridge.py`는 같은 commit의 고정 review 소스에서 가져왔다. 파일 내용과 기존 주석은 바꾸지 않았고 hash는 `docs/source-snapshot.json`에 있다.
