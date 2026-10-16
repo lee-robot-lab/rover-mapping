@@ -23,9 +23,9 @@ def atomic_json(path: Path, data: dict) -> None:
 def decode_image(header: dict, payload: bytes) -> np.ndarray:
     width, height, step = (int(header[key]) for key in ("width", "height", "step"))
     encoding = header["encoding"]
-    if encoding not in ("mono8", "16UC1"):
+    if encoding not in ("mono8", "16UC1", "rgb8", "bgr8"):
         raise ValueError("unsupported image encoding")
-    pixel = 1 if encoding == "mono8" else 2
+    pixel = {"mono8": 1, "16UC1": 2, "rgb8": 3, "bgr8": 3}[encoding]
     if not (0 < width <= 4096 and 0 < height <= 2160 and width * pixel <= step <= width * pixel + 4096):
         raise ValueError("invalid image dimensions/stride")
     size = height * step
@@ -36,6 +36,9 @@ def decode_image(header: dict, payload: bytes) -> np.ndarray:
     if len(raw) != size or not decoder.eof or decoder.unused_data:
         raise ValueError("invalid image payload length")
     dtype = np.dtype(">u2" if header.get("is_bigendian") else "<u2") if pixel == 2 else np.dtype("u1")
+    if pixel == 3:
+        image = np.ndarray((height, width, 3), dtype=dtype, buffer=raw, strides=(step, 3, 1))
+        return image[:, :, ::-1].copy() if encoding == "rgb8" else image.copy()
     return np.ndarray((height, width), dtype=dtype, buffer=raw, strides=(step, pixel)).astype(
         np.uint16 if pixel == 2 else np.uint8, copy=True)
 
@@ -59,13 +62,15 @@ class RunWriter:
         kind = header["kind"]
         if kind == "image":
             side, stamp = header["stream"], header["stamp_ns"]
-            if side not in self.counts or not isinstance(stamp, int) or stamp <= self.last_stamp.get(side, -1):
+            if side not in ("left", "right", "depth", "color") or not isinstance(stamp, int) or stamp <= self.last_stamp.get(side, -1):
                 raise ValueError("invalid/non-increasing image stream or stamp")
+            expected = {"left": ("mono8",), "right": ("mono8",), "depth": ("16UC1",),
+                        "color": ("rgb8", "bgr8")}
+            if header.get("encoding") not in expected[side]:
+                raise ValueError("image encoding disagrees with stream")
             decode_start = time.monotonic_ns()
             image = decode_image(header, payload)
             decode_ms = (time.monotonic_ns()-decode_start)/1e6
-            if (side == "depth") != (image.dtype == np.uint16):
-                raise ValueError("image encoding disagrees with stream")
             relative = f"raw/{side}/{stamp}.png"
             target = self.path / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -77,6 +82,10 @@ class RunWriter:
             self.index.write(json.dumps({**header, "path": relative, "laptop_decode_ms": decode_ms,
                                         "laptop_png_write_ms": png_ms,
                                         "laptop_image_saved_monotonic_ns": saved_ns}) + "\n")
+            if side not in self.counts:
+                self.counts[side] = 0
+                self.image_timings[side] = {"images": 0, "decode_ms_total": 0., "decode_ms_max": 0.,
+                                            "png_write_ms_total": 0., "png_write_ms_max": 0.}
             stats = self.image_timings[side]
             stats["images"] += 1
             for key, value in (("decode_ms", decode_ms), ("png_write_ms", png_ms)):

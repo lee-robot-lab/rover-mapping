@@ -28,7 +28,7 @@ ACTIVE = {"starting", "recording", "stopping", "processing", "reconstructing", "
 
 
 def remote_command(host: str, run_id: str, sensors_only: bool = False, queue_mib: float = 4.,
-                   projector_on: bool = False) -> list[str]:
+                   projector_on: bool = False, rgb_enabled: bool = False) -> list[str]:
     if not re.fullmatch(r"[A-Za-z0-9_.@:-]+", host) or host.startswith("-"):
         raise ValueError("잘못된 SSH 연결 대상")
     if not math.isfinite(queue_mib) or not .25 <= queue_mib <= 64:
@@ -44,6 +44,7 @@ def remote_command(host: str, run_id: str, sensors_only: bool = False, queue_mib
         f"exec /usr/bin/python3 -m experiments.handheld_mapping.pi_worker --run-dir {shlex.quote(remote+'/run')}"
         f" --queue-mib {queue_mib}"+(" --sensors-only" if sensors_only else "")
         +(" --projector-on" if projector_on else "")
+        +(" --rgb" if rgb_enabled else "")
     )
     return ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=5",
             "-o", "ServerAliveCountMax=3", host, shlex.join(["bash", "-c", code])]
@@ -75,6 +76,7 @@ class Session:
         self.thread: threading.Thread | None = None
         self.stop_requested = threading.Event()
         self.preview = None
+        self.color_preview = None
         self.started_at = 0.
         self.ended_at = 0.
         self.generation = 0
@@ -117,6 +119,7 @@ class Session:
             self.generation += 1
             self.process = None
             self.preview = None
+            self.color_preview = None
             self.live = None
             self.imu = None
             self.left_receipts.clear()
@@ -177,7 +180,9 @@ class Session:
             run_id = datetime.now().strftime("%Y%m%d_%H%M%S_")+uuid.uuid4().hex[:6]
             run = root / run_id
             writer = RunWriter(run)
-            self.update(run_dir=str(run), source="synthetic_demo" if config.get("demo") else "D435_Pi")
+            self.update(run_dir=str(run), source="synthetic_demo" if config.get("demo") else "D435_Pi",
+                        rgb_requested=bool(config.get('rgb_enabled')),
+                        global_requested=bool(config.get('global_reconstruction')))
             atomic_json(run / "session.json", self.snapshot())
             if config.get("demo"):
                 command = [sys.executable, "-u", "-m", "experiments.handheld_mapping.demo"]
@@ -188,7 +193,8 @@ class Session:
                 command = remote_command(config.get("host", "pi@raspberrypi.local"), run_id,
                                          sensors_only=config.get("sensors_only", False),
                                          queue_mib=config.get("queue_mib", 4.),
-                                         projector_on=config.get("projector_on", False))
+                                         projector_on=config.get("projector_on", False),
+                                         rgb_enabled=config.get("rgb_enabled", False))
             if config.get("imu_enabled") and not config.get("demo"):
                 from experiments.handheld_mapping.imu import ImuCapture
                 calibration = config.get("imu_calibration")
@@ -273,13 +279,15 @@ class Session:
                         ('queue', 'transport_queue'), ('dropped', 'dropped'), ('source_frames', 'source_frames'),
                         ('capture_metrics', 'capture_metrics')) if source in header})
                 if image is not None:
-                    if live is not None:
+                    if live is not None and header['stream'] in ('left', 'right', 'depth'):
                         live.offer(header)
                     with self.lock:
                         self.status["counts"] = dict(writer.counts)
                         if header["stream"] == "left":
                             self.preview = image
                             self.left_receipts.append(time.monotonic())
+                        elif header['stream'] == 'color':
+                            self.color_preview = image
                 laptop_capture['packets'] = received
                 for key, value in (("read_wait_ms", read_ms), ("writer_accept_ms", accept_ms)):
                     laptop_capture[key+'_total'] += value
@@ -320,9 +328,12 @@ class Session:
                 backend = 'orb_offline'
             self.update(state="reconstructing", message="최종 keyframe으로 TSDF 지도 생성 중")
             from experiments.handheld_mapping.reconstruct import reconstruct
-            dense = (reconstruct(run, progress=lambda message: self.update(message=message), backend=backend)
-                     if backend != 'orb' else reconstruct(run, progress=lambda message: self.update(message=message)))
+            fusion_options = {'color': True} if config.get('rgb_enabled') and not config.get('demo') else {}
+            dense = reconstruct(run, progress=lambda message: self.update(message=message),
+                                backend=backend, **fusion_options)
             self.update(dense=dense)
+            if fusion_options and dense.get('color_status') in ('partial', 'unavailable'):
+                self.update(color_warning='RGB가 없거나 일부만 일치함 · 형상은 보존하고 색상 상태 별도 기록')
             inertial_partial = False
             if config.get("inertial_fusion") and not config.get("demo"):
                 fusion_result = None
@@ -334,7 +345,8 @@ class Session:
                     if fusion_result.get("orb_fused"):
                         self.update(state="reconstructing", message="IMU 융합 경로로 별도 TSDF 지도 생성 중")
                         inertial_dense = reconstruct(run, backend="orb_inertial",
-                                                     progress=lambda message: self.update(message=message))
+                                                     progress=lambda message: self.update(message=message),
+                                                     **fusion_options)
                         self.update(inertial_dense=inertial_dense)
                         inertial_partial = inertial_dense.get("status") != "complete"
                         if inertial_partial:
@@ -354,8 +366,25 @@ class Session:
                 comparison = run_orbline(run)
                 self.update(comparison=comparison)
                 line_partial = comparison.get("dense", {}).get("status", "complete") != "complete"
+            global_partial = False
+            if config.get('global_reconstruction'):
+                self.update(state='reconstructing', message='depth 구간 정합·전역 재구성 중')
+                try:
+                    reference = self._postprocess_global(run, backend, color=bool(fusion_options))
+                    global_partial = reference['status'] != 'complete'
+                    self.update(reference_reconstruction=reference)
+                    if reference['status'] == 'failed':
+                        errors = reference.get('failures', [])
+                        reason = errors[0].get('error', '유효한 결과 없음') if errors else '유효한 결과 없음'
+                        self.update(reference_warning='전역 재구성 실패 · 기존 지도 보존: '+reason)
+                    if reference['maps'] and all(row['optimization_status'] != 'optimized_unverified'
+                                                 for row in reference['maps']):
+                        self.update(reference_warning='추가 depth 제약 부족 · 기존 위치를 유지한 재융합 결과')
+                except Exception as error:
+                    global_partial = True
+                    self.update(reference_warning='전역 재구성 실패 · 기존 지도 보존: '+str(error))
             partial = (dense["status"] != "complete" or finished.get("dropped", 0) > 0
-                       or line_partial or imu_partial or inertial_partial)
+                       or line_partial or imu_partial or inertial_partial or global_partial)
             self.update(state="partial" if partial else "complete", message="일부 누락 있음 · 지도 저장 완료" if partial else "지도 저장 완료",
                         dense=dense, dropped=finished.get("dropped", 0))
         except Exception as error:
@@ -415,22 +444,83 @@ class Session:
             with self.lock:
                 self.imu = None
 
-    def rebuild(self, run_dir: Path) -> None:
+    def _postprocess_global(self, run: Path, backend: str, color: bool = False) -> dict:
+        """명시 backend의 map을 각각 새 폴더에 재구성하고 실패도 따로 보존한다."""
+        from experiments.handheld_mapping.global_reconstruct import run_global
+        run = Path(run).resolve()
+        if backend not in ('orb', 'orb_offline', 'orb_inertial'):
+            raise ValueError('invalid reference backend')
+        files = sorted((run / backend).glob('map_*_keyframes.csv'))
+        if not files:
+            raise ValueError('전역 재구성에 사용할 최종 keyframe이 없습니다')
+        destination = run / 'reference_reconstruction' / uuid.uuid4().hex
+        destination.mkdir(parents=True, exist_ok=False)
+        result = {'status': 'processing', 'kind': 'reference_reconstruction_batch',
+                  'source_run': str(run), 'backend': backend, 'output': str(destination),
+                  'maps': [], 'failures': []}
+        atomic_json(destination / 'summary.json', result)
+        for path in files:
+            token = path.name.removeprefix('map_').removesuffix('_keyframes.csv')
+            if not token.isdecimal():
+                result['failures'].append({'file': path.name, 'error': 'invalid map identity'})
+                continue
+            identity = int(token)
+            output = destination / f'map_{identity}'
+            self.update(message=f'지도 {identity}: depth 전역 재구성 중')
+            try:
+                summary = run_global(run, output, backend=backend, map_id=identity,
+                                     depth_max=1., color=color,
+                                     progress=lambda message: self.update(message=message))
+                result['maps'].append({'map_id': identity, 'output': str(output),
+                    'status': summary.get('status', 'partial'),
+                    'optimization_status': summary.get('optimization_status', 'unknown')})
+            except Exception as error:
+                result['failures'].append({'map_id': identity, 'error': str(error), 'output': str(output)})
+            atomic_json(destination / 'summary.json', result)
+        result['status'] = ('failed' if not result['maps'] else 'partial'
+                            if result['failures'] or any(row['status'] != 'complete' for row in result['maps'])
+                            else 'complete')
+        atomic_json(destination / 'summary.json', result)
+        return result
+
+    def rebuild(self, run_dir: Path, global_reconstruction: bool = True, color: bool = True) -> None:
         with self.lock:
             if self.status["state"] in ACTIVE or (self.thread is not None and self.thread.is_alive()):
                 raise RuntimeError("촬영·저장 중에는 다시 생성할 수 없습니다")
             self.started_at = time.monotonic()
             self.ended_at = 0.
-            self.status.update(state="reconstructing", run_dir=str(run_dir), message="원본에서 TSDF 다시 생성 중")
-            self.thread = threading.Thread(target=self._rebuild, args=(Path(run_dir),), daemon=False)
+            self.preview = self.color_preview = None
+            self.live = None
+            self.left_receipts.clear()
+            self.status = {'state': 'reconstructing', 'run_dir': str(run_dir),
+                           'message': '원본에서 TSDF 다시 생성 중', 'counts': {}, 'dropped': 0}
+            self.thread = threading.Thread(target=self._rebuild,
+                args=(Path(run_dir), global_reconstruction, color), daemon=False)
             self.thread.start()
 
-    def _rebuild(self, run_dir: Path) -> None:
+    def _rebuild(self, run_dir: Path, global_reconstruction: bool = True, color: bool = True) -> None:
         try:
             from experiments.handheld_mapping.reconstruct import reconstruct
-            backend = 'orb' if any((run_dir/'orb').glob('map_*_keyframes.csv')) else 'orb_offline'
-            result = reconstruct(run_dir, progress=lambda message: self.update(message=message), backend=backend)
-            self.update(state="complete" if result["status"] == "complete" else "partial", message="지도 다시 생성 완료", dense=result)
+            backend = next((name for name in ('orb_offline', 'orb', 'orb_inertial')
+                            if any((run_dir / name).glob('map_*_keyframes.csv'))), 'orb_offline')
+            if global_reconstruction:
+                result = self._postprocess_global(run_dir, backend, color=color)
+                self.update(reference_reconstruction=result)
+                if result['maps'] and all(row['optimization_status'] != 'optimized_unverified'
+                                          for row in result['maps']):
+                    self.update(reference_warning='추가 depth 제약 부족 · 기존 위치를 유지한 재융합 결과')
+            else:
+                output = run_dir / 'reference_reconstruction' / uuid.uuid4().hex
+                result = reconstruct(run_dir, progress=lambda message: self.update(message=message),
+                                     backend=backend, color=color, output_dir=output)
+                self.update(dense=result, reconstruction_output=str(output))
+            state = result['status'] if result['status'] in ('complete', 'partial', 'failed') else 'partial'
+            message = '새 폴더에 지도 재생성 결과 저장'
+            if state == 'failed':
+                failures = result.get('failures', [])
+                reason = failures[0].get('error', '유효한 결과 없음') if failures else '유효한 결과 없음'
+                message = '모든 지도 재생성 실패: '+reason
+            self.update(state=state, message=message)
         except Exception as error:
             self.update(state="failed", message=str(error), error=str(error))
         finally:

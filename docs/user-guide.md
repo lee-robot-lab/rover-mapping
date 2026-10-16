@@ -1,6 +1,6 @@
 # 사용 설명서
 
-기준 날짜: 2026-10-15. 모든 노트북 명령은 **clone한 `rover-mapping` 루트**에서 실행한다. 먼저 [설치 설명서](installation.md)를 따른다. 이 문서는 운영 절차이고, 구현/검증 상태는 [인수인계서](handoff/d435-rover-mapping-handoff.md)에 있다.
+기준 날짜: 2026-10-16. 모든 노트북 명령은 **clone한 `rover-mapping` 루트**에서 실행한다. 먼저 [설치 설명서](installation.md)를 따른다. RGB·전역 재구성·중력 후보·지도 편집의 최신 절차는 [기준 지도 워크플로](experiments/reference-map-workflow.md)를 따른다. 아래 기존 절차 중 이전 TSDF/중력 설명보다 최신 워크플로가 우선한다. 구현/검증 상태는 [인수인계서](handoff/d435-rover-mapping-handoff.md)도 참고한다.
 
 ## 1. 장비 없이 먼저 확인
 
@@ -161,7 +161,7 @@ print(reconstruct(Path(sys.argv[1]), backend="orb_offline"))
 PY
 ```
 
-TSDF는 해당 dense 출력을 갱신하고 raw는 보존한다. `reconstruct` CLI의 default는 `orb`이며 backend flag는 없으므로 위 API 또는 GUI를 사용한다. point+line의 정확도 이득은 아직 입증하지 않았다.
+기존 API 기본 출력은 해당 dense 출력을 갱신하고 raw는 보존한다. 새 GUI 재처리는 별도 output에 저장한다. `reconstruct` CLI의 default는 `orb`이며 `--backend`, `--output`, `--keyframe-dir`, `--rgb`를 지원한다. 전역 재구성·편집 절차는 위 최신 워크플로를 따른다. point+line의 정확도 이득은 아직 입증하지 않았다.
 
 ## 8. 지형·costmap 생성
 

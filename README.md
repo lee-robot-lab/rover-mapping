@@ -2,7 +2,7 @@
 
 D435와 Raspberry Pi로 영상을 수집하고, 노트북에서 ORB-SLAM3·TSDF 기준 3D 맵을 만드는 프로젝트다. 촬영 중 coverage/오버레이, 촬영 후 지형 층·prototype costmap 분석, 기존 STM 조이스틱 연동을 포함한다.
 
-**현재는 기준 맵 품질을 검증하는 단계다.** 보정 IMU와 원본 encoder telemetry를 영상과 같은 RUN에 기록하는 경로를 실제 Pi에서 확인했다. 관성 융합, 중력 정렬 자동화, 범용 스캔/STL 위치 보정, live costmap은 후속 작업이다. 실제 주행의 입력 공백 원인도 새 계측으로 확인해야 한다.
+**현재는 기준 맵 품질을 검증하는 단계다.** IMU 융합 시험, depth 구간 전역 정합·재융합, RGB 컬러 기록, 중력 후보·crop·출발점·반복 지도 병합 편집 경로가 있다. RGB 동시 수집의 실기 성능, 실측 정확도, 고정 지도에 대한 주행 보정은 검증이 남아 있다. 최신 운영 절차와 한계는 [기준 지도 워크플로](docs/experiments/reference-map-workflow.md)를 따른다.
 
 ## 먼저 읽을 문서
 
@@ -10,6 +10,7 @@ D435와 Raspberry Pi로 영상을 수집하고, 노트북에서 ORB-SLAM3·TSDF 
 |---|---|
 | 처음 설치 | [설치 설명서](docs/installation.md) |
 | 촬영·조종·지도·costmap 운영 | **[사용 설명서](docs/user-guide.md)** |
+| RGB·전역 재구성·중력·crop·출발점·병합 | **[기준 지도 워크플로](docs/experiments/reference-map-workflow.md)** |
 | 구현·검증 상태와 다음 작업 | [통합 인수인계서](docs/handoff/d435-rover-mapping-handoff.md) |
 | 새 담당자/팀원 공유 | [공유·기여 안내](docs/sharing.md) |
 | 제외된 원본/실행 자산 | [데이터·runtime 안내](docs/data-assets.md) |
@@ -83,4 +84,4 @@ Python-only demo·회귀 성공은 실측 지도 정확도나 현재 Pi 전체 �
 
 노트북 Ubuntu22.04/Python3.10, Pi Ubuntu24.04/native ROS2 Jazzy/Python3.12가 기준이다. 노트북 매핑은 `.venv-mapping`을 쓰며 Conda/ML 환경과 섞지 않는다. Pi에 Humble를 source하지 않는다. 새 머신의 native/RealSense 설치는 별도 확인해야 한다.
 
-이 저장소는 private 팀 공유용이다. ORB-SLAM3/ORB-LINE과 ROS adapter 등의 기존 라이선스는 [외부 의존성 안내](third_party/README.md)를 따른다. 별도의 프로젝트 전체 라이선스를 임의로 지정하지 않았다.
+이 저장소는 사용자 선택으로 public 공개되어 있다. ORB-SLAM3/ORB-LINE과 ROS adapter 등의 기존 라이선스는 [외부 의존성 안내](third_party/README.md)를 따른다. 별도의 프로젝트 전체 라이선스를 임의로 지정하지 않았다.

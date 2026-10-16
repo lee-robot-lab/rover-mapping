@@ -41,7 +41,7 @@ def test_tsdf_accepts_separate_laptop_backend(tmp_path):
     from experiments.handheld_mapping.reconstruct import reconstruct
     run = make_run(tmp_path/'run')
     (run/'orb').rename(run/'orb_offline')
-    result = reconstruct(run, backend='orb_offline')
+    result = reconstruct(run, depth_max=3., backend='orb_offline')
     assert result['status'] == 'complete'
     assert (run/'dense_offline/map_0_mesh.ply').is_file()
     assert not (run/'dense').exists()
@@ -55,7 +55,7 @@ info={'width':80,'height':60,'k':[70,0,39.5,0,70,29.5,0,0,1],'depth_scale_m':.00
 out=sys.stdout.buffer
 write_packet(out,{'kind':'calibration','depth':info,'capture_mode':'sensors_only','source':'recorded_fixture'})
 write_packet(out,{'kind':'ready'})
-write_packet(out,{'kind':'image','stream':'depth','stamp_ns':1000000000,'width':80,'height':60,'step':160,'encoding':'16UC1','frame_id':'depth','compression':'zlib'},zlib.compress(np.full((60,80),2000,np.uint16).tobytes()))
+write_packet(out,{'kind':'image','stream':'depth','stamp_ns':1000000000,'width':80,'height':60,'step':160,'encoding':'16UC1','frame_id':'depth','compression':'zlib'},zlib.compress(np.full((60,80),800,np.uint16).tobytes()))
 write_packet(out,{'kind':'finished','status':'saved','capture_mode':'sensors_only','dropped':0})
 '''
     return [sys.executable, '-c', code]

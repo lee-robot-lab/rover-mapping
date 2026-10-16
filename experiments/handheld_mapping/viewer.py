@@ -7,6 +7,7 @@ import argparse
 import json
 from pathlib import Path
 import time
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 FOLDERS = {'orb_offline':'dense_offline','orb':'dense','orbline':'dense_orbline','orb_inertial':'dense_inertial'}
@@ -30,11 +31,17 @@ def select_maps(target: Path | None, backend: str = 'auto', map_id: int | None =
         return [(target.name,target)]
     if not target.is_dir():
         raise FileNotFoundError(str(target))
+    explicit = backend == 'auto' and (target / 'summary.json').is_file()
     folders = list(FOLDERS.values()) if backend == 'auto' else [FOLDERS[backend]]
-    folder = next((target/name for name in folders if (target/name/'summary.json').is_file()),None)
+    folder = target if explicit else next((target/name for name in folders if (target/name/'summary.json').is_file()),None)
     if folder is None:
         raise FileNotFoundError(f'아직 저장된 3D 지도가 없습니다. 촬영 종료·지도 생성 후 열어주세요: {target}')
     summary = json.loads((folder/'summary.json').read_text())
+    if explicit and isinstance(summary, dict) and isinstance(summary.get('optimized_summary'), str):
+        child = (target / summary['optimized_summary']).resolve()
+        if not child.is_relative_to(target) or child.name != 'summary.json':
+            raise ValueError('invalid optimized summary path')
+        return select_maps(child.parent, map_id=map_id, cloud=cloud)
     if not isinstance(summary,dict) or not isinstance(summary.get('maps'),list):
         raise ValueError('저장 지도 summary의 maps 형식이 올바르지 않습니다.')
     selected = []
@@ -49,7 +56,8 @@ def select_maps(target: Path | None, backend: str = 'auto', map_id: int | None =
         geometry = row.get('cloud' if cloud else 'mesh')
         if not isinstance(geometry,str):
             raise ValueError('저장 지도 summary에 유효한 PLY 경로가 없습니다.')
-        path = (target/geometry).resolve()
+        base = folder if summary.get('paths_relative_to') == 'summary' else target
+        path = (base/geometry).resolve()
         if not path.is_relative_to(folder.resolve()) or path.suffix.lower() != '.ply':
             raise ValueError('invalid saved map path')
         if not path.is_file():
@@ -58,6 +66,14 @@ def select_maps(target: Path | None, backend: str = 'auto', map_id: int | None =
     if not selected:
         raise ValueError(f'요청한 map {map_id}의 저장 결과가 없습니다.')
     return selected
+
+
+def display_geometry(geometry: Any) -> Any:
+    """저장된 RGB를 유지하고 색이 없는 형상에만 기본 표시색을 적용한다."""
+    colored = geometry.has_colors() if hasattr(geometry, 'has_colors') else geometry.has_vertex_colors()
+    if not colored:
+        geometry.paint_uniform_color([.65, .78, .85])
+    return geometry
 
 
 def show_maps(selected: list[tuple[str,Path]], cloud: bool = False) -> None:
@@ -72,7 +88,7 @@ def show_maps(selected: list[tuple[str,Path]], cloud: bool = False) -> None:
                 if not geometry.has_normals(): geometry.estimate_normals()
             else:
                 geometry.compute_vertex_normals()
-            geometry.paint_uniform_color([.65,.78,.85])
+            display_geometry(geometry)
             viewer = o3d.visualization.Visualizer()
             if not viewer.create_window(window_name=f'Rover 3D | {path.parent.parent.name} | {label}',
                                         width=1100,height=780):

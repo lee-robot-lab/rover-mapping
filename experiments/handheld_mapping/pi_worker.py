@@ -28,13 +28,13 @@ from experiments.handheld_mapping.transport import ByteQueue
 class CaptureMetrics:
     """녹화 중 stream별 수집·큐 누락과 Pi monotonic 송신 시간을 고정 크기로 집계한다."""
 
-    def __init__(self) -> None:
+    def __init__(self, rgb: bool = False) -> None:
         self.lock = threading.Lock()
         self.streams = {side: {'received': 0, 'enqueued': 0, 'dropped': 0,
                               'first_stamp_ns': None, 'last_stamp_ns': None,
                               'last_receipt_monotonic_ns': None,
                               'max_source_gap_ms': 0., 'max_receipt_gap_ms': 0.}
-                        for side in ('left', 'right', 'depth')}
+                        for side in (('left', 'right', 'depth', 'color') if rgb else ('left', 'right', 'depth'))}
         self.non_image_dropped = {'status': 0, 'pose': 0}
         self.sender = {'sent_packets': 0, 'last_compress_ms': 0., 'max_compress_ms': 0.,
                        'last_write_ms': 0., 'max_write_ms': 0.}
@@ -136,6 +136,7 @@ def main() -> None:
     parser.add_argument("--sensors-only", action="store_true", help="Pi에서는 ORB/Atlas 없이 원본만 전송")
     parser.add_argument("--queue-mib", type=float, default=4.)
     parser.add_argument("--projector-on", action="store_true", help="D435 IR projector를 켠다 (실험용, 기본 OFF)")
+    parser.add_argument("--rgb", action="store_true", help="640x480 15 Hz RGB8 원본을 추가 전송")
     args = parser.parse_args()
     if not .25 <= args.queue_mib <= 64:
         raise ValueError("invalid queue MiB limit")
@@ -173,7 +174,9 @@ def main() -> None:
         def __init__(self) -> None:
             super().__init__("handheld_capture")
             self.infos = {}
-            self.stamps = {side: deque(maxlen=60) for side in ("left", "right", "depth")}
+            self.stamps = {side: deque(maxlen=60) for side in
+                           (("left", "right", "depth", "color") if getattr(args, 'rgb', False) else
+                            ("left", "right", "depth"))}
             self.receipt = {side: deque(maxlen=60) for side in self.stamps}
             self.pending = ByteQueue(max_items=24, max_bytes=int(args.queue_mib*1024*1024))
             self.recording = False
@@ -181,15 +184,17 @@ def main() -> None:
             self.state = -1
             self.error = None
             self.sent = 0
-            self.capture_metrics = CaptureMetrics()
+            self.capture_metrics = CaptureMetrics(rgb=getattr(args, 'rgb', False))
             # 기존 source_frames는 준비 중 callback도 포함하며 capture_metrics는 녹화 중만 센다.
             self.source_frames = 0
             self.buffer = tf2_ros.Buffer()
             self.listener = tf2_ros.TransformListener(self.buffer, self)
             self.subscriptions_owned = []
             names = {"left": "infra1", "right": "infra2", "depth": "depth"}
+            if getattr(args, 'rgb', False):
+                names['color'] = 'color'
             for side, name in names.items():
-                image_topic = f"/camera/camera/{name}/" + ("image_rect_raw" if side != "depth" else "image_rect_raw")
+                image_topic = f"/camera/camera/{name}/" + ("image_raw" if side == "color" else "image_rect_raw")
                 self.subscriptions_owned.append(self.create_subscription(
                     Image, image_topic, lambda msg, side=side: self.image(side, msg), qos_profile_sensor_data))
                 self.subscriptions_owned.append(self.create_subscription(
@@ -224,8 +229,11 @@ def main() -> None:
             if side == "left":
                 self.source_frames += 1
             self.receipt[side].append(receipt_ns/1e9)
-            if (msg.width, msg.height) != (640, 480) or msg.encoding != ("16UC1" if side == "depth" else "mono8"):
-                self.error = "실제 카메라 profile이 요청한 640x480 mono8/Z16과 다릅니다"
+            encodings = ('rgb8','bgr8') if side == 'color' else (('16UC1',) if side == 'depth' else ('mono8',))
+            pixel = 3 if side == 'color' else 2 if side == 'depth' else 1
+            if ((msg.width, msg.height) != (640, 480) or msg.encoding not in encodings
+                    or not 640*pixel <= msg.step <= 640*pixel+4096 or len(msg.data) != msg.step*480):
+                self.error = "실제 카메라 profile이 요청한 640x480 mono8/Z16/RGB8 또는 stride와 다릅니다"
                 stop.set()
                 return
             header = {"kind": "image", "stream": side, "stamp_ns": stamp, "width": msg.width,
@@ -282,12 +290,18 @@ def main() -> None:
             raise RuntimeError("기존 카메라/ORB가 실행 중입니다. 기존 실행을 종료한 뒤 시작하세요")
         camera = spawn(["ros2", "run", "realsense2_camera", "realsense2_camera_node", "--ros-args",
                         "-r", "__ns:=/camera", "-r", "__node:=camera",
-                        "-p", "enable_color:=false", "-p", "enable_depth:=true",
+                        "-p", f"enable_color:={str(args.rgb).lower()}", "-p", "enable_depth:=true",
                         "-p", "enable_infra1:=true", "-p", "enable_infra2:=true",
                         "-p", "depth_module.infra_profile:=640,480,15", "-p", "depth_module.depth_profile:=640,480,15",
                         "-p", "depth_module.infra1_format:=Y8", "-p", "depth_module.infra2_format:=Y8",
-                        "-p", f"depth_module.emitter_enabled:={int(args.projector_on)}", "-p", "enable_sync:=true"], "camera.log")
-        wait_until(lambda: len(node.infos) == 3 and min(len(values) for values in node.stamps.values()) >= 20, 30)
+                        "-p", f"depth_module.emitter_enabled:={int(args.projector_on)}", "-p", "enable_sync:=true"]
+                       + (["-p", "rgb_camera.color_profile:=640,480,15", "-p", "rgb_camera.color_format:=RGB8"]
+                          if args.rgb else []), "camera.log")
+        wait_until(lambda: len(node.infos) == len(node.stamps) and min(len(values) for values in node.stamps.values()) >= 20, 30)
+        for side, stamps in node.stamps.items():
+            rate = (len(stamps)-1)*1e9/(stamps[-1]-stamps[0])
+            if not 12 <= rate <= 18 or (node.infos[side].width,node.infos[side].height) != (640,480):
+                raise RuntimeError(f'{side} camera profile/rate 검증 실패: {rate:.2f} Hz')
         def info_dict(msg) -> dict:
             return {"width": msg.width, "height": msg.height, "k": list(msg.k), "p": list(msg.p),
                     "r": list(msg.r), "d": list(msg.d), "distortion_model": msg.distortion_model,
@@ -325,13 +339,25 @@ def main() -> None:
                  "depth_frame": depth_frame, "left_frame": left_frame, "transform_source": "live_tf2"}
         if any(abs(value) > 1e-8 for value in depth["d"]):
             raise RuntimeError("TSDF에는 rectified depth 보정값이 필요합니다")
+        color = None
+        if args.rgb:
+            color_frame = node.infos['color'].header.frame_id
+            wait_until(lambda: node.buffer.can_transform(color_frame, depth_frame, Time()), 10)
+            tf = node.buffer.lookup_transform(color_frame, depth_frame, Time()).transform
+            color_depth = pose_matrix({'x':tf.translation.x,'y':tf.translation.y,'z':tf.translation.z,
+                                      'qx':tf.rotation.x,'qy':tf.rotation.y,'qz':tf.rotation.z,'qw':tf.rotation.w})
+            color = {**info_dict(node.infos['color']), 'color_frame':color_frame, 'depth_frame':depth_frame,
+                     'T_color_depth':color_depth.tolist(), 'transform_source':'live_tf2'}
+            from experiments.handheld_mapping.color import color_calibration
+            color_calibration(color)
         # prepare_run은 새 폴더를 요구하므로 별도 RAM subdirectory에 ORB 산출물을 둔다.
         prepared = run / "orb_run"
         if not args.sensors_only:
             prepare_run(prepared, calibration, None)
         send({"kind": "calibration", "source": "D435_Pi", "depth": depth, "stereo": calibration,
               "emitter_enabled": parameters["emitter_enabled"], "sensor_profile": "640x480x15",
-              "capture_mode": "sensors_only" if args.sensors_only else "pi_orb"})
+              "capture_mode": "sensors_only" if args.sensors_only else "pi_orb",
+              "rgb_enabled": args.rgb, **({'color':color} if args.rgb else {})})
         def transmit() -> None:
             try:
                 while True:

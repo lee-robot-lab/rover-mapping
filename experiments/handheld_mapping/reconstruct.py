@@ -5,6 +5,7 @@
 # ================================================================
 import argparse
 from bisect import bisect_left
+from contextlib import nullcontext
 import json
 import math
 from pathlib import Path
@@ -14,6 +15,7 @@ import numpy as np
 
 from experiments.handheld_mapping.storage import atomic_json
 from experiments.handheld_mapping.recording import matched_depths
+from experiments.handheld_mapping.color import color_matcher, project_depth_color
 
 
 def transform(value: list) -> np.ndarray:
@@ -53,7 +55,8 @@ def nearest(stamps: list[int], stamp: int, tolerance_ns: int = 2_000_000) -> int
 
 
 def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 1.,
-                progress=None, backend: str = "orb") -> dict:
+                progress=None, backend: str = "orb", *, keyframe_dir: Path | None = None,
+                output_dir: Path | None = None, color: bool = False) -> dict:
     import open3d as o3d
     run_dir = Path(run_dir).resolve()
     if backend not in ("orb", "orbline", "orb_offline", "orb_inertial"):
@@ -74,7 +77,8 @@ def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 1.,
             raise ValueError("unsupported depth calibration")
     except (KeyError, TypeError, IndexError) as error:
         raise ValueError("depth scale and depth-to-left TF calibration required") from error
-    keyfiles = sorted((run_dir / backend).glob("map_*_keyframes.csv"))
+    pose_dir = (run_dir / backend) if keyframe_dir is None else Path(keyframe_dir).resolve()
+    keyfiles = sorted(pose_dir.glob("map_*_keyframes.csv"))
     if backend == 'orb_inertial':
         fusion = json.loads((run_dir/backend/'summary.json').read_text())
         identities = fusion.get('exported_imu_initialized_maps')
@@ -84,71 +88,126 @@ def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 1.,
     if not keyfiles:
         raise ValueError("원본 depth 또는 최종 keyframe이 없습니다")
     output_name = {"orb": "dense", "orbline": "dense_orbline", "orb_offline": "dense_offline", "orb_inertial": "dense_inertial"}[backend]
-    output = run_dir / output_name
-    output.mkdir(exist_ok=True)
+    explicit_output = output_dir is not None
+    output = Path(output_dir).resolve() if explicit_output else run_dir / output_name
+    if explicit_output and (output == run_dir or run_dir.is_relative_to(output)
+                            or output.is_relative_to(run_dir/'raw')
+                            or output.is_relative_to(run_dir/backend) or output.is_relative_to(pose_dir)):
+        raise ValueError('output overlaps source data or poses')
+    output.mkdir(parents=True, exist_ok=not explicit_output)
     # 이전 결과는 원본과 분리한 채 새 summary가 성공한 경우에만 갱신한다.
     (output / "summary.json").unlink(missing_ok=True)
     intrinsic = o3d.camera.PinholeCameraIntrinsic(width, height, k[0, 0], k[1, 1], k[0, 2], k[1, 2])
     result = {"status": "complete", "method": "keyframe_TSDF", "voxel_size_m": voxel_size,
+              "source_run": str(run_dir), "backend": backend, "keyframe_dir": str(pose_dir),
               "depth_max_m": depth_max, "timestamp_tolerance_ns": 2_000_000,
               "coordinate_system": "per-map initial camera optical; gravity alignment not applied",
               "accuracy_verified_on_real_camera": False, "maps": [], "skipped_maps": []}
+    if explicit_output:
+        result['paths_relative_to'] = 'summary'
+    result.update(color_requested=bool(color), color_status='unavailable' if color else 'disabled',
+                  color_timestamp_tolerance_ns=34_000_000,
+                  color_unknown_rgb=[128,128,128], color_occlusion_tolerance_m=.005)
+    color_info = calibration.get('color')
+    if color and color_info is not None and color_info.get('depth_frame') != info['depth_frame']:
+        raise ValueError('color/depth frame identity mismatch')
     if backend == 'orb_inertial':
         result.update(coordinate_system='ORB stereo-inertial map; gravity estimate unverified',
                       imu_clock_verified=False, pose_source='orb_inertial')
-    for keyfile in keyfiles:
-        map_id = keyfile.name.removeprefix("map_").removesuffix("_keyframes.csv")
-        if not map_id.isdecimal():
-            raise ValueError("keyframe map identity mismatch")
-        volume = o3d.pipelines.integration.ScalableTSDFVolume(
-            voxel_length=voxel_size, sdf_trunc=voxel_size*4,
-            color_type=o3d.pipelines.integration.TSDFVolumeColorType.NoColor)
-        integrated = 0
-        total = max_gap = 0
-        for row, frame, gap in matched_depths(run_dir, keyfile, int(map_id), info['depth_frame']):
-            total += 1
-            if frame is None:
+    matcher_context = color_matcher(run_dir, output, color_info) if color else nullcontext(None)
+    with matcher_context as matcher:
+        for keyfile in keyfiles:
+            map_id = keyfile.name.removeprefix("map_").removesuffix("_keyframes.csv")
+            if not map_id.isdecimal():
+                raise ValueError("keyframe map identity mismatch")
+            can_color = matcher is not None and matcher.count > 0 and color_info is not None
+            volume = o3d.pipelines.integration.ScalableTSDFVolume(
+                voxel_length=voxel_size, sdf_trunc=voxel_size*4,
+                color_type=(o3d.pipelines.integration.TSDFVolumeColorType.RGB8 if can_color else
+                            o3d.pipelines.integration.TSDFVolumeColorType.NoColor))
+            integrated = 0
+            total = max_gap = 0
+            colored_frames = colored_pixels = valid_pixels = max_color_gap = matched_color_frames = 0
+            for row, frame, gap in matched_depths(run_dir, keyfile, int(map_id), info['depth_frame']):
+                total += 1
+                if frame is None:
+                    continue
+                path = (run_dir / frame["path"]).resolve()
+                if not path.is_relative_to(run_dir / "raw"):
+                    raise ValueError("invalid depth path")
+                depth = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+                if depth is None or depth.dtype != np.uint16 or depth.shape != (height, width):
+                    raise ValueError("depth file/profile mismatch")
+                depth = depth.copy()
+                depth[(depth*scale < .25) | (depth*scale > depth_max)] = 0
+                if np.count_nonzero(depth) < 100:
+                    continue
+                world_depth = pose_matrix(row) @ left_depth
+                rgb = np.full((height,width,3), 128, np.uint8)
+                valid_pixels += int(np.count_nonzero(depth))
+                if can_color:
+                    image, color_gap = matcher.match(frame['stamp_ns'])
+                    if image is not None:
+                        matched_color_frames += 1
+                        rgb, mask = project_depth_color(depth,info,image,color_info)
+                        pixels = int(np.count_nonzero(mask))
+                        colored_pixels += pixels
+                        colored_frames += int(pixels > 0)
+                        max_color_gap = max(max_color_gap,color_gap)
+                rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
+                    o3d.geometry.Image(rgb),
+                    o3d.geometry.Image(depth), depth_scale=1/scale, depth_trunc=depth_max,
+                    convert_rgb_to_intensity=False)
+                volume.integrate(rgbd, intrinsic, np.linalg.inv(world_depth))
+                integrated += 1
+                max_gap = max(max_gap, gap)
+                if progress:
+                    progress(f"지도 {map_id}: {integrated} keyframe 융합")
+            if integrated == 0:
+                result["skipped_maps"].append(map_id)
                 continue
-            path = (run_dir / frame["path"]).resolve()
-            if not path.is_relative_to(run_dir / "raw"):
-                raise ValueError("invalid depth path")
-            depth = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
-            if depth is None or depth.dtype != np.uint16 or depth.shape != (height, width):
-                raise ValueError("depth file/profile mismatch")
-            depth = depth.copy()
-            depth[(depth*scale < .25) | (depth*scale > depth_max)] = 0
-            if np.count_nonzero(depth) < 100:
-                continue
-            world_depth = pose_matrix(row) @ left_depth
-            rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
-                o3d.geometry.Image(np.zeros((height, width, 3), np.uint8)),
-                o3d.geometry.Image(depth), depth_scale=1/scale, depth_trunc=depth_max,
-                convert_rgb_to_intensity=False)
-            volume.integrate(rgbd, intrinsic, np.linalg.inv(world_depth))
-            integrated += 1
-            max_gap = max(max_gap, gap)
-            if progress:
-                progress(f"지도 {map_id}: {integrated} keyframe 융합")
-        if integrated == 0:
-            result["skipped_maps"].append(map_id)
-            continue
-        mesh, cloud = volume.extract_triangle_mesh(), volume.extract_point_cloud()
-        mesh.compute_vertex_normals()
-        if len(mesh.triangles) == 0 or len(cloud.points) == 0:
-            raise ValueError("empty TSDF surface")
-        mesh_path, cloud_path = f"{output_name}/map_{map_id}_mesh.ply", f"{output_name}/map_{map_id}_cloud.ply"
-        if not o3d.io.write_triangle_mesh(str(run_dir / mesh_path), mesh):
-            raise OSError("mesh write failed")
-        if not o3d.io.write_point_cloud(str(run_dir / cloud_path), cloud):
-            raise OSError("point cloud write failed")
-        result["maps"].append({"map_id": int(map_id), "keyframes": total, "integrated_frames": integrated,
-                              "unintegrated_keyframes": total-integrated,
-                              "max_timestamp_difference_ns": max_gap, "mesh": mesh_path, "cloud": cloud_path,
-                              "vertices": len(mesh.vertices), "triangles": len(mesh.triangles)})
+            mesh, cloud = volume.extract_triangle_mesh(), volume.extract_point_cloud()
+            if colored_pixels == 0:
+                mesh.vertex_colors = o3d.utility.Vector3dVector()
+                cloud.colors = o3d.utility.Vector3dVector()
+            mesh.compute_vertex_normals()
+            if len(mesh.triangles) == 0 or len(cloud.points) == 0:
+                raise ValueError("empty TSDF surface")
+            mesh_file, cloud_file = f"map_{map_id}_mesh.ply", f"map_{map_id}_cloud.ply"
+            mesh_path = mesh_file if explicit_output else f'{output_name}/{mesh_file}'
+            cloud_path = cloud_file if explicit_output else f'{output_name}/{cloud_file}'
+            if not o3d.io.write_triangle_mesh(str(output / mesh_file), mesh):
+                raise OSError("mesh write failed")
+            if not o3d.io.write_point_cloud(str(output / cloud_file), cloud):
+                raise OSError("point cloud write failed")
+            unavailable_reason = None
+            if color and not colored_pixels:
+                unavailable_reason = ('missing_color_calibration' if color_info is None else
+                                      'no_color_frames' if not matcher.count else
+                                      'no_color_in_timestamp_window' if not matched_color_frames else
+                                      'no_visible_color_projection')
+            result["maps"].append({"map_id": int(map_id), "keyframes": total, "integrated_frames": integrated,
+                                  "unintegrated_keyframes": total-integrated,
+                                  "max_timestamp_difference_ns": max_gap, "mesh": mesh_path, "cloud": cloud_path,
+                                  "vertices": len(mesh.vertices), "triangles": len(mesh.triangles),
+                                  'colored_frames': colored_frames, 'colored_depth_pixels': colored_pixels,
+                                  'matched_color_frames': matched_color_frames,
+                                  'color_unavailable_reason': unavailable_reason,
+                                  'color_volume_type': 'RGB8' if can_color else 'NoColor',
+                                  'valid_depth_pixels': valid_pixels,
+                                  'color_coverage': colored_pixels/valid_pixels if valid_pixels else 0.,
+                                  'max_color_timestamp_difference_ns': max_color_gap,
+                                  'color_status': ('complete' if colored_pixels == valid_pixels else
+                                                   'partial' if colored_pixels else
+                                                   'unavailable') if color else 'disabled'})
     if not result["maps"]:
         raise ValueError("No matching depth/keyframes with valid depth: 일치하는 유효 depth가 없습니다")
     if result["skipped_maps"] or any(item["unintegrated_keyframes"] for item in result["maps"]):
         result["status"] = "partial"
+    if color:
+        statuses = {item['color_status'] for item in result['maps']}
+        result['color_status'] = ('complete' if statuses == {'complete'} else
+                                  'unavailable' if statuses == {'unavailable'} else 'partial')
     atomic_json(output / "summary.json", result)
     return result
 
@@ -158,8 +217,13 @@ def main() -> None:
     parser.add_argument("run_dir", type=Path)
     parser.add_argument("--voxel-size", type=float, default=.01)
     parser.add_argument("--depth-max", type=float, default=1., help="지도 융합에 사용하는 최대 depth 거리(m)")
+    parser.add_argument('--rgb', action='store_true', help='보정·동기화 가능한 RGB를 depth에 투영하여 색을 융합')
+    parser.add_argument('--backend', choices=('orb','orbline','orb_offline','orb_inertial'), default='orb')
+    parser.add_argument('--output', type=Path, help='새 출력 폴더; 기존 폴더는 거부')
+    parser.add_argument('--keyframe-dir', type=Path, help='명시한 map_*_keyframes.csv pose 폴더')
     args = parser.parse_args()
-    print(json.dumps(reconstruct(args.run_dir, args.voxel_size, args.depth_max), indent=2))
+    print(json.dumps(reconstruct(args.run_dir, args.voxel_size, args.depth_max, backend=args.backend,
+                                 keyframe_dir=args.keyframe_dir, output_dir=args.output, color=args.rgb), indent=2))
 
 
 if __name__ == "__main__":

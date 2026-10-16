@@ -13,7 +13,7 @@ import subprocess
 from PyQt5.QtCore import Qt, QTimer, QUrl
 from PyQt5.QtGui import QDesktopServices, QImage, QPixmap
 from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QGridLayout,
-                            QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QVBoxLayout, QWidget)
+                            QHBoxLayout, QInputDialog, QLabel, QLineEdit, QPushButton, QSizePolicy, QVBoxLayout, QWidget)
 
 from experiments.handheld_mapping.controller import ACTIVE, ROOT, Session
 from experiments.handheld_mapping.live_preview import CoverageView
@@ -74,6 +74,10 @@ class MappingWindow(QWidget):
         self.inertial_fusion = QCheckBox("종료 후 IMU 융합 시험")
         self.inertial_fusion.setToolTip("실시간 기본 stereo, 종료 후 별도 관성 결과")
         self.inertial_fusion.setChecked(inertial_fusion and not demo)
+        self.rgb_enabled = QCheckBox('RGB 함께 기록 · 컬러 지도')
+        self.rgb_enabled.setChecked(not demo)
+        self.global_reconstruction = QCheckBox('종료 후 depth 구간 정합·전역 재구성')
+        self.global_reconstruction.setChecked(not demo)
         if self.inertial_fusion.isChecked():
             self.imu_enabled.setChecked(True)
         self.inertial_fusion.toggled.connect(lambda checked: self.imu_enabled.setChecked(True) if checked else None)
@@ -94,6 +98,8 @@ class MappingWindow(QWidget):
         fields.addWidget(QLabel("IMU 보정 파일"), 7, 0)
         fields.addWidget(self.imu_calibration, 7, 1)
         fields.addWidget(self.inertial_fusion, 8, 1)
+        fields.addWidget(self.rgb_enabled, 9, 1)
+        fields.addWidget(self.global_reconstruction, 10, 1)
         self.choose_button = choose
         layout.addLayout(fields)
         self.status_label = QLabel("준비 · 시작 버튼을 누르세요")
@@ -118,7 +124,8 @@ class MappingWindow(QWidget):
         self.overlay_note = QLabel('관측 횟수 오버레이 · 노랑 적음 / 초록 여러 시점')
         self.overlay_note.setWordWrap(True)
         cameras = QVBoxLayout()
-        cameras.addWidget(QLabel('원본 카메라 영상'))
+        self.raw_caption = QLabel('RGB 수집 선택 시 위 RGB · 아래 IR 관측 오버레이')
+        cameras.addWidget(self.raw_caption)
         cameras.addWidget(self.preview,1)
         cameras.addWidget(self.overlay_note)
         cameras.addWidget(self.overlay_preview,1)
@@ -136,7 +143,8 @@ class MappingWindow(QWidget):
         self.stop_button.setObjectName("stop")
         self.open_button, self.rebuild_button = QPushButton("저장 폴더 열기"), QPushButton("기록에서 다시 생성")
         self.view_button = QPushButton('3D 지도 보기')
-        for button in (self.start_button, self.stop_button, self.view_button, self.open_button, self.rebuild_button):
+        self.edit_button = QPushButton('지도 편집·출발점')
+        for button in (self.start_button, self.stop_button, self.view_button, self.open_button, self.rebuild_button, self.edit_button):
             controls.addWidget(button)
         layout.addLayout(controls)
         self.start_button.clicked.connect(self.start)
@@ -144,7 +152,8 @@ class MappingWindow(QWidget):
         self.open_button.clicked.connect(self.open_folder)
         self.rebuild_button.clicked.connect(self.rebuild)
         self.view_button.clicked.connect(self.view_map)
-        layout.addWidget(QLabel(f"입력 요청15 FPS · projector {'ON(실험)' if projector_on else 'OFF'} · 1cm voxel · 지도별 별도 저장 | 실기 depth 추가 부하는 연결 후 확인"))
+        self.edit_button.clicked.connect(self.edit_map)
+        layout.addWidget(QLabel(f"입력 요청15 FPS · projector {'ON(실험)' if projector_on else 'OFF'} · depth 0.25~1m · 노트북 저장 | RGB 추가 부하는 실기 확인 필요"))
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
         self.timer.start(200)
@@ -165,7 +174,9 @@ class MappingWindow(QWidget):
                                 "imu_enabled": self.imu_enabled.isChecked() and not self.demo.isChecked(),
                                 "inertial_fusion": self.inertial_fusion.isChecked() and not self.demo.isChecked(),
                                 "imu_calibration": self.imu_calibration.text().strip(),
-                                "projector_on": self.projector_on and not self.demo.isChecked()})
+                                "projector_on": self.projector_on and not self.demo.isChecked(),
+                                "rgb_enabled": self.rgb_enabled.isChecked() and not self.demo.isChecked(),
+                                "global_reconstruction": self.global_reconstruction.isChecked()})
         except Exception as error:
             self.status_label.setText(str(error))
         self.refresh()
@@ -178,12 +189,47 @@ class MappingWindow(QWidget):
     def rebuild(self) -> None:
         selected = QFileDialog.getExistingDirectory(self, "원본 기록 폴더 선택", self.output.text())
         if selected:
-            self.session.rebuild(Path(selected))
+            self.session.rebuild(Path(selected), self.global_reconstruction.isChecked(), self.rgb_enabled.isChecked())
+            self.refresh()
+
+    def result_target(self) -> str | None:
+        """현재 세션의 명시 결과만 고르고 취소와 아직 결과 없음을 구분한다."""
+        status = self.session.snapshot()
+        results = status.get('reference_reconstruction', {}).get('maps', [])
+        if results:
+            if len(results) > 1:
+                labels = [f"지도 {row['map_id']} · {row['optimization_status']}" for row in results]
+                label, accepted = QInputDialog.getItem(self, '편집할 지도', '좌표계가 다른 지도는 각각 편집합니다', labels, 0, False)
+                if not accepted:
+                    return None
+                return results[labels.index(label)]['output']
+            else:
+                return results[0]['output']
+        return status.get('reconstruction_output') or status.get('run_dir', '')
+
+    def edit_map(self) -> None:
+        """현재 성공한 전역 결과 또는 사용자가 고른 기록을 독립 편집 창으로 연다."""
+        selected = self.result_target()
+        if selected is None:
+            return
+        selected = selected or QFileDialog.getExistingDirectory(
+            self, '지도·촬영·편집 버전 폴더 선택', self.output.text())
+        if not selected:
+            return
+        try:
+            with (Path(selected) / 'reference_editor.log').open('ab') as log:
+                subprocess.Popen([sys.executable, '-m', 'experiments.handheld_mapping.reference_editor', selected],
+                                 cwd=ROOT, stdout=log, stderr=log, start_new_session=True)
+        except OSError as error:
+            self.session.update(message=str(error))
             self.refresh()
 
     def view_map(self) -> None:
         from experiments.handheld_mapping.viewer import select_maps
-        selected = self.session.snapshot()['run_dir'] or QFileDialog.getExistingDirectory(
+        selected = self.result_target()
+        if selected is None:
+            return
+        selected = selected or QFileDialog.getExistingDirectory(
             self,'3D 지도가 저장된 촬영 폴더 선택',self.output.text())
         if not selected:
             return
@@ -207,6 +253,9 @@ class MappingWindow(QWidget):
         self.stop_button.setEnabled(status["state"] in {"starting", "recording"})
         self.rebuild_button.setEnabled(not active)
         self.view_button.setEnabled(not active)
+        self.edit_button.setEnabled(not active)
+        self.rgb_enabled.setEnabled(not active and not self.demo.isChecked())
+        self.global_reconstruction.setEnabled(not active)
         self.open_button.setEnabled(bool(status["run_dir"]))
         for widget in (self.host, self.output, self.mode, self.demo, self.choose_button):
             widget.setEnabled(not active)
@@ -240,6 +289,10 @@ class MappingWindow(QWidget):
         live = self.session.live_snapshot()
         self.coverage.set_snapshot(live)
         label = status["message"]
+        if status.get('reference_warning'):
+            label += ' · '+status['reference_warning']
+        if status.get('color_warning'):
+            label += ' · '+status['color_warning']
         if self.close_pending and active:
             label = "저장이 끝나면 창을 닫습니다 · "+label
         if self.demo.isChecked():
@@ -254,7 +307,7 @@ class MappingWindow(QWidget):
             tracking = (tracking_labels.get(live.get('tracking_state'),'준비')
                         if live and not live.get('error') else '노트북 후처리')
         self.metrics.setText(f"시간 {elapsed//60:02d}:{elapsed%60:02d}  |  저장 IR {counts.get('left', 0)}/{counts.get('right', 0)}"
-                             f" · depth {counts.get('depth', 0)}  |  수신 {status.get('left_receipt_fps', 0):.1f} FPS"
+                             f" · depth {counts.get('depth', 0)} · RGB {counts.get('color', 0)}  |  수신 {status.get('left_receipt_fps', 0):.1f} FPS"
                              f"  |  추적 {tracking}  |  전송 누락 {status.get('dropped', 0)}")
         if status["run_dir"]:
             self.path_label.setText(status["run_dir"])
@@ -262,6 +315,11 @@ class MappingWindow(QWidget):
             image = self.session.preview
             if image is not None:
                 image = image.copy()
+            color_image = self.session.color_preview
+            if color_image is not None and self.rgb_enabled.isChecked():
+                color_image = color_image[:, :, ::-1].copy()
+            else:
+                color_image = None
         overlay = None
         note = '관측 횟수 오버레이 · 노랑 적음 / 초록 여러 시점'
         if live and not live.get('error') and (not live.get('stale') or live.get('finished')):
@@ -280,12 +338,19 @@ class MappingWindow(QWidget):
         if live and not live.get('error') and live.get('tracking_state') == 3:
             note = recovery+' · 이전 촬영 범위 유지'
         self.overlay_note.setText(note)
-        if image is not None:
-            h, w = image.shape
-            qimage = QImage(image.data, w, h, image.strides[0], QImage.Format_Grayscale8).copy()
+        if image is not None or color_image is not None:
+            if color_image is not None:
+                h, w = color_image.shape[:2]
+                qimage = QImage(color_image.data, w, h, color_image.strides[0], QImage.Format_RGB888).copy()
+                self.raw_caption.setText('원본 RGB · 아래 IR 관측 오버레이')
+            else:
+                h, w = image.shape
+                qimage = QImage(image.data, w, h, image.strides[0], QImage.Format_Grayscale8).copy()
+                self.raw_caption.setText('원본 IR · RGB 미수집 또는 수신 대기')
             self.preview.setPixmap(QPixmap.fromImage(qimage).scaled(self.preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
             if overlay is None:
-                overlay_qimage = qimage
+                overlay_qimage = (QImage(image.data, image.shape[1], image.shape[0], image.strides[0],
+                                        QImage.Format_Grayscale8).copy() if image is not None else qimage)
             else:
                 overlay_qimage = QImage(overlay.data,overlay.shape[1],overlay.shape[0],overlay.strides[0],QImage.Format_RGB888).copy()
             self.overlay_preview.setPixmap(QPixmap.fromImage(overlay_qimage).scaled(

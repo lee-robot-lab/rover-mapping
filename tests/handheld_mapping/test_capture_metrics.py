@@ -27,7 +27,7 @@ class FakeNode:
         return None
 
 
-def capture_node() -> object:
+def capture_node(rgb: bool = False) -> object:
     assert hasattr(pi_worker, 'CaptureMetrics'), 'recording-only CaptureMetrics is missing'
     source = Path(pi_worker.__file__).read_text()
     definition = next(node for node in ast.walk(ast.parse(source))
@@ -35,7 +35,7 @@ def capture_node() -> object:
     namespace = {'Node': FakeNode, 'deque': deque, 'ByteQueue': ByteQueue,
                  'CaptureMetrics': pi_worker.CaptureMetrics, 'queue': queue,
                  'receipt_clock': pi_worker.receipt_clock,
-                 'time': pi_worker.time, 'args': SimpleNamespace(queue_mib=4.),
+                 'time': pi_worker.time, 'args': SimpleNamespace(queue_mib=4., rgb=rgb),
                  'stop': threading.Event(), 'qos_profile_sensor_data': object(),
                  'tf2_ros': SimpleNamespace(Buffer=lambda: None, TransformListener=lambda *args: None),
                  **{name: SimpleNamespace for name in
@@ -176,3 +176,27 @@ def test_finished_packet_contains_final_source_frame_counter() -> None:
     assert packets[0].get('source_frames') == 7
     assert packets[0]['capture_metrics']['streams']['left']['received'] == 0
     assert packets[0]['queue']['queued_bytes'] == 0
+
+
+def test_optional_color_metrics_keep_three_stream_default() -> None:
+    metrics = pi_worker.CaptureMetrics(rgb=True)
+    metrics.image_received('color', 1, 2)
+    metrics.enqueue_result({'kind':'image','stream':'color'},enqueued=True)
+    assert metrics.snapshot()['streams']['color']['enqueued'] == 1
+    assert set(pi_worker.CaptureMetrics().snapshot()['streams']) == {'left','right','depth'}
+
+
+def test_color_callback_preserves_profile_and_records_bounded_queue() -> None:
+    node = capture_node(rgb=True)
+    node.recording = True
+    message = image_message(1)
+    message.encoding, message.step, message.data = 'rgb8', 1920, b'\x01'*(640*480*3)
+    node.image('color',message)
+    header,payload = node.pending.get()
+    assert header['encoding'] == 'rgb8' and header['stream'] == 'color'
+    assert len(payload) == 640*480*3
+    assert node.capture_metrics.snapshot()['streams']['color']['received'] == 1
+    assert node.error is None
+    message = image_message(2)
+    node.image('color',message)
+    assert node.error is not None
