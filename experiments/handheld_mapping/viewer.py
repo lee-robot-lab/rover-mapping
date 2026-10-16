@@ -161,6 +161,14 @@ def trajectory_geometries(points: list[tuple[float,float,float]]) -> list:
     return geometries
 
 
+def display_geometry(geometry: Any) -> Any:
+    """저장된 RGB를 유지하고 색이 없는 형상에만 기본 표시색을 적용한다."""
+    colored = geometry.has_colors() if hasattr(geometry, 'has_colors') else geometry.has_vertex_colors()
+    if not colored:
+        geometry.paint_uniform_color([.65, .78, .85])
+    return geometry
+
+
 def show_maps(selected: list[tuple[str,Path]], cloud: bool = False, trajectory: bool = True,
               terrain_colors: bool = True) -> None:
     import open3d as o3d
@@ -266,10 +274,3 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
-
-def display_geometry(geometry: Any) -> Any:
-    """저장된 RGB를 유지하고 색이 없는 형상에만 기본 표시색을 적용한다."""
-    colored = geometry.has_colors() if hasattr(geometry, 'has_colors') else geometry.has_vertex_colors()
-    if not colored:
-        geometry.paint_uniform_color([.65, .78, .85])
-    return geometry
