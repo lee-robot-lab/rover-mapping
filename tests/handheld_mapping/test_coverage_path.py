@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from experiments.handheld_mapping.coverage_path import GridMap, coverage_loop, load_nav2_map
+from experiments.handheld_mapping.coverage_path import GridMap, coverage_loop, load_heightmap, load_nav2_map, rectangle_loop
 
 RES = 0.02
 
@@ -93,3 +93,65 @@ def test_gyusa_sand_arena_loop() -> None:
     assert grid.min_clearance(path) >= 0.21 - grid.resolution * 2
     assert np.allclose(path[0], path[-1], atol=0.05)
     assert result["coverage"] >= 0.8
+
+
+def straight_axis_aligned(path: np.ndarray) -> bool:
+    """연속한 웨이포인트 사이에서 x나 y 중 하나는 변하지 않는다(직선과 직각 모서리뿐)."""
+    delta = np.abs(np.diff(path, axis=0))
+    return bool(((delta[:, 0] < 1e-6) | (delta[:, 1] < 1e-6)).all())
+
+
+def test_rectangle_loop_is_a_closed_axis_aligned_square_ring_inside_the_safe_area() -> None:
+    grid = empty_room()
+    result = rectangle_loop(grid, robot_radius=0.1)
+    path, corners = result["waypoints"][:, :2], result["corners"]
+    assert np.allclose(corners[0], corners[-1]) and len(corners) == 5
+    assert straight_axis_aligned(corners) and straight_axis_aligned(path)
+    assert grid.min_clearance(path) >= 0.1 - RES
+    width, height = np.ptp(corners[:, 0]), np.ptp(corners[:, 1])
+    assert result["perimeter_m"] == pytest.approx(2 * (width + height), abs=0.05)
+    assert width > 1.5 and height > 1.1                       # 안전 영역 전체를 두르는 가장 큰 사각형
+
+
+def test_rectangle_loop_shrinks_so_that_every_edge_stays_safe_around_a_notch() -> None:
+    grid = empty_room()
+    grid.free[6:10, 40:60] = False                            # 아래 변(y≈0.11 m)에 닿는 홈이 파여 있다.
+    result = rectangle_loop(grid, robot_radius=0.1)
+    path = result["waypoints"][:, :2]
+    assert grid.min_clearance(path) >= 0.1 - RES
+    assert straight_axis_aligned(path)
+    assert result["perimeter_m"] < 6.32 - 0.1                 # 홈이 없을 때의 가장 큰 사각형(둘레 6.32 m)보다 줄어든다.
+
+
+def test_rectangle_loop_starts_at_the_projection_of_start_and_repeats_laps() -> None:
+    grid = empty_room()
+    one = rectangle_loop(grid, robot_radius=0.1, start=(1.0, 0.5), laps=1)
+    two = rectangle_loop(grid, robot_radius=0.1, start=(1.0, 0.5), laps=2)
+    assert abs(one["waypoints"][0, 1] - 0.12) < 0.05          # 아래 변 위로 옮겨진다.
+    assert np.allclose(one["waypoints"][0, :2], one["waypoints"][-1, :2], atol=0.03)
+    assert two["length_m"] == pytest.approx(2 * one["length_m"], rel=0.02)
+    assert len(two["corners"]) == 2 * (len(one["corners"]) - 1) + 1       # 변 중간에서 시작하면 한 바퀴가 6점이다.
+
+
+def test_rectangle_loop_keeps_to_flat_ground_when_a_slope_limit_is_given() -> None:
+    grid = empty_room()
+    grid.slope_deg = np.zeros(grid.free.shape)
+    grid.slope_deg[:, 70:] = 15.0                             # 오른쪽 띠는 경사 15°
+    result = rectangle_loop(grid, robot_radius=0.1, max_slope_deg=8.0)
+    assert result["waypoints"][:, 0].max() <= 70 * RES + RES
+
+
+def test_rectangle_loop_refuses_an_unsafe_explicit_rectangle() -> None:
+    grid = empty_room()
+    with pytest.raises(ValueError, match="안전"):
+        rectangle_loop(grid, robot_radius=0.1, rect=(0.0, 0.0, 1.0, 1.0))
+
+
+@pytest.mark.skipif(not Path("/home/su/rover/results/mpm_map/sand_height_v15_m5.npz").exists(), reason="gyusa 높이맵이 없다")
+def test_gyusa_rectangle_loop_on_the_real_height_map() -> None:
+    grid = load_heightmap(Path("/home/su/rover/results/mpm_map/sand_height_v15_m5.npz"))
+    result = rectangle_loop(grid, robot_radius=0.21, start=(5.95, -1.25))
+    path = result["waypoints"][:, :2]
+    assert straight_axis_aligned(path)
+    assert grid.min_clearance(path) >= 0.21 - 2 * grid.resolution
+    assert result["perimeter_m"] > 6.0

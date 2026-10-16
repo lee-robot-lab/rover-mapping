@@ -24,6 +24,7 @@ class GridMap:
     resolution: float
     origin: tuple[float, float]
     height: np.ndarray | None = None
+    slope_deg: np.ndarray | None = None
 
     def to_cell(self, xy: np.ndarray) -> np.ndarray:
         """월드 (x, y) → 격자 (iy, ix)."""
@@ -61,7 +62,7 @@ def load_heightmap(npz: Path, max_slope_deg: float = 21., cell: float = .02) -> 
     gy, gx = np.gradient(height, res)
     slope = np.degrees(np.arctan(np.hypot(gx, gy)))
     return GridMap(free=np.isfinite(height) & (slope <= max_slope_deg), resolution=res,
-                   origin=(float(data["x0"]), float(data["y0"])), height=height)
+                   origin=(float(data["x0"]), float(data["y0"])), height=height, slope_deg=slope)
 
 
 def load_nav2_map(yaml_path: Path) -> GridMap:
@@ -268,6 +269,87 @@ def coverage_loop(grid: GridMap, region: np.ndarray, lane: float, robot_radius: 
             "closing_leg_m": best["closing"]}
 
 
+def best_rectangle(safe: np.ndarray, min_side: int) -> tuple[int, int, int, int] | None:
+    """네 변이 모두 safe인 축 정렬 사각형(r0, c0, r1, c1) 중 둘레가 가장 긴 것. 변의 칸만 보므로 안쪽에 장애물이 있어도 된다."""
+    blocked = ~safe
+    by_col = np.concatenate([np.zeros((1, safe.shape[1]), int), np.cumsum(blocked, axis=0)])   # 열마다 아래로 누적
+    best, best_score = None, -1
+    for r0 in range(safe.shape[0]):
+        for r1 in range(r0 + min_side, safe.shape[0]):
+            side_ok = (by_col[r1 + 1] - by_col[r0]) == 0                  # 이 열은 r0..r1이 모두 safe
+            row_ok = safe[r0] & safe[r1]
+            c = 0
+            while c < safe.shape[1]:
+                if not row_ok[c]:
+                    c += 1
+                    continue
+                end = c
+                while end + 1 < safe.shape[1] and row_ok[end + 1]:
+                    end += 1
+                cols = np.flatnonzero(side_ok[c:end + 1]) + c            # 이 구간에서 양쪽 세로변이 될 수 있는 열
+                if len(cols) >= 2 and cols[-1] - cols[0] >= min_side:
+                    score = (r1 - r0) + (cols[-1] - cols[0])
+                    if score > best_score:
+                        best, best_score = (r0, int(cols[0]), r1, int(cols[-1])), score
+                c = end + 1
+    return best
+
+
+def rectangle_loop(grid: GridMap, robot_radius: float, start: tuple[float, float] | None = None,
+                   rect: tuple[float, float, float, float] | None = None, laps: int = 1, step: float = .05,
+                   max_slope_deg: float | None = None, min_side: float = .4) -> dict:
+    """ㅁ자 직사각형 둘레의 폐루프: 직선 네 변과 직각 모서리뿐이다.
+
+    rect(xmin, ymin, xmax, ymax)를 주면 그 사각형을, 없으면 네 변이 모두 safe인 가장 큰 사각형을 쓴다.
+    max_slope_deg를 주면 그보다 가파른 칸을 피한다(평평한 곳만 돌 때). start가 있으면 둘레 위 가장 가까운 점에서 시작해 반시계로 돈다.
+    corners는 닫힌 꼭짓점 목록(Isaac LoopRoute가 점에서 점으로 직진하는 입력), waypoints는 변마다 step 간격으로 나눈 (x, y, yaw)다.
+    """
+    safe = grid.free & (grid.clearance() >= robot_radius)
+    if max_slope_deg is not None:
+        if grid.slope_deg is None:
+            raise ValueError("경사 한계를 쓰려면 경사 정보가 있는 지도가 필요합니다")
+        safe &= grid.slope_deg <= max_slope_deg
+    if rect is None:
+        cells = best_rectangle(safe, max(1, round(min_side / grid.resolution)))
+        if cells is None:
+            raise ValueError("네 변이 모두 안전한 사각형을 찾지 못했습니다")
+        (x0, y0), (x1, y1) = grid.to_world(np.array([cells[:2], cells[2:]]))
+    else:
+        x0, y0, x1, y1 = rect
+        (r0, c0), (r1, c1) = grid.to_cell(np.array([[x0, y0], [x1, y1]]))
+        if min(r0, c0) < 0 or r1 >= safe.shape[0] or c1 >= safe.shape[1] or not np.concatenate(
+                [safe[r0, c0:c1 + 1], safe[r1, c0:c1 + 1], safe[r0:r1 + 1, c0], safe[r0:r1 + 1, c1]]).all():
+            raise ValueError("지정한 사각형의 둘레가 안전하지 않습니다")
+    ring = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]])                # 반시계 네 꼭짓점
+    vertices = [ring[k] for k in range(4)]
+    if start is not None:                                                     # 둘레 위에서 start에 가장 가까운 점을 새 시작점으로 끼운다.
+        edges = [(ring[k], ring[(k + 1) % 4]) for k in range(4)]
+        def foot(a, b):
+            t = np.clip(np.dot(np.asarray(start) - a, b - a) / np.dot(b - a, b - a), 0, 1)
+            return a + t * (b - a), t
+        k = min(range(4), key=lambda i: np.linalg.norm(foot(*edges[i])[0] - np.asarray(start)))
+        point, t = foot(*edges[k])
+        if t < 1e-9:
+            order = [ring[(k + j) % 4] for j in range(4)]
+        elif t > 1 - 1e-9:
+            order = [ring[(k + 1 + j) % 4] for j in range(4)]
+        else:
+            order = [point] + [ring[(k + 1 + j) % 4] for j in range(4)]       # 변 중간에서 시작하면 점이 하나 늘어난다.
+        vertices = order
+    closed = vertices + [vertices[0]]
+    corners = [closed[0]] + closed[1:] * laps
+    dense = [corners[0]]
+    for a, b in zip(corners[:-1], corners[1:]):                               # 변마다 모서리를 정확히 포함해 나눈다.
+        n = max(1, int(np.ceil(np.linalg.norm(b - a) / step)))
+        dense += [a + (b - a) * j / n for j in range(1, n + 1)]
+    points = np.array(dense)
+    heading = np.arctan2(*np.diff(points, axis=0)[:, ::-1].T)
+    waypoints = np.column_stack([points, np.r_[heading, heading[-1]]])
+    perimeter = 2 * (abs(x1 - x0) + abs(y1 - y0))
+    return {"waypoints": waypoints, "corners": np.array(corners), "rect": [float(x0), float(y0), float(x1), float(y1)],
+            "perimeter_m": float(perimeter), "length_m": float(perimeter * laps), "laps": laps, "robot_radius_m": robot_radius}
+
+
 def save_path(result: dict, grid: GridMap, region: np.ndarray, folder: Path) -> None:
     """웨이포인트(JSON·CSV)와 지도 위 그림(PNG)을 새 폴더에 저장한다."""
     folder = Path(folder)
@@ -289,5 +371,8 @@ def save_path(result: dict, grid: GridMap, region: np.ndarray, folder: Path) -> 
     ax.plot(waypoints[:, 0], waypoints[:, 1], color="#e8873a", lw=1.2)
     ax.plot(*waypoints[0, :2], "o", color="#3fbf6f", ms=9, label="시작·복귀")
     ax.set_aspect("equal")
-    ax.set_title(f"탐색 폐루프 — 길이 {result['length_m']:.1f} m · 줄 간격 {result['lane_m']} m · 덮은 비율 {result['coverage'] * 100:.0f}%")
+    if "lane_m" in result:
+        ax.set_title(f"탐색 폐루프 — 길이 {result['length_m']:.1f} m · 줄 간격 {result['lane_m']} m · 덮은 비율 {result['coverage'] * 100:.0f}%")
+    else:
+        ax.set_title(f"ㅁ 폐루프 — 길이 {result['length_m']:.1f} m · 한 바퀴 {result['perimeter_m']:.1f} m · {result['laps']}바퀴")
     fig.savefig(folder / "path.png", dpi=120, bbox_inches="tight")
