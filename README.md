@@ -11,6 +11,7 @@ D435와 Raspberry Pi로 영상을 수집하고, 노트북에서 ORB-SLAM3·TSDF 
 | 처음 설치 | [설치 설명서](docs/installation.md) |
 | 촬영·조종·지도·costmap 운영 | **[사용 설명서](docs/user-guide.md)** |
 | RGB·전역 재구성·중력·crop·출발점·병합 | **[기준 지도 워크플로](docs/experiments/reference-map-workflow.md)** |
+| 팀원 STL 이후 대표점·세 경로·우회·복귀 준비 | **[STL 임무 도구](docs/experiments/site-mission.md)** |
 | 구현·검증 상태와 다음 작업 | [통합 인수인계서](docs/handoff/d435-rover-mapping-handoff.md) |
 | 새 담당자/팀원 공유 | [공유·기여 안내](docs/sharing.md) |
 | 제외된 원본/실행 자산 | [데이터·runtime 안내](docs/data-assets.md) |

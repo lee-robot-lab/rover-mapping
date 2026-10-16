@@ -77,3 +77,11 @@ bash tools/run_site_mission.sh --input /absolute/path/aligned_poses.jsonl \
 - 실제 팀원 STL, 여의도 센서/단위/장착/추적 정확도와 모래 등판·후퇴는 미검증이다.
 - 2.5D 표현이며 다층·가려진 바닥·얇은 구조·grid보다 작은 형상에는 한계가 있다. footprint는 보수적인 원형 근사다.
 - 실시간 STL 정합·고정 지도 기반 pose 보정, live ORB→site adapter, CAN/모터 송신, 바퀴별 slip 추정은 이번 도구가 자동으로 제공하는 기능이 아니다. 준비한 timestamp/frame/validity 계약에 별도로 연결한다.
+
+## 2026-10-17 검증 기록
+
+최종 bare pytest는 **575 passed, 16 skipped**였다. 새 기능 검사 56개를 포함하며 skip은 native runner/선택 실기 기록/upstream source 조건이 없는 검사다. 실제 장비 검증 통과로 집계하지 않는다. shell syntax와 diff check, 실제 Qt 클릭·저장/재로드·창 이미지 확인도 수행했다.
+
+독립 리뷰에서 발견한 다층 표면 누락, tracking 재개 후 안전 구간 검사 우회, 정상 접근 중 하행 경사 제한의 조기 전환을 회귀 검사로 고정하고 수정했다. 검토자가 관련 37개 검사를 다시 실행해 세 수정이 반영된 것을 확인했다. grid revision 2 이전 bundle은 다시 생성해야 한다.
+
+여덟 합성 시나리오와 합성 pose JSONL 재실행의 원자료는 로컬 `outputs/site_mission_validation/20261017b/`에 있다. 성공·우회·추적 손실 뒤 복귀는 complete, 모든 상행 실패·복귀 정체·하행 구간 차단은 failed로 기록했다. 기존 gyusa CAD의 명시적 top 표면 읽기도 실행했지만 그 시험에서 STL의 실제 단위를 확인한 것은 아니다. 실제 팀원 STL을 받은 뒤 단위/up·형상과 경로를 다시 검사해야 한다.
