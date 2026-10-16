@@ -85,7 +85,7 @@ class MissionRuntime:
             return self._pause('initial_pose_away_from_start')
         if self.last_position is not None and np.linalg.norm(position-self.last_position)>self.settings['max_pose_jump_m']:
             return self._pause('pose_jump')
-        if self.last_position is not None and not self.paused:
+        if self.last_position is not None:
             limit=self.settings['trial_slope_deg' if self.route=='30' and self.state in ('trial_entry','ascending','retreating') else 'normal_slope_deg']
             if not self.mission.site.validate_path([self.last_position,position],limit)['accepted']:
                 return self._pause('unsafe_observed_motion')
@@ -102,7 +102,13 @@ class MissionRuntime:
         if self.visits['entry'+self.route]!='reached' and np.linalg.norm(position-entry)<=self.settings['arrival_tolerance_m']:
             self.visits['entry'+self.route]='reached';self._event('entry_reached',stamp)
         if np.linalg.norm(position-self.points[-1])<=self.settings['arrival_tolerance_m']:
-            return self._arrived(position,stamp)
+            handoff_safe=True
+            if self.state=='ascending':
+                descent=self.mission.path('10','down');normal=self.settings['normal_slope_deg']
+                # Stay in ascent until the actual pose can enter the normal descent corridor.
+                if self.mission.site.validate_path(descent,normal)['accepted']:
+                    handoff_safe=self.mission.site.validate_path(np.vstack((position,descent)),normal)['accepted']
+            if handoff_safe:return self._arrived(position,stamp)
         while self.index<len(self.points)-1 and np.linalg.norm(position-self.points[self.index])<=self.settings['arrival_tolerance_m']:
             self.index+=1
         progress=float(self.arcs[self.index])

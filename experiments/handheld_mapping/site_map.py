@@ -61,13 +61,13 @@ class SiteMap:
         self.frame='site'
         self.source=Path(source).resolve() if source is not None else None
         source_hash=file_hash(self.source) if self.source is not None else geometry_hash
-        self.metadata={'schema_version':1,'frame':self.frame,'units':'m','source_units':units,
+        self.metadata={'schema_version':1,'grid_revision':2,'frame':self.frame,'units':'m','source_units':units,
                        'source_path':str(self.source) if self.source else None,'source_sha256':source_hash,
                        'source_geometry_sha256':geometry_hash,'scale_to_m':scale,
                        'T_site_source_axes':matrix.tolist(),'origin':origin.tolist(),
                        'resolution':self.resolution,'robot_radius':self.robot_radius,'max_step_m':self.max_step_m,
                        'shape':[int(rows),int(cols)],'accuracy_verified':False,'surface_mode':surface_mode,
-                       'grid_method':'vertical first surface; multiple separated hits unknown; projected steep walls blocked',
+                       'grid_method':'vertical surface; up to 16 lower hits; unresolved/multiple layers unknown; steep walls blocked',
                        'limitation':'2.5D; thick closed solids or overlapping floors can remain unknown'}
         self.identity=hashlib.sha256(json.dumps(self.metadata,sort_keys=True).encode()).hexdigest()
         self._rasterize(int(rows),int(cols))
@@ -94,12 +94,23 @@ class SiteMap:
             z=top-distance
             nz=np.abs(normal[:,2])/np.maximum(np.linalg.norm(normal,axis=1),1e-12)
             epsilon=max(1e-4,self.resolution*1e-3)
-            rays[valid,2]=z[valid]-epsilon
-            second=scene.cast_rays(o3d.core.Tensor(rays))['t_hit'].numpy()
-            lower=rays[:,2]-second
             multi=np.zeros(len(idx),bool)
-            both=valid & np.isfinite(second)
-            multi[both]=z[both]-lower[both]>self.max_step_m
+            if self.metadata['surface_mode']=='conservative':
+                active=np.flatnonzero(valid & (nz>=.35))
+                rays[active,2]=z[active]-epsilon
+                for _ in range(16):
+                    if not len(active):break
+                    next_hit=scene.cast_rays(o3d.core.Tensor(rays[active]))['t_hit'].numpy()
+                    finite=np.isfinite(next_hit)
+                    lower=rays[active,2]-next_hit
+                    separated=finite & (z[active]-lower>self.max_step_m)
+                    multi[active[separated]]=True
+                    keep=finite & ~separated
+                    remaining=active[keep]
+                    rays[remaining,2]=lower[keep]-epsilon
+                    active=remaining
+                # More unresolved close hits cannot establish a unique 2.5D surface.
+                multi[active]=True
             good=valid & (nz>=.35) & (~multi if self.metadata['surface_mode']=='conservative' else True)
             height[idx]=np.where(good,z,np.nan)
             slope[idx]=np.where(good,np.degrees(np.arccos(np.clip(nz,0,1))),np.nan)
@@ -174,6 +185,7 @@ class SiteMap:
         folder=Path(folder).resolve();data=json.loads((folder/'site.json').read_text())
         if data.get('schema_version')!=1 or data.get('frame')!='site' or data.get('units')!='m':
             raise ValueError('invalid site metadata')
+        if data.get('grid_revision')!=2:raise ValueError('old grid revision; rebuild site with current surface checks')
         meta={k:v for k,v in data.items() if k not in ('identity','code_commit','assets')}
         if hashlib.sha256(json.dumps(meta,sort_keys=True).encode()).hexdigest()!=data['identity']:
             raise ValueError('site metadata hash changed')

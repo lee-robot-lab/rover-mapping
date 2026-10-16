@@ -78,3 +78,42 @@ def test_jsonl_error_always_appends_stop_command(tmp_path):
     with pytest.raises(ValueError):run_jsonl(mission,source,tmp_path/'output')
     last=json.loads((tmp_path/'output/commands.jsonl').read_text().splitlines()[-1])
     assert last['command']=={'vx_m_s':0.,'yaw_rate_rad_s':0.}
+
+
+def advance_trial(run,mission,end_x):
+    """독립 관측열을 출발→갈림길→30° 직선 구간으로 이동시킨다."""
+    points=[[.5,.5]]+[[.5,y] for y in np.arange(.6,1.51,.1)]+[[x,1.5] for x in np.arange(.6,end_x+.01,.1)]
+    for index,point in enumerate(points):
+        t=round(index*.1,6);out=run.update(sample(mission,t,point),t)
+    return t,out
+
+
+def test_tracking_resume_cannot_skip_unsafe_segment_to_summit():
+    from experiments.handheld_mapping.mission_runtime import MissionRuntime
+    from experiments.handheld_mapping.mission_replay import demo_mission
+    mission=demo_mission();mission.site.robot_radius=.05;mission.site.blocked[30,65]=True
+    mission.routes['30']=np.array([mission.junction,[1,1.5],[3.1,1.5],[3.1,2.1],[3.6,2.1],[3.6,1.5],mission.summit])
+    assert mission.validate()['accepted']
+    run=MissionRuntime(mission);t,_=advance_trial(run,mission,3.1)
+    run.update(sample(mission,t+.1,[3.1,1.5],tracking_valid=False),t+.1)
+    out=run.update(sample(mission,t+.2,[3.5,1.5]),t+.2)
+    assert out['reason']=='unsafe_observed_motion'
+    assert out['visits']['summit']=='pending'
+    out=run.update(sample(mission,t+.3,[3.5,1.5]),t+.3)
+    assert out['visits']['summit']=='pending'
+    assert out['command']['vx_m_s']==0.
+
+
+def test_ascent_keeps_trial_permission_until_safe_descent_handoff():
+    from experiments.handheld_mapping.mission_runtime import MissionRuntime
+    from experiments.handheld_mapping.mission_replay import demo_mission
+    mission=demo_mission();mission.site.robot_radius=.05;mission.site.slope_deg[30:31,20:67]=30.
+    assert mission.validate()['accepted']
+    run=MissionRuntime(mission);t,out=advance_trial(run,mission,3.4)
+    assert out['state']=='ascending'
+    assert out['visits']['summit']=='pending'
+    for offset,x in enumerate([3.45,3.5],1):out=run.update(sample(mission,t+.1*offset,[x,1.5]),t+.1*offset)
+    assert out['state']=='descending'
+    assert out['visits']['summit']=='reached'
+    out=run.update(sample(mission,t+.3,[3.5,1.5]),t+.3)
+    assert out['reason']=='active'

@@ -112,3 +112,20 @@ def test_overlapping_full_surfaces_require_explicit_top_selection():
     assert selected.validate_path([[.5,.5],[3.5,2.5]],20)['accepted']
     assert np.nanmedian(selected.height_m)==pytest.approx(.5)
     assert selected.metadata['surface_mode']=='top'
+
+
+def test_near_duplicate_upper_surface_cannot_hide_lower_floor():
+    near=plane();near.translate([0,0,.49])
+    top=plane();top.translate([0,0,.50])
+    with pytest.raises(ValueError,match='surface'):make_site(plane()+near+top)
+
+
+def test_old_grid_revision_requires_rebuild(tmp_path):
+    import hashlib
+    from experiments.handheld_mapping.site_map import SiteMap
+    make_site().save(tmp_path/'site')
+    path=tmp_path/'site/site.json';data=json.loads(path.read_text());data.pop('grid_revision',None)
+    meta={k:v for k,v in data.items() if k not in ('identity','code_commit','assets')}
+    data['identity']=hashlib.sha256(json.dumps(meta,sort_keys=True).encode()).hexdigest()
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError,match='revision'):SiteMap.load(tmp_path/'site')
