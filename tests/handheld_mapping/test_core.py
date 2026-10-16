@@ -59,13 +59,31 @@ def make_run(path, maps=(0,)):
     return path
 
 
+def test_default_tsdf_excludes_depth_beyond_one_meter_without_changing_raw(tmp_path):
+    from experiments.handheld_mapping.reconstruct import reconstruct
+    import open3d as o3d
+    run = make_run(tmp_path / 'run')
+    path = run / 'raw/depth/1000000000.png'
+    depth = np.full((60, 80), 750, np.uint16)
+    depth[:, 40:] = 1500
+    assert cv2.imwrite(str(path), depth)
+    before = path.read_bytes()
+    result = reconstruct(run, voxel_size=.025)
+    points = np.asarray(o3d.io.read_point_cloud(str(run / result['maps'][0]['cloud'])).points)
+    assert result['depth_max_m'] == 1.
+    assert len(points) > 100
+    assert np.median(points[:, 2]) == pytest.approx(.75, abs=.025)
+    assert points[:, 2].max() < 1.025
+    assert path.read_bytes() == before
+
+
 def test_inertial_tsdf_requires_initialized_export_and_uses_separate_output(tmp_path):
     from experiments.handheld_mapping.reconstruct import reconstruct
     from experiments.handheld_mapping.viewer import select_maps
     run=make_run(tmp_path/'run')
     (run/'orb').rename(run/'orb_inertial')
     (run/'orb_inertial/summary.json').write_text(json.dumps({'orb_fused':True,'exported_imu_initialized_maps':[0]}))
-    result=reconstruct(run, voxel_size=.025, backend='orb_inertial')
+    result=reconstruct(run, voxel_size=.025, depth_max=3., backend='orb_inertial')
     assert result['maps'][0]['mesh']=='dense_inertial/map_0_mesh.ply'
     assert result['coordinate_system']=='ORB stereo-inertial map; gravity estimate unverified'
     assert result['imu_clock_verified'] is False
@@ -100,7 +118,7 @@ def test_tsdf_transform_direction_and_map_separation(tmp_path):
     from experiments.handheld_mapping.reconstruct import reconstruct
     import open3d as o3d
     run = make_run(tmp_path / "run", (0, 7))
-    result = reconstruct(run, voxel_size=.025)
+    result = reconstruct(run, voxel_size=.025, depth_max=3.)
     assert result["status"] == "complete"
     assert len(result["maps"]) == 2
     for item in result["maps"]:
@@ -124,7 +142,7 @@ def test_tsdf_streams_indexes_instead_of_loading_full_recording(tmp_path, monkey
             raise AssertionError('full frame index read')
         return original(path, *args, **kwargs)
     monkeypatch.setattr(Path, 'read_text', checked)
-    assert reconstruct(run)['status'] == 'complete'
+    assert reconstruct(run, depth_max=3.)['status'] == 'complete'
 
 
 @pytest.mark.parametrize("missing", ["T_left_depth", "depth_scale_m"])
@@ -154,7 +172,7 @@ def test_missing_depth_for_some_keyframes_reports_partial(tmp_path):
     path = run / "orb/map_0_keyframes.csv"
     with path.open("a") as stream:
         stream.write("0,1,2.0,1,0,0,0,0,0,1\n")
-    result = reconstruct(run, voxel_size=.025)
+    result = reconstruct(run, voxel_size=.025, depth_max=3.)
     assert result["status"] == "partial"
     assert result["maps"][0]["integrated_frames"] == 1
     assert result["maps"][0]["unintegrated_keyframes"] == 1
@@ -175,7 +193,7 @@ def test_tsdf_rotated_camera_uses_world_to_camera_extrinsic(tmp_path):
     path = run / "orb/map_0_keyframes.csv"
     path.write_text("map_id,keyframe_id,source_stamp,x,y,z,qx,qy,qz,qw\n"
                     "0,0,1.0,1,0,0,0,0.7071067811865476,0,0.7071067811865476\n")
-    reconstruct(run, voxel_size=.025)
+    reconstruct(run, voxel_size=.025, depth_max=3.)
     points = np.asarray(o3d.io.read_point_cloud(str(run / "dense/map_0_cloud.ply")).points)
     assert abs(np.median(points[:, 0])-3) < .025
     assert abs(np.median(points[:, 2])+.2) < .05
@@ -185,13 +203,13 @@ def test_line_tsdf_uses_line_poses_and_preserves_point_result(tmp_path):
     from experiments.handheld_mapping.reconstruct import reconstruct
     import open3d as o3d
     run = make_run(tmp_path / "run")
-    reconstruct(run, voxel_size=.025)
+    reconstruct(run, voxel_size=.025, depth_max=3.)
     original_mesh = (run / "dense/map_0_mesh.ply").read_bytes()
     (run / "orbline").mkdir()
     (run / "orbline/map_0_keyframes.csv").write_text(
         "map_id,keyframe_id,source_stamp,x,y,z,qx,qy,qz,qw\n"
         "0,0,1.0,3,0,0,0,0,0,1\n")
-    result = reconstruct(run, voxel_size=.025, backend="orbline")
+    result = reconstruct(run, voxel_size=.025, depth_max=3., backend="orbline")
     assert result["maps"][0]["cloud"] == "dense_orbline/map_0_cloud.ply"
     points = np.asarray(o3d.io.read_point_cloud(str(run / result["maps"][0]["cloud"])).points)
     assert abs(np.median(points[:, 0])-3.2) < .05

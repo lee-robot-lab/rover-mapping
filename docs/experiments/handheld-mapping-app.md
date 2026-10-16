@@ -59,7 +59,7 @@ sessions/YYYYMMDD_HHMMSS_ID/
 
 ## TSDF 방식과 정확성의 범위
 
-Open3D0.19 `ScalableTSDFVolume`, voxel1cm, truncation4voxel, 유효 depth0.25~3m. voxel은 표현 해상도이며1cm 실측 정확도를 뜻하지 않는다. 가까운 바닥을 측정할 때는 이 거리 필터와 실제 카메라 지원 거리를 먼저 검토한다.
+Open3D0.19 `ScalableTSDFVolume`, voxel1cm, truncation4voxel, 기본 유효 depth0.25~1m(2026-10-16 변경). 원본 depth와 ORB의 IR 추적 입력은 자르지 않고, 최종 지도 융합에서만 이 거리 제한을 적용한다. 실시간 관측 격자·오버레이와 지형 replay의 기존 거리 설정은 별도다. 재구성 CLI의 `--depth-max`로 최대 거리(m)를 명시할 수 있다. voxel은 표현 해상도이며1cm 실측 정확도를 뜻하지 않는다. 가까운 바닥을 측정할 때는 이 거리 필터와 실제 카메라 지원 거리를 먼저 검토한다.
 
 최종 `map_ID_keyframes.csv`의 camera-to-world pose와2ms 이내 source stamp의 depth만 일대일 융합한다. 중간 프레임 pose를 임의 보간하지 않는다. 따라서 초기 버전의 융합 수는 촬영 전체 프레임보다 적다. 일부 keyframe의 유효 depth가 없으면 `partial`로 표시하고, 전체 keyframe/유효 depth 없음/빈 mesh는 실패로 표시한다. 점선 지도 일부 누락도 UI에 반영한다. 서로 다른 map은 별도 파일이며 중력/바닥 정렬이나 map 자동 병합은 적용하지 않는다. 현재 adapter는 종료 때 활성 최종 map의 keyframe을 내보내므로 종료 이전 분리 지도는 최종 keyframe CSV가 없으면 재구성하지 못한다.
 

@@ -38,7 +38,7 @@ def main() -> None:
     while not stop.is_set() and count < 900:
         stamp = 10_000_000_000 + count * 66_666_667
         x_camera = .005 * count
-        depth = np.where((xx-79.5)/focal*2+x_camera < 0, 2000, 1700).astype(np.uint16)
+        depth = np.where((xx-79.5)/focal*.8+x_camera < 0, 800, 650).astype(np.uint16)
         left = ((xx//8 + yy//8 + count//3) % 2 * 120 + 60).astype(np.uint8)
         right = np.roll(left, -4, axis=1)
         for name, image, frame in (("left", left, "demo_left_optical"),

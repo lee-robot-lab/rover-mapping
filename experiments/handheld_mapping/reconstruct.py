@@ -52,7 +52,7 @@ def nearest(stamps: list[int], stamp: int, tolerance_ns: int = 2_000_000) -> int
     return result if abs(result-stamp) <= tolerance_ns else None
 
 
-def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 3.,
+def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 1.,
                 progress=None, backend: str = "orb") -> dict:
     import open3d as o3d
     run_dir = Path(run_dir).resolve()
@@ -157,8 +157,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("run_dir", type=Path)
     parser.add_argument("--voxel-size", type=float, default=.01)
+    parser.add_argument("--depth-max", type=float, default=1., help="지도 융합에 사용하는 최대 depth 거리(m)")
     args = parser.parse_args()
-    print(json.dumps(reconstruct(args.run_dir, args.voxel_size), indent=2))
+    print(json.dumps(reconstruct(args.run_dir, args.voxel_size, args.depth_max), indent=2))
 
 
 if __name__ == "__main__":

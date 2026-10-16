@@ -82,7 +82,7 @@ API의 edge transform은 source local → target local이며 node pose는 fragme
 
 최적화 fragment pose를 `F_f`라 할 때 world correction은 `C_f=F_f A_f^-1`이다. anchor timestamp 사이 correction의 translation은 선형, rotation은 SO(3) SLERP로 보간하고 양 끝은 가장 가까운 correction을 사용한다. 각 camera pose는 `P'_i=C_i P_i`로 생성한다. overlap에 속한 frame도 한 번만 출력하고 한 번만 최종 융합한다. 동일 map의 모든 유효 입력 timestamp와 개수를 대조한다.
 
-최종 TSDF의 baseline과 optimized는 동일 keyframe/depth 집합, 동일 depth range, voxel과 truncation을 사용한다. 기본 비교는 2 cm voxel, 8 cm truncation, 0.25~3 m depth다. 기존 1 cm 결과와 직접 정확도 우위를 비교하지 않는다. 최적화 pose를 평가할 때 TSDF 설정 효과가 섞이지 않도록 새 baseline도 함께 생성한다. 원본 keyframe마다 `P'_i E`를 사용하고 Open3D가 받는 world→depth 방향으로 역변환한다.
+최종 TSDF의 baseline과 optimized는 동일 keyframe/depth 집합, 동일 depth range, voxel과 truncation을 사용한다. 기본 비교는 2 cm voxel, 8 cm truncation, 0.25~1 m depth다(2026-10-16 사용자 요청으로 최대 거리 변경). 기존 1 cm 또는 3 m 거리 결과와 직접 정확도 우위를 비교하지 않는다. 최적화 pose를 평가할 때 TSDF 설정 효과가 섞이지 않도록 새 baseline도 함께 생성한다. 원본 keyframe마다 `P'_i E`를 사용하고 Open3D가 받는 world→depth 방향으로 역변환한다.
 
 강한 평활화, Poisson 보간, mesh decimation은 이 단계의 기본 결과에 적용하지 않는다. 큰 형상을 남기는 후처리 결과는 다음 단계에서 별도로 만든다. 보간된 면·미관측 영역을 실제 관측이나 안전 지면으로 표시하지 않는다.
 
