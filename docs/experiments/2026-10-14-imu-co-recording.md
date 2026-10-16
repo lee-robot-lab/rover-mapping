@@ -12,7 +12,7 @@ D435 → Pi 카메라 수집 → 기존 SSH → 노트북 raw IR/depth → ORB s
 
 IMU의 bias·offset·scale을 적용하고 실제 decoder의 축 정의가 보정 파일과 같은지 검사한다. decoder가 이미 body 축으로 바꾼 값에 X/Y 부호를 다시 반전하지 않는다. IMU는 영상 전송 queue를 공유하지 않으며 Pi 디스크에는 기록하지 않는다.
 
-**현재는 IMU 동시 기록·가속도 기반 기울기 표시다. ORB는 non-inertial stereo이며 IMU 융합·자동 중력 정렬은 아직 아니다.** 영상과 IMU의 Pi receipt monotonic 시각은 보존하지만, MCU/D435 acquisition clock 동기화가 검증됐다는 뜻은 아니다. `imu_clock_verified=false`, `orb_fused=false`를 유지한다. roll/pitch는 움직임 중 중력 외 가속도가 섞이는 진단값이다.
+**2026-10-15 후속: [정지 IMU 기반 중력 정렬·지형 지도](2026-10-15-gravity-terrain-pipeline.md)를 추가했다.** GUI의 ORB는 계속 non-inertial stereo다. 영상과 IMU의 Pi receipt monotonic 시각은 정지 구간을 찾는 데 사용하며, MCU/D435 acquisition clock 동기화가 검증됐다는 뜻은 아니다. `imu_clock_verified=false`, `orb_fused=false`를 유지한다. 가속도계 단독 roll/pitch는 움직임 중 중력 외 가속도가 섞이는 진단값이다. 중력 기준 차체 기울기는 별도로 visual pose와 장착 모델로 계산한다.
 
 ## 매핑 전에 실행
 
@@ -32,6 +32,7 @@ bash tools/handheld_mapping.sh --imu-calibration /absolute/path/to/imu_calibrati
 ```
 
 4. **보정 IMU 함께 기록**을 켜고 실제 보정 경로를 확인한다. **매핑 시작**을 누르면 IMU의 실제 축 정의와 새 유효 샘플을 먼저 확인하고 카메라를 시작한다. IMU가 준비되지 않으면 오류를 표시하며 선택을 무시하고 영상만 촬영하지 않는다. 합성 demo에서는 IMU를 사용하지 않는다.
+   **중력 기준 지도와 높이·경사·단차 생성**을 사용할 때는 촬영 시작 후 최소3초간 정지해 기준을 잡는다. 각 map에서 기준을 얻지 못하면 해당 map의 중력·지형 결과를 성공으로 표시하지 않는다.
 5. 화면의 IMU 유효/고유 샘플 수, Hz, roll/pitch와 영상 증가를 함께 확인한다. Hz는 Pi 수신 monotonic의 고유 telemetry 기준이며 센서의 원시 208 Hz와 다르다. `imu_n`은 telemetry가 평균한 센서 샘플 수다.
 6. 로버를 정지한 뒤 **종료 및 지도 생성**을 누른다. IMU를 마감한 후 ORB·TSDF 후처리를 수행한다. 종료는 joystick bridge를 끄지 않는다. 전원 재시작 후에는 RAM bridge를 다시 실행해야 한다.
 

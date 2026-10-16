@@ -16,7 +16,10 @@ from experiments.handheld_mapping.reconstruct import transform
 class CoverageGrid:
     """초기 camera optical X-Z 평면에 실제 관측 표면과 시점 변화 횟수를 투영한다."""
 
-    def __init__(self, bounds: tuple = (-10., 10., -10., 10.), resolution: float = .05) -> None:
+    def __init__(self, bounds: tuple = (-10., 10., -10., 10.), resolution: float = .05,
+                 gravity_aligned: bool = False) -> None:
+        self.axes = (0,1) if gravity_aligned else (0,2)
+        self.gravity_aligned = gravity_aligned
         self.bounds = tuple(float(v) for v in bounds)
         self.resolution = float(resolution)
         xmin, xmax, zmin, zmax = self.bounds
@@ -44,8 +47,8 @@ class CoverageGrid:
             self.path.clear()
             self.outside_points = 0
             self.map_id = map_id
-        x, z = pose[[0,2],3]
-        yaw = float(np.arctan2(pose[0,2], pose[2,2]))
+        x, z = pose[list(self.axes),3]
+        yaw = float(np.arctan2(pose[self.axes[0],2], pose[self.axes[1],2]))
         self.camera = (float(x), float(z), yaw)
         if not self.path or np.linalg.norm(np.array(self.path[-1])-[x,z]) >= .02:
             self.path.append((float(x),float(z)))
@@ -68,13 +71,14 @@ class CoverageGrid:
                                   (vv-k[1,2])*distance/k[1,1], distance),axis=-1)[valid]
         world_depth = pose @ extrinsic
         points = camera_points @ world_depth[:3,:3].T + world_depth[:3,3]
+        points = points[:,list(self.axes)]
         xmin, xmax, zmin, zmax = self.bounds
         inside = ((points[:,0] >= xmin) & (points[:,0] < xmax)
-                  & (points[:,2] >= zmin) & (points[:,2] < zmax))
+                  & (points[:,1] >= zmin) & (points[:,1] < zmax))
         self.outside_points += int(np.count_nonzero(~inside))
         points = points[inside]
         cols = np.floor((points[:,0]-xmin)/self.resolution).astype(int)
-        rows = np.floor((points[:,2]-zmin)/self.resolution).astype(int)
+        rows = np.floor((points[:,1]-zmin)/self.resolution).astype(int)
         indices = np.unique(rows*self.counts.shape[1]+cols)
         count = self.counts.ravel()
         px, pz, pyaw = self.view_x.ravel(), self.view_z.ravel(), self.view_yaw.ravel()
@@ -91,6 +95,8 @@ class CoverageGrid:
         image[(self.counts > 0) & (self.counts < 3)] = [222,177,63]
         image[self.counts >= 3] = [53,175,133]
         return {'map_id': self.map_id, 'image': image, 'bounds': self.bounds,
+                'gravity_aligned':self.gravity_aligned,
+                'coordinate_system':'gravity_z_up_XY' if self.gravity_aligned else 'initial_camera_optical_XZ_not_gravity_aligned',
                 'resolution': self.resolution, 'path': list(self.path), 'camera': self.camera,
                 'observed_cells': int(np.count_nonzero(self.counts)),
                 'max_observations': int(self.counts.max()), 'outside_points': self.outside_points,
@@ -125,13 +131,15 @@ class StereoMailbox:
                 return
             own = self.frames[side]
             other = self.frames['right' if side == 'left' else 'left']
-            own[stamp] = path
+            own[stamp] = {'path':path,'pi_receipt_monotonic_ns':header.get('pi_receipt_monotonic_ns')}
             if stamp in other:
-                paths = {side: own.pop(stamp), 'right' if side == 'left' else 'left':other.pop(stamp)}
+                records = {side: own.pop(stamp), 'right' if side == 'left' else 'left':other.pop(stamp)}
+                paths = {key:value['path'] for key,value in records.items()}
                 if len(self.pairs) >= self.PAIR_LIMIT:
                     self.dropped += 1
                 else:
-                    self.pairs.append({'stamp_ns':stamp,**paths,'offered_at':time.monotonic()})
+                    self.pairs.append({'stamp_ns':stamp,**paths,'offered_at':time.monotonic(),
+                                       'pi_receipt_monotonic_ns':records['left']['pi_receipt_monotonic_ns']})
                     self.condition.notify_all()
             while len(own) > self.UNMATCHED_LIMIT:
                 own.popitem(last=False)

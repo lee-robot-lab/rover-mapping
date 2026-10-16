@@ -14,7 +14,7 @@ import zlib
 import pytest
 
 from experiments.handheld_mapping import pi_worker
-from experiments.handheld_mapping.transport import ByteQueue
+from experiments.handheld_mapping.transport import ByteQueue, FrameBundler
 
 
 class FakeNode:
@@ -32,7 +32,7 @@ def capture_node() -> object:
     source = Path(pi_worker.__file__).read_text()
     definition = next(node for node in ast.walk(ast.parse(source))
                       if isinstance(node, ast.ClassDef) and node.name == 'CaptureNode')
-    namespace = {'Node': FakeNode, 'deque': deque, 'ByteQueue': ByteQueue,
+    namespace = {'Node': FakeNode, 'deque': deque, 'ByteQueue': ByteQueue, 'FrameBundler': FrameBundler,
                  'CaptureMetrics': pi_worker.CaptureMetrics, 'queue': queue,
                  'time': pi_worker.time, 'args': SimpleNamespace(queue_mib=4.),
                  'stop': threading.Event(), 'qos_profile_sensor_data': object(),
@@ -43,22 +43,25 @@ def capture_node() -> object:
     return namespace['CaptureNode']()
 
 
-def image_message(stamp_ns: int) -> SimpleNamespace:
+def image_message(stamp_ns: int, side='left') -> SimpleNamespace:
     seconds, nanoseconds = divmod(stamp_ns, 1_000_000_000)
     return SimpleNamespace(header=SimpleNamespace(stamp=SimpleNamespace(sec=seconds, nanosec=nanoseconds),
                                                 frame_id='camera_left_optical_frame'),
-                           width=640, height=480, step=640, encoding='mono8',
-                           is_bigendian=False, data=b'\0'*(640*480))
+                           width=640, height=480, step=1280 if side == 'depth' else 640,
+                           encoding='16UC1' if side == 'depth' else 'mono8',
+                           is_bigendian=False, data=b'\0'*(640*480*(2 if side == 'depth' else 1)))
 
 
 def test_capture_excludes_startup_but_legacy_source_frames_includes_it(monkeypatch: pytest.MonkeyPatch) -> None:
     node = capture_node()
-    ticks = iter((1_000_000_000, 2_000_000_000, 2_001_000_000, 2_500_000_000, 2_501_000_000))
-    monkeypatch.setattr(pi_worker.time, 'monotonic_ns', lambda: next(ticks))
+    now = [1_000_000_000]
+    monkeypatch.setattr(pi_worker.time, 'monotonic_ns', lambda: now[0])
     node.image('left', image_message(10_000_000_000))
     node.recording = True
-    node.image('left', image_message(10_100_000_000))
-    node.image('left', image_message(10_300_000_000))
+    for receipt, stamp in ((2_000_000_000, 10_100_000_000), (2_500_000_000, 10_300_000_000)):
+        now[0] = receipt
+        for side in ('left', 'right', 'depth'):
+            node.image(side, image_message(stamp, side))
     snapshot = node.capture_metrics.snapshot(now_ns=3_000_000_000)
     left = snapshot['streams']['left']
     assert node.source_frames == 3
@@ -66,11 +69,13 @@ def test_capture_excludes_startup_but_legacy_source_frames_includes_it(monkeypat
     assert (left['first_stamp_ns'], left['last_stamp_ns']) == (10_100_000_000, 10_300_000_000)
     assert left['max_source_gap_ms'] == pytest.approx(200.)
     assert left['max_receipt_gap_ms'] == pytest.approx(500.)
-    headers = [node.pending.get()[0], node.pending.get()[0]]
+    headers = [node.pending.get()[0] for _ in range(6)]
+    assert [h['stream'] for h in headers] == ['depth', 'left', 'right']*2
+    headers = [header for header in headers if header['stream'] == 'left']
     assert [header['stream_seq'] for header in headers] == [1, 2]
     assert headers[0]['pi_receipt_monotonic_ns'] == 2_000_000_000
-    assert headers[0]['pi_enqueue_monotonic_ns'] == 2_001_000_000
-    assert snapshot['streams']['right']['received'] == 0
+    assert headers[0]['pi_enqueue_monotonic_ns'] == 2_000_000_000
+    assert snapshot['streams']['right']['received'] == 2
 
 
 def test_image_drops_are_separate_from_pose_and_status_drops() -> None:
@@ -78,6 +83,7 @@ def test_image_drops_are_separate_from_pose_and_status_drops() -> None:
     node.recording = True
     node.pending = ByteQueue(max_bytes=1)
     node.image('left', image_message(1))
+    node.bundler.finish()
     node.enqueue({'kind': 'status'})
     node.enqueue({'kind': 'pose'})
     snapshot = node.capture_metrics.snapshot()

@@ -203,6 +203,8 @@ def test_qt_start_records_enabled_imu_in_camera_session(tmp_path, imu_boundary, 
     window = MappingWindow(session, output_root=tmp_path)
     window.imu_enabled.setChecked(True)
     window.imu_calibration.setText(str(tmp_path / "calibration.json"))
+    # 이 시험은 IMU 동시 기록만 격리한다. 정지 기준/장착 데이터는 제공하지 않는다.
+    window.gravity_enabled.setChecked(False)
     try:
         window.start_button.click()
         wait_state(session, {"recording"})
@@ -216,6 +218,31 @@ def test_qt_start_records_enabled_imu_in_camera_session(tmp_path, imu_boundary, 
     result = session.snapshot()
     assert result["state"] == "complete", result
     assert json.loads((Path(result["run_dir"]) / "session.json").read_text())["imu"]["orb_fused"] is False
+
+
+def test_requested_gravity_without_reference_keeps_raw_and_reports_partial(tmp_path,imu_boundary):
+    session=Session()
+    session.start({**config(tmp_path),'gravity_enabled':True})
+    try:
+        wait_state(session,{'recording'})
+        time.sleep(.2)
+    finally:
+        session.stop(); session.thread.join(timeout=20)
+    result=session.snapshot()
+    assert result['state']=='partial',result
+    assert result['gravity']['status']=='unavailable'
+    assert result['terrain']['status']=='unavailable'
+    assert result['dense']['maps'][0]['coordinate_system']=='initial_camera_optical'
+    assert list((Path(result['run_dir'])/'raw/depth').glob('*.png'))
+
+
+def test_gravity_requires_imu_before_camera_launch(tmp_path):
+    session=Session()
+    session.start({'output_root':str(tmp_path),'gravity_enabled':True,'imu_enabled':False})
+    session.thread.join(timeout=5)
+    assert session.snapshot()['state']=='failed'
+    assert session.process is None
+    assert 'IMU' in session.snapshot()['message']
 
 
 def test_real_imu_capture_and_camera_share_run_without_clock_or_fusion_claims(tmp_path, monkeypatch):

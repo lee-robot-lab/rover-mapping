@@ -10,28 +10,94 @@
 #include <Eigen/Geometry>
 #include <opencv2/opencv.hpp>
 #include <chrono>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
+#include <vector>
 
 #ifdef ROVER_POINT_BASELINE
 // 오래된 runtime이 복구 설정을 조용히 무시하지 않도록 실행 시 지원을 확인한다.
 extern "C" bool orbslam3_has_stereo_recovery_wait() __attribute__((weak));
 extern "C" bool orbslam3_has_initial_stereo_relocalization() __attribute__((weak));
 extern "C" bool orbslam3_has_safe_presave_observations() __attribute__((weak));
+
+// 개별 표본의 시각은 Python 경계에서 카메라 clock으로 검증한다.
+// 수신 telemetry 평균값이나 수신 시각으로 대체하지 않는다.
+class ImuInput {
+    std::ifstream input;
+    bool available = false;
+    long long stamp = -1, previous = -1;
+    float values[6];
+    void advance() {
+        std::string line;
+        available = static_cast<bool>(std::getline(input,line));
+        if (!available) return;
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        std::istringstream row(line);
+        std::string field;
+        std::getline(row,field,',');
+        size_t used = 0;
+        stamp = std::stoll(field,&used);
+        if (used != field.size() || stamp < 0 || stamp <= previous)
+            throw std::runtime_error("invalid/nonmonotonic IMU timestamp");
+        previous = stamp;
+        for (int i=0; i<6; ++i) {
+            if (!std::getline(row,field,',')) throw std::runtime_error("missing IMU field");
+            values[i] = std::stof(field,&used);
+            if (used != field.size() || !std::isfinite(values[i]))
+                throw std::runtime_error("invalid IMU measurement");
+        }
+        if (std::getline(row,field,',')) throw std::runtime_error("extra IMU field");
+    }
+public:
+    explicit ImuInput(const char* path) : input(path) {
+        std::string header;
+        std::getline(input,header);
+        if (!header.empty() && header.back() == '\r') header.pop_back();
+        if (header != "stamp_ns,ax,ay,az,gx,gy,gz")
+            throw std::runtime_error("invalid IMU CSV header");
+        advance();
+        if (!available) throw std::runtime_error("empty IMU input");
+    }
+    std::vector<ORB_SLAM3::IMU::Point> take(long long camera_stamp) {
+        std::vector<ORB_SLAM3::IMU::Point> points;
+        while (available && stamp <= camera_stamp) {
+            if (points.size() >= 16384) throw std::runtime_error("too many IMU samples per stereo frame");
+            points.emplace_back(values[0],values[1],values[2],values[3],values[4],values[5],stamp*1e-9);
+            advance();
+        }
+        if (points.empty()) throw std::runtime_error("no IMU samples for stereo frame");
+        return points;
+    }
+};
 #endif
 
 int main(int argc, char** argv) {
-    if (argc != 6) { std::cerr << "ORBvoc LSDvoc yaml pairs.tsv output_dir\n"; return 2; }
+    if (argc == 2 && std::string(argv[1]) == "--capabilities") {
+#ifdef ROVER_POINT_BASELINE
+        std::cout << "{\"stereo\":true,\"offline_imu_stereo\":true,\"live_imu_stereo\":false}\n";
+#else
+        std::cout << "{\"offline_imu_stereo\":false}\n";
+#endif
+        return 0;
+    }
+    if (argc != 6 && argc != 8) { std::cerr << "ORBvoc LSDvoc yaml pairs.tsv output_dir [--imu samples.csv]\n"; return 2; }
     try {
         const bool live = std::string(argv[4]) == "-";
+        const bool inertial = argc == 8;
+        if (inertial && (std::string(argv[6]) != "--imu" || live))
+            throw std::runtime_error("--imu requires an offline point-baseline recording");
 #ifndef ROVER_POINT_BASELINE
-        if (live) throw std::runtime_error("stdin live mode requires point baseline");
+        if (live || inertial) throw std::runtime_error("stdin live and IMU modes require point baseline");
 #endif
 #ifdef ROVER_POINT_BASELINE
+        std::unique_ptr<ImuInput> imu;
+        if (inertial) imu.reset(new ImuInput(argv[7]));
         {
             const cv::FileStorage settings(argv[3], cv::FileStorage::READ);
             if (!settings["Tracking.StereoRelocalizationWaitSeconds"].empty()
@@ -41,7 +107,8 @@ int main(int argc, char** argv) {
         }
         if (!orbslam3_has_safe_presave_observations || !orbslam3_has_safe_presave_observations())
             throw std::runtime_error("Atlas save safety patch missing: apply orbslam3_presave_observation_safety.patch and rebuild native runtime");
-        ORB_SLAM3::System slam(argv[1], argv[3], ORB_SLAM3::System::STEREO, false);
+        ORB_SLAM3::System slam(argv[1], argv[3],
+                              inertial ? ORB_SLAM3::System::IMU_STEREO : ORB_SLAM3::System::STEREO, false);
 #else
         ORB_SLAM3::System slam(argv[1], argv[2], argv[3], ORB_SLAM3::System::STEREO, false);
 #endif
@@ -71,7 +138,8 @@ int main(int argc, char** argv) {
             if (image_left.empty() || image_right.empty()) throw std::runtime_error("missing stereo image");
             auto start = std::chrono::steady_clock::now();
 #ifdef ROVER_POINT_BASELINE
-            auto tracked_pose = slam.TrackStereo(image_left, image_right, std::stod(stamp)*1e-9);
+            const auto measurements = inertial ? imu->take(std::stoll(stamp)) : std::vector<ORB_SLAM3::IMU::Point>();
+            auto tracked_pose = slam.TrackStereo(image_left, image_right, std::stod(stamp)*1e-9,measurements);
 #else
             slam.TrackStereo(image_left, image_right, std::stod(stamp)*1e-9);
 #endif
@@ -101,9 +169,16 @@ int main(int argc, char** argv) {
         }
         slam.Shutdown();
         size_t exported = 0;
+        size_t imu_initialized_maps = 0, skipped_uninitialized_maps = 0;
         for (const auto& item : maps) {
             auto* map = item.second;
             if (map->IsBad()) continue;
+#ifdef ROVER_POINT_BASELINE
+            if (inertial) {
+                if (!map->isImuInitialized()) { ++skipped_uninitialized_maps; continue; }
+                ++imu_initialized_maps;
+            }
+#endif
             auto id = map->GetInitKFid();
             std::ofstream frames(std::string(argv[5]) + "/map_" + std::to_string(id) + "_keyframes.csv");
             frames << "map_id,keyframe_id,source_stamp,x,y,z,qx,qy,qz,qw\n" << std::setprecision(17);
@@ -129,7 +204,9 @@ int main(int argc, char** argv) {
         if (!timing || processed == 0 || exported == 0) throw std::runtime_error("no valid final keyframes");
         std::ofstream complete(std::string(argv[5]) + "/runner_complete.json");
         complete << "{\"status\":\"complete\",\"frames\":" << processed
-                 << ",\"keyframes\":" << exported << "}\n";
+                 << ",\"keyframes\":" << exported
+                 << ",\"imu_initialized_maps\":" << imu_initialized_maps
+                 << ",\"skipped_uninitialized_maps\":" << skipped_uninitialized_maps << "}\n";
         return complete ? 0 : 1;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

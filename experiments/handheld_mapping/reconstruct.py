@@ -9,11 +9,10 @@ import json
 import math
 from pathlib import Path
 
-import cv2
 import numpy as np
 
 from experiments.handheld_mapping.storage import atomic_json
-from experiments.handheld_mapping.recording import matched_depths
+from experiments.handheld_mapping.depth_filter import DepthFilter, filtered_depths
 
 
 def transform(value: list) -> np.ndarray:
@@ -53,10 +52,14 @@ def nearest(stamps: list[int], stamp: int, tolerance_ns: int = 2_000_000) -> int
 
 
 def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 3.,
-                progress=None, backend: str = "orb") -> dict:
+                progress=None, backend: str = "orb", gravity_alignments: dict | None = None,
+                depth_filter: DepthFilter | None = None, output_root: Path | None = None) -> dict:
     import open3d as o3d
     run_dir = Path(run_dir).resolve()
-    if backend not in ("orb", "orbline", "orb_offline"):
+    filtering = depth_filter or DepthFilter(max_depth_m=depth_max)
+    if not math.isclose(filtering.max_depth_m, depth_max, rel_tol=0., abs_tol=1e-9):
+        raise ValueError('depth filter and TSDF maximum distance differ')
+    if backend not in ("orb", "orbline", "orb_offline", "orb_inertial"):
         raise ValueError("invalid reconstruction backend")
     if not math.isfinite(voxel_size) or not .002 <= voxel_size <= .1 or not .3 < depth_max <= 10:
         raise ValueError("invalid voxel/depth bounds")
@@ -77,9 +80,11 @@ def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 3.,
     keyfiles = sorted((run_dir / backend).glob("map_*_keyframes.csv"))
     if not keyfiles:
         raise ValueError("원본 depth 또는 최종 keyframe이 없습니다")
-    output_name = {"orb": "dense", "orbline": "dense_orbline", "orb_offline": "dense_offline"}[backend]
-    output = run_dir / output_name
-    output.mkdir(exist_ok=True)
+    output_name = {"orb": "dense", "orbline": "dense_orbline", "orb_offline": "dense_offline",
+                   "orb_inertial":"dense_inertial"}[backend]
+    destination = Path(output_root).resolve() if output_root is not None else run_dir
+    output = destination / output_name
+    output.mkdir(parents=True, exist_ok=True)
     # 이전 결과는 원본과 분리한 채 새 summary가 성공한 경우에만 갱신한다.
     (output / "summary.json").unlink(missing_ok=True)
     intrinsic = o3d.camera.PinholeCameraIntrinsic(width, height, k[0, 0], k[1, 1], k[0, 2], k[1, 2])
@@ -87,30 +92,29 @@ def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 3.,
               "depth_max_m": depth_max, "timestamp_tolerance_ns": 2_000_000,
               "coordinate_system": "per-map initial camera optical; gravity alignment not applied",
               "accuracy_verified_on_real_camera": False, "maps": [], "skipped_maps": []}
+    result['depth_filter'] = filtering.metadata()
     for keyfile in keyfiles:
         map_id = keyfile.name.removeprefix("map_").removesuffix("_keyframes.csv")
         if not map_id.isdecimal():
             raise ValueError("keyframe map identity mismatch")
+        from experiments.handheld_mapping.gravity import load_alignment
+        gravity = (load_alignment(run_dir,backend,int(map_id)) if gravity_alignments is None
+                   else gravity_alignments.get(int(map_id)))
+        world_from_slam = transform(gravity['world_from_slam']) if gravity else np.eye(4)
         volume = o3d.pipelines.integration.ScalableTSDFVolume(
             voxel_length=voxel_size, sdf_trunc=voxel_size*4,
             color_type=o3d.pipelines.integration.TSDFVolumeColorType.NoColor)
         integrated = 0
         total = max_gap = 0
-        for row, frame, gap in matched_depths(run_dir, keyfile, int(map_id), info['depth_frame']):
+        filter_stats = {}
+        for row, frame, gap, depth in filtered_depths(run_dir, keyfile, int(map_id), info,
+                                                     world_from_slam, filtering, filter_stats):
             total += 1
             if frame is None:
                 continue
-            path = (run_dir / frame["path"]).resolve()
-            if not path.is_relative_to(run_dir / "raw"):
-                raise ValueError("invalid depth path")
-            depth = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
-            if depth is None or depth.dtype != np.uint16 or depth.shape != (height, width):
-                raise ValueError("depth file/profile mismatch")
-            depth = depth.copy()
-            depth[(depth*scale < .25) | (depth*scale > depth_max)] = 0
             if np.count_nonzero(depth) < 100:
                 continue
-            world_depth = pose_matrix(row) @ left_depth
+            world_depth = world_from_slam @ pose_matrix(row) @ left_depth
             rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
                 o3d.geometry.Image(np.zeros((height, width, 3), np.uint8)),
                 o3d.geometry.Image(depth), depth_scale=1/scale, depth_trunc=depth_max,
@@ -128,18 +132,25 @@ def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 3.,
         if len(mesh.triangles) == 0 or len(cloud.points) == 0:
             raise ValueError("empty TSDF surface")
         mesh_path, cloud_path = f"{output_name}/map_{map_id}_mesh.ply", f"{output_name}/map_{map_id}_cloud.ply"
-        if not o3d.io.write_triangle_mesh(str(run_dir / mesh_path), mesh):
+        if not o3d.io.write_triangle_mesh(str(destination / mesh_path), mesh):
             raise OSError("mesh write failed")
-        if not o3d.io.write_point_cloud(str(run_dir / cloud_path), cloud):
+        if not o3d.io.write_point_cloud(str(destination / cloud_path), cloud):
             raise OSError("point cloud write failed")
         result["maps"].append({"map_id": int(map_id), "keyframes": total, "integrated_frames": integrated,
                               "unintegrated_keyframes": total-integrated,
                               "max_timestamp_difference_ns": max_gap, "mesh": mesh_path, "cloud": cloud_path,
-                              "vertices": len(mesh.vertices), "triangles": len(mesh.triangles)})
+                              "vertices": len(mesh.vertices), "triangles": len(mesh.triangles),
+                              "coordinate_system":"gravity_z_up" if gravity else "initial_camera_optical",
+                              "world_from_slam":world_from_slam.tolist(),
+                              "gravity_method":gravity['method'] if gravity else None,
+                              "depth_filter_stats":filter_stats,
+                              "gravity_extrinsic_verified":gravity.get('extrinsic_verified',False) if gravity else False})
     if not result["maps"]:
         raise ValueError("No matching depth/keyframes with valid depth: 일치하는 유효 depth가 없습니다")
     if result["skipped_maps"] or any(item["unintegrated_keyframes"] for item in result["maps"]):
         result["status"] = "partial"
+    if any(row['coordinate_system'] == 'gravity_z_up' for row in result['maps']):
+        result['coordinate_system'] = 'per-map; see maps[].coordinate_system; elevation relative to anchor camera'
     atomic_json(output / "summary.json", result)
     return result
 
@@ -148,8 +159,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("run_dir", type=Path)
     parser.add_argument("--voxel-size", type=float, default=.01)
+    parser.add_argument('--backend', choices=('orb', 'orb_offline', 'orbline', 'orb_inertial'), default='orb')
+    parser.add_argument('--depth-max', type=float, default=3., help='사용할 최대 optical Z depth [m]')
+    parser.add_argument('--output-root', type=Path, help='원본과 분리한 결과 저장 폴더')
     args = parser.parse_args()
-    print(json.dumps(reconstruct(args.run_dir, args.voxel_size), indent=2))
+    print(json.dumps(reconstruct(args.run_dir, args.voxel_size, args.depth_max,
+                                 backend=args.backend, output_root=args.output_root), indent=2))
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ bash tools/handheld_mapping.sh --demo
 
 ## 2. 실제 촬영 준비
 
-최신 로버의 카메라 장착각은 사용자 확인 **하향 20°**다. [최신 URDF·센서 좌표](experiments/2026-10-14-rover-extrinsics-update.md)를 따른다. Qt 매핑은 카메라 기준으로 계산하며 URDF를 자동으로 읽거나 지도를 중력 정렬하지 않는다. headless 로버 pose 보정에는 새 URDF를 명시한다.
+최신 로버의 카메라 장착각은 사용자 확인 **하향 20°**다. [최신 URDF·센서 좌표](experiments/2026-10-14-rover-extrinsics-update.md)를 따른다. 기본 stereo 지도는 카메라 기준이다. **중력 기준 지도**를 선택하면 같은 RUN의 보정 IMU와 보존된 URDF·CameraInfo rectification으로 map별 z-up 기준을 추정한다. 장착 변환은 여전히 실측 검증 전이며 [중력·지형 처리 범위](experiments/2026-10-15-gravity-terrain-pipeline.md)를 확인한다.
 
 | 준비 | 확인 |
 |---|---|
@@ -43,7 +43,9 @@ native가 준비되면 다음 두 옵션을 사용한다.
 
 ## 3. 촬영 시작·이동·종료
 
-IMU를 함께 기록하려면 [IMU 동시 기록 절차](experiments/2026-10-14-imu-co-recording.md)에 따라 `tools/mapping_imu_bridge.sh`로 Pi 중계를 실행하고, 앱의 **보정 IMU 함께 기록**과 실제 보정 JSON 경로를 확인한다. IMU 유효 샘플 확인 후 카메라가 시작되며 데이터는 같은 RUN에 저장된다. ORB는 계속 stereo이고 자동 중력 정렬은 아직 아니다.
+IMU를 함께 기록하려면 [IMU 동시 기록 절차](experiments/2026-10-14-imu-co-recording.md)에 따라 `tools/mapping_imu_bridge.sh`로 Pi 중계를 실행하고, 앱의 **보정 IMU 함께 기록**과 실제 보정 JSON 경로를 확인한다. IMU 유효 샘플 확인 후 카메라가 시작되며 데이터는 같은 RUN에 저장된다. **중력 기준 지도와 높이·경사·단차 생성**을 켜면 촬영 시작 후 최소3초간 정지하고 오른쪽의 중력 기준 X-Y 표시를 기다린다. GUI의 ORB는 계속 stereo이며 IMU를 동적으로 융합하는 모드는 아니다.
+
+IMU의 **가속도 참고 roll/pitch**는 Pi 표본 시각 기준0.2초 평활화를 거친 진단 표시이며, 가속·진동 중에는 실제 자세와 다를 수 있다. 알려진 평지에서3초 정지한 뒤 **평지 영점**을 누르면 표시 기준만 설정한다. 경사면에서 누르지 않는다. 센서 보정 원본·기록된 보정 측정값·중력 지도 기준은 바꾸지 않으며 영점 이력은 `imu_display_events.jsonl`에 남긴다. 재시작된 MCU segment에는 이전 표시 영점을 적용하지 않는다.
 
 1. 저장 폴더를 선택한다. 기본값은 clone 경로의 `outputs/handheld_mapping/sessions`다.
 2. **매핑 시작**을 누른다. 매번 새 RUN을 만들고 worker를 Pi RAM disk에 배포한다.
@@ -68,7 +70,7 @@ IMU를 함께 기록하려면 [IMU 동시 기록 절차](experiments/2026-10-14-
 | live 건너뜀 | FIFO256쌍 포화로 거절한 새 stereo pair. 원본 저장·전송 drop과 별개 |
 | 수신 후 ms | 노트북 stereo 저장 후 pose 수신까지. 전체 지연 아님 |
 
-카메라 입력 요청15FPS, 화면/overlay는 최대5Hz다. 초록은 정확도·통행 가능성·충분한 모든 시점의 보증이 아니다. coverage는 초기 optical X-Z 투영이며 아직 중력 정렬된 수평 맵이 아니다. 벽이나 서로 다른 높이의 표면도 투영에 들어온다.
+카메라 입력 요청15FPS, 화면/overlay는 최대5Hz다. 초록은 정확도·통행 가능성·충분한 모든 시점의 보증이 아니다. 기본 coverage는 초기 optical X-Z 투영이고, 중력 기준을 얻었으면 고정된 z-up 좌표의 X-Y 투영이다. 어느 경우든 벽이나 서로 다른 높이의 표면이 투영에 들어올 수 있으며 coverage는 지면 분류가 아니다. 중력 기준 차체 기울기는 지면 경사와 구분해 표시한다. 5° 진입/3° 이탈을1초간 유지하면 구간 이벤트를 기록하지만 ORB/IMU 모드를 전환하지 않는다.
 
 추적 손실/유효 depth 없음/오래된 결과에서는 색을 제거한다. live가 실패해도 원본 기록과 종료 후 전체 재계산을 유지한다. 최종 맵은 live 잠정 격자와 다를 수 있다.
 
@@ -99,6 +101,7 @@ PYTHONNOUSERSITE=1 .venv-mapping/bin/python \
 - 왼쪽 패드: `vx/vy` 병진. 오른쪽 패드: 회전. Q/E를 누르며 병진을 줄 수 있다.
 - 마우스를 놓으면 해당 패드0, Space/포커스 상실은 전체0, Esc는 종료다. 실제 정지 응답도 확인한다.
 - 속도 제한은 bridge와 조이스틱 **양쪽**에 있다. 병진 m/s, 회전 rad/s다. 위 값은 저속 시작 예시다.
+- 조이스틱의 오른쪽 패드와 Q/E 회전 명령은 `--max-ang`의 **50%**로 전송한다. 위 예시의 `0.3`이면 최대 `0.15 rad/s`(약 `8.6°/s`)이며 병진 속도는 그대로다. Pi bridge는 받은 회전 명령을 자체 `--max-ang`으로 제한한다.
 - SPI owner는 하나만 실행한다. bridge 중에 별도 SpiLink monitor를 동시에 열지 않는다.
 - `--monitor` 요약은 전체 IMU/encoder 동시 기록이나 관성융합이 아니다.
 - Pi의 원래 `/home/pi/ksrc`와 snapshot의 버전/firmware가 다르면 먼저 대조한다. 이 저장소는 전체 STM firmware를 포함하지 않는다.
@@ -117,9 +120,20 @@ RUN/
   dense_offline/               sensors-only 기본 TSDF
   dense/                      Pi ORB 또는 합성 TSDF
   orbline/, dense_orbline/      선택적 점선 결과
+  gravity/BACKEND/map_ID.json  map별 고정 중력 기준·입력 checksum
+  terrain/BACKEND/map_ID/      높이·경사·단차·거칠기·cost·preview
+  orb_inertial/, dense_inertial/ 실측 보정 profile이 필요한 선택적 관성 후처리
 ```
 
 `session.json.state`, drop/counts, native `runner_complete.json`, dense `summary.json`의 융합 수·누락·map 수를 확인한다. `complete`는 절차 완료이며 실측 정확도 판정이 아니다. map ID `0/421`은 두 맵의 이름이다.
+
+촬영은 좌·우 exact 시각과 2ms 이내 depth를 묶어 Pi 전송 큐에 전부 넣거나 전부 거절한다. depth를 먼저 저장해 live stereo 처리보다 늦게 도착하는 경쟁을 줄인다. 노트북은 별도 수신 thread와 기본32MiB 버퍼로 PNG 저장·live 처리의 일시 지연을 흡수한다. 버퍼가 계속 차면 역압이 걸리며 지속적인 대역폭 부족까지 해결하지는 못한다. `capture_metrics.bundles`, stream별 drop, `laptop_capture.receive_buffer`, 프레임별 `pi_bundle_wait_ms`·`pi_queue_wait_ms`·`laptop_receive_queue_wait_ms`·PNG 시간을 확인한다. 큰 ORB artifact 하나는 프로토콜 상한128MiB 내에서 수신 버퍼 기본 크기를 넘을 수 있다.
+
+TSDF와 지형 재생에는 depth 고립값·깊이 경계 필터와 최종 pose 기반 주변 시점 일치 검사를 기본 적용한다. raw PNG·카메라 보정·ORB 위치는 바꾸지 않는다. 주변3초 안에 참조 키프레임이 없으면 공간 필터만 적용하며 `frames_without_reference`에 센다. 검사되지 않은 영역을 채우지 않는다.
+
+3D 뷰어는 같은 map의 최신 지면 분리 결과가 있으면 **초록=지면 / 주황=장애물 표면 / 회색=미분류**, 파랑=추정 경로로 표시한다. 같은 XY라도 표면의 높이와 국소 지면을 비교해 색을 나눈다. 초록이 통과 가능 판정을 뜻하지는 않는다. 지형이 없거나 출처가 맞지 않으면 단색으로 열고 이유를 안내한다. `--no-terrain-colors`로 끌 수 있으며 자세한 기준은 [뷰어 설명](experiments/mapping-viewer.md)에 있다.
+
+같은 기록을 거리별로 비교하려면 `bash tools/view_mapping.sh /absolute/path/to/RUN --depth-max 1`을 실행하고 숫자를2·3으로 바꾼다. 처음에는 해당 최대 depth로3D·지형을 함께 재처리하며 이후에는 입력과 코드가 같은 결과를 재사용한다. 원본과 기본 지도는 그대로 두고 `RUN/depth_variants/BACKEND/depth_1m/` 등에 저장한다. `--build-only`를 추가하면 창 없이 생성만 한다. 거리 기준은 카메라 optical Z이며 전체 지도 반경이 아니다. [1/2/3m 실행 순서와 결과 폴더](experiments/mapping-viewer.md)를 참고한다.
 
 ```bash
 # 최신 RUN
@@ -134,6 +148,8 @@ bash tools/view_mapping.sh /absolute/path/to/map_0_mesh.ply
 ```
 
 서로 다른 map은 별도 창·독립 좌표계다. 근거 없이 합치지 않는다. 왼쪽 드래그 회전, 휠 확대·축소, Shift+왼쪽 드래그 이동이다. 최신 RUN에 아직 지도가 없으면 오류를 보여주며 이전 RUN으로 자동 돌아가지 않는다.
+
+3D 지도에는 같은 map/backend의 **최종 ORB 키프레임 기반 카메라 추정 경로**를 기본으로 표시한다. 파란 선은 시간순 위치 연결, 초록 구는 시작, 빨간 구는 끝이다. 중력 기준 TSDF이면 경로에도 동일한 고정 변환을 적용한다. mesh와 cloud 모두 지원하며 기존 촬영도 최종 키프레임 CSV가 있으면 바로 표시한다. 로봇 중심·지면으로 보정하거나 실측 이동 경로로 간주하지 않는다. 키프레임 사이의 움직임 전체를 복원한 선은 아니며, 최종 지도와 좌표가 달라질 수 있는 live 경로는 섞지 않는다. 대응하는 최종 키프레임이 없으면 지도만 표시한다. 경로를 숨기려면 `bash tools/view_mapping.sh --no-trajectory`를 사용한다. viewer는 원본 PLY를 수정하지 않는다.
 
 ## 7. 재계산과 점선 비교
 
@@ -177,9 +193,11 @@ bash tools/terrain_mapping.sh /absolute/path/to/RUN \
   --output outputs/terrain_real_01
 ```
 
-alignment는 ORB world→z-up gravity frame의 4×4 rigid transform JSON 배열이다. 자동 중력 검출은 없으며 identity나 다른 RUN의 변환을 임의 사용하지 않는다. 현재 실제 지면 분할·지형 정확도·로버 통과 한계 검증은 남아 있다.
+alignment는 ORB world→z-up gravity frame의 4×4 rigid transform JSON 배열이다. 위 CLI에서는 사용자가 검증한 변환을 주며 identity나 다른 RUN의 변환을 임의 사용하지 않는다. GUI의 중력 기준 옵션은 같은 RUN의 정지 IMU로 이를 추정해 지도와 지형 층을 함께 생성한다. 결과는 **높이·경사 보기**로 연다. 지면 분리·지형 정확도·로버 통과 한계의 실기 검증은 남아 있다.
 
 결과는 `terrain.npz`, `summary.json`, `preview.png`다. NPZ는 `np.load(path, allow_pickle=False)`로 읽고 배열 축은 `(y,x)`다. 높이/단차/거칠기는 m, 경사/방향은 degree다. cost는 유효0..252, blocked254, unknown255이고 unknown을 평지로 채우지 않는다.
+
+실제 재생은 셀별 최대3개 높이군 중 반복된 아래쪽 표면을 후보로 삼고, 카메라 주변 아래쪽 국소 면에서 연결된 표면만 지면으로 쓴다. 전역 평면을 빼지 않아 실제 경사를 보존한다. `height_m`·`slope_deg`·`roughness_m`는 지면 층이며, `obstacle_height_m`는 가까운 지면 대비 위쪽 물체 높이다. `ground`, `surface_observed`, `unclassified_surface`로 지면과 미확정 표면을 구분한다. 가려진 바닥·연결되지 않은 표면은 unknown으로 남을 수 있고 seed/연결 기준은 heuristic이다. preview는 지면 높이·경사·거칠기·장애물 높이·표면 분류·cost 6개 패널이다. 합성 demo는 기존 기하 층의 기준 시험이다.
 
 prototype 기본 한계는 경사20°/단차0.06m/거칠기0.025m/원형여유0.15m이며 실제 로버 한계로 확정하지 않았다. `--rover-limits FILE.json`으로 조정한다. coverage와 별개 offline 도구이며 live costmap/Nav2/슬립·토질 추정은 미연결이다.
 
@@ -198,6 +216,8 @@ prototype 기본 한계는 경사20°/단차0.06m/거칠기0.025m/원형여유0.
 | 조종 명령과 STM 적용 불일치 | UDP/SPI/CRC/watchdog/조향 gate 확인 |
 
 새 계측은 `session.json.capture_metrics`, `laptop_capture`, `frames.jsonl`에 남는다. Pi/laptop monotonic 절대값을 서로 빼지 않는다. 최종 drop은 후처리 실패에도 보존된다. 자세한 판독은 [입력 공백 조사](experiments/2026-10-14-input-gap-investigation.md)를 따른다.
+
+IMU의 현재 수신이 회복되면 **수신 지연** 표시는 해제된다. `delivery_delay_events`는 노트북 도착 간격500ms 초과 횟수이며, 뒤늦게 모두 수신된 지연만으로 세션을 부분 실패 처리하지 않는다. 실제 MCU control packet 간격120ms 초과(`source_gap_events`), reset/clock jump/tee 누락 또는 종료 시 수신 정지는 `partial`에 반영한다. 두 계측은 각각의 clock 내부 간격이며 개별 IMU 취득 시각이나208Hz 원시 표본 품질을 뜻하지 않는다.
 
 RUN을 옮길 때 raw/보정/index/최종pose/summary/PLY/log를 함께 보존한다. native `pairs.tsv`의 절대경로는 새 위치에 맞춰 재생성한다. 이전 실기 RUN과 native 자산은 Git에 없으며 [별도 자산 안내](data-assets.md)에 정리돼 있다.
 

@@ -42,11 +42,12 @@ def overlap_image(original: np.ndarray, depth: np.ndarray, depth_info: dict, lef
     nearest = left_points[:,2] <= zbuffer[pixels]+1e-4
     pixels,left_points = pixels[nearest],left_points[nearest]
     world = left_points @ pose[:3,:3].T+pose[:3,3]
+    world = world[:,list(grid.axes)]
     xmin,xmax,zmin,zmax = grid.bounds
-    inside = (world[:,0] >= xmin) & (world[:,0] < xmax) & (world[:,2] >= zmin) & (world[:,2] < zmax)
+    inside = (world[:,0] >= xmin) & (world[:,0] < xmax) & (world[:,1] >= zmin) & (world[:,1] < zmax)
     world,pixels = world[inside],pixels[inside]
     gx = np.floor((world[:,0]-xmin)/grid.resolution).astype(int)
-    gz = np.floor((world[:,2]-zmin)/grid.resolution).astype(int)
+    gz = np.floor((world[:,1]-zmin)/grid.resolution).astype(int)
     counts = grid.counts[gz,gx]
     colors = np.empty((len(pixels),3),np.float32)
     colors[:] = [222,177,63]

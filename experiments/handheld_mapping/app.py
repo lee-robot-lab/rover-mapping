@@ -42,7 +42,7 @@ class MappingWindow(QWidget):
             QLabel#preview { background:#090e14; border:1px solid #2c3a48; border-radius:8px; }
         """)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(26, 22, 26, 22)
+        layout.setContentsMargins(26, 18, 26, 18)
         heading = QLabel("D435  /  HANDHELD MAPPING")
         heading.setObjectName("heading")
         layout.addWidget(heading)
@@ -69,6 +69,12 @@ class MappingWindow(QWidget):
         self.imu_enabled.setChecked(calibration.expanduser().is_file() and not demo)
         self.imu_enabled.setToolTip("raw·보정 IMU를 원본 영상과 같은 폴더에 저장합니다. ORB 융합과 시계 동기화는 검증되지 않았습니다.")
         self.imu_calibration = QLineEdit(str(calibration))
+        self.imu_zero_button = QPushButton('평지 영점')
+        self.imu_zero_button.setToolTip('알려진 평지에서 3초 정지한 뒤 누르세요. IMU 참고 각도의 표시 영점만 설정하며 지도와 센서 보정값은 바꾸지 않습니다.')
+        self.imu_zero_button.clicked.connect(self.zero_imu_display)
+        self.gravity_enabled = QCheckBox('중력 기준 지도와 높이·경사·단차 생성 · 시작 시 3초 정지')
+        self.gravity_enabled.setChecked(self.imu_enabled.isChecked())
+        self.gravity_enabled.setToolTip('정지 IMU와 카메라 장착 모델로 위쪽을 정합니다. 동적 IMU 융합과 실측 경사 검증은 별도입니다.')
         fields.addWidget(QLabel("Pi 연결"), 0, 0)
         fields.addWidget(self.host, 0, 1)
         fields.addWidget(QLabel("저장 폴더"), 1, 0)
@@ -84,6 +90,8 @@ class MappingWindow(QWidget):
         fields.addWidget(self.imu_enabled, 6, 1)
         fields.addWidget(QLabel("IMU 보정 파일"), 7, 0)
         fields.addWidget(self.imu_calibration, 7, 1)
+        fields.addWidget(self.imu_zero_button,7,2)
+        fields.addWidget(self.gravity_enabled,8,1)
         self.choose_button = choose
         layout.addLayout(fields)
         self.status_label = QLabel("준비 · 시작 버튼을 누르세요")
@@ -98,12 +106,12 @@ class MappingWindow(QWidget):
         self.preview = QLabel("카메라 미리보기\n촬영을 시작하면 좌측 IR 영상이 표시됩니다")
         self.preview.setObjectName("preview")
         self.preview.setAlignment(Qt.AlignCenter)
-        self.preview.setMinimumHeight(150)
+        self.preview.setMinimumHeight(120)
         self.preview.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Ignored)
         self.overlay_preview = QLabel('촬영하면 관측 횟수 색이 영상 위에 표시됩니다')
         self.overlay_preview.setObjectName('preview')
         self.overlay_preview.setAlignment(Qt.AlignCenter)
-        self.overlay_preview.setMinimumHeight(150)
+        self.overlay_preview.setMinimumHeight(120)
         self.overlay_preview.setSizePolicy(QSizePolicy.Ignored,QSizePolicy.Ignored)
         self.overlay_note = QLabel('관측 횟수 오버레이 · 노랑 적음 / 초록 여러 시점')
         self.overlay_note.setWordWrap(True)
@@ -126,7 +134,8 @@ class MappingWindow(QWidget):
         self.stop_button.setObjectName("stop")
         self.open_button, self.rebuild_button = QPushButton("저장 폴더 열기"), QPushButton("기록에서 다시 생성")
         self.view_button = QPushButton('3D 지도 보기')
-        for button in (self.start_button, self.stop_button, self.view_button, self.open_button, self.rebuild_button):
+        self.terrain_button = QPushButton('높이·경사 보기')
+        for button in (self.start_button, self.stop_button, self.view_button, self.terrain_button, self.open_button, self.rebuild_button):
             controls.addWidget(button)
         layout.addLayout(controls)
         self.start_button.clicked.connect(self.start)
@@ -134,11 +143,13 @@ class MappingWindow(QWidget):
         self.open_button.clicked.connect(self.open_folder)
         self.rebuild_button.clicked.connect(self.rebuild)
         self.view_button.clicked.connect(self.view_map)
+        self.terrain_button.clicked.connect(self.view_terrain)
         layout.addWidget(QLabel("입력 요청15 FPS · projector OFF · 1cm voxel · 지도별 별도 저장 | 실기 depth 추가 부하는 연결 후 확인"))
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
         self.timer.start(200)
         self.demo.toggled.connect(self.refresh)
+        self.imu_enabled.toggled.connect(self.refresh)
         self.refresh()
 
     def choose_output(self) -> None:
@@ -153,6 +164,7 @@ class MappingWindow(QWidget):
                                 "sensors_only": self.sensors_only.isChecked(),
                                 "live_mapping": self.live_mapping.isChecked(),
                                 "imu_enabled": self.imu_enabled.isChecked() and not self.demo.isChecked(),
+                                "gravity_enabled":self.gravity_enabled.isChecked(),
                                 "imu_calibration": self.imu_calibration.text().strip()})
         except Exception as error:
             self.status_label.setText(str(error))
@@ -162,6 +174,13 @@ class MappingWindow(QWidget):
         path = self.session.snapshot()["run_dir"]
         if path:
             QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+    def zero_imu_display(self) -> None:
+        try:
+            self.session.zero_imu_display()
+        except (ValueError,OSError) as error:
+            self.session.update(message=str(error))
+        self.refresh()
 
     def rebuild(self) -> None:
         selected = QFileDialog.getExistingDirectory(self, "원본 기록 폴더 선택", self.output.text())
@@ -188,6 +207,23 @@ class MappingWindow(QWidget):
             self.session.update(message=str(error))
             self.refresh()
 
+    def view_terrain(self) -> None:
+        selected = self.session.snapshot()['run_dir'] or QFileDialog.getExistingDirectory(
+            self,'지형 지도가 저장된 촬영 폴더 선택',self.output.text())
+        if not selected:
+            return
+        terrain = self.session.snapshot().get('terrain',{})
+        paths = [Path(row['output_dir'])/'preview.png' for row in terrain.get('maps',{}).values()
+                 if row.get('output_dir') and (Path(row['output_dir'])/'preview.png').is_file()]
+        if not paths:
+            paths = sorted((Path(selected)/'terrain').glob('*/map_*/preview.png'))
+        if not paths:
+            self.session.update(message='저장된 지형 지도가 없습니다. 중력 기준과 정지 IMU 구간을 확인하세요.')
+            self.refresh()
+            return
+        for path in paths:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
     def refresh(self) -> None:
         status = self.session.snapshot()
         active = status["state"] in ACTIVE or (self.session.thread is not None and self.session.thread.is_alive())
@@ -195,6 +231,7 @@ class MappingWindow(QWidget):
         self.stop_button.setEnabled(status["state"] in {"starting", "recording"})
         self.rebuild_button.setEnabled(not active)
         self.view_button.setEnabled(not active)
+        self.terrain_button.setEnabled(not active)
         self.open_button.setEnabled(bool(status["run_dir"]))
         for widget in (self.host, self.output, self.mode, self.demo, self.choose_button):
             widget.setEnabled(not active)
@@ -204,19 +241,37 @@ class MappingWindow(QWidget):
             self.imu_enabled.setChecked(False)
         self.imu_enabled.setEnabled(not active and not self.demo.isChecked())
         self.imu_calibration.setEnabled(not active and not self.demo.isChecked())
+        if not self.imu_enabled.isChecked() or self.demo.isChecked():
+            self.gravity_enabled.setChecked(False)
+        self.gravity_enabled.setEnabled(not active and self.imu_enabled.isChecked() and not self.demo.isChecked())
         imu = status.get("imu")
+        self.imu_zero_button.setEnabled(status['state']=='recording' and bool(imu) and not imu.get('stale',True))
         imu_text = "IMU 유효 샘플 대기" if self.imu_enabled.isChecked() else "IMU 기록 꺼짐"
         if imu:
             imu_text = (f"IMU 기록 {imu.get('state', '대기')} · 유효 {imu.get('valid', 0)}"
                         f" · 고유 {imu.get('unique', 0)} / {imu.get('hz', 0):.1f} Hz")
             if imu.get("roll_deg") is not None and imu.get("pitch_deg") is not None:
-                imu_text += f" · roll {imu['roll_deg']:.1f}° / pitch {imu['pitch_deg']:.1f}°"
-            if imu.get("stale") or status.get("imu_warning"):
+                roll = imu.get('display_roll_deg',imu['roll_deg'])
+                pitch = imu.get('display_pitch_deg',imu['pitch_deg'])
+                imu_text += f" · 가속도 참고 roll {roll:.1f}° / pitch {pitch:.1f}°"
+                if imu.get('display_zero_set'):imu_text += ' (평지 영점 기준)'
+            if imu.get("stale"):
                 imu_text += " · 수신 지연"
+            if imu.get('source_gap_events',0):
+                imu_text += f" · 기록 중 표본 공백 {imu['source_gap_events']}회"
             if imu.get("error"):
                 imu_text += " · 오류: "+str(imu["error"])
+        gravity = status.get('gravity')
+        if gravity:
+            imu_text += f" · 중력 기준 {len(gravity.get('maps',{}))}개 지도 / {gravity['status']}"
+        elif self.gravity_enabled.isChecked():
+            imu_text += ' · 중력 기준 준비: 촬영 시작 후 3초간 정지'
         self.imu_status.setText(imu_text+" · ORB 융합 안 함 · 시계 동기화 미검증")
         live = self.session.live_snapshot()
+        if live and live.get('body_attitude') and not live.get('stale') and live.get('tracking_state') == 2:
+            body = live['body_attitude']
+            self.imu_status.setText(self.imu_status.text()+f" · 중력 기준 차체 기울기 {body['tilt_deg']:.1f}°"
+                                    + (' · 기울어진 구간' if body['body_tilted'] else ''))
         self.coverage.set_snapshot(live)
         label = status["message"]
         if self.close_pending and active:

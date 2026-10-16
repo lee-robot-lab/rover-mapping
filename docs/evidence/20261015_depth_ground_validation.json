@@ -1,0 +1,103 @@
+{
+  "schema": 1,
+  "date": "2026-10-15",
+  "full_tests": {
+    "passed": 290,
+    "skipped": 9,
+    "seconds": 43.29,
+    "command": "KSRC_REVIEW_ROOT=\"$PWD/teleop/ksrc_snapshot\" QT_QPA_PLATFORM=offscreen PYTHONNOUSERSITE=1 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 .venv-mapping/bin/python -m pytest -q"
+  },
+  "final_capture_order_tests": {
+    "passed": 12,
+    "seconds": 0.26
+  },
+  "real_capture_after_change_performed": false,
+  "real_slope_test_performed": false,
+  "ground_truth_accuracy_evaluated": false,
+  "comparison": {
+    "before": {
+      "cloud_points": 1086482,
+      "points_below_anchor_minus_0_5m": 5093,
+      "points_below_anchor_minus_1m": 4587,
+      "triangles": 1740176,
+      "components": 60137,
+      "triangles_in_components_under_100": 442486,
+      "cells": {
+        "unknown": 13335,
+        "blocked": 9007,
+        "valid": 2501
+      },
+      "path_xy_blocked": 62,
+      "path_xy_unknown": 0,
+      "path_xy_valid": 302,
+      "median_slope_deg": 14.563765525817871,
+      "slope_valid_cells": 9724,
+      "near_path_lower_surface_candidate": {
+        "tilt_deg": 1.5477697285973555,
+        "all_roi_residual_p50_p95_m": [
+          0.0026454214992732983,
+          0.025322023784629277
+        ],
+        "note": "Geometric lower ROI, not verified ground truth"
+      }
+    },
+    "after": {
+      "cloud_points": 925672,
+      "points_below_anchor_minus_0_5m": 380,
+      "points_below_anchor_minus_1m": 375,
+      "triangles": 1437803,
+      "components": 38310,
+      "triangles_in_components_under_100": 279784,
+      "cells": {
+        "unknown": 15297,
+        "blocked": 5845,
+        "valid": 3701
+      },
+      "path_xy_blocked": 0,
+      "path_xy_unknown": 0,
+      "path_xy_valid": 364,
+      "median_slope_deg": 2.041677713394165,
+      "slope_valid_cells": 6003,
+      "near_path_lower_surface_candidate": {
+        "tilt_deg": 1.5974905291580734,
+        "all_roi_residual_p50_p95_m": [
+          0.0025407154178811175,
+          0.016627541239022183
+        ],
+        "note": "Geometric lower ROI, not verified ground truth"
+      }
+    },
+    "raw_or_pose_changed": false,
+    "real_slope_test": false,
+    "note": "Cell classes and component counts are diagnostics, not measured false-positive rates or navigation accuracy."
+  },
+  "input_conservation": {
+    "frames.jsonl": "02a0f3fa9eb03457be4f9b7d51881cd201e73bfa7ca8f98097d1766f28157c65",
+    "capture_calibration.json": "c8d76c6996fea9c776c45854ceba9f7a5b5f29aacb843a5c11b292432fb7602b",
+    "orb_offline/map_0_keyframes.csv": "416e5202cbd7abe63d50d45278be44f59350dc9be0c8c3e216b1db1a560120cf",
+    "raw/depth/1792045464998350586.png": "18b5a6b37b6dc6d5ab9eb5d67a47a875c4a0fd1aae3efc2c149d81dfb76372aa",
+    "raw/depth/1792045514893191895.png": "59a632829bdeec9adcba3fd91bb230dfb05cf593398944ce28d78d1be46cda22",
+    "raw/depth/1792045574031813965.png": "de1178ebf98395dfd8151fa1cf87473d4b4dfbd7933759b650cae2e66a0e7f26",
+    "raw/depth/1792045614498520020.png": "f58c64a455da6bc87bde809d960b71b9b18d4a5fa28baf00dd23cb8211864f0c",
+    "raw/depth/1792045673174886475.png": "9960fdfbfbf331f3f91defe8df92b6b802de98316632bf3be816fd13dc5611d4",
+    "raw/depth/1792045711876839600.png": "a0638653c258c53f0d4997d24b253b6e8761fe2d7eb07ff7a318d1b10dbac017",
+    "raw/depth/1792045754443548584.png": "759650cea3b5791e5d5d623adaca3b43283dbd849b860f89e5e285530767550e",
+    "raw/depth/1792045793611213623.png": "2f20bf5a47d939c4e4fe3e752aeb96fcd223717348dca29c58bd2663b3a05d35"
+  },
+  "code_sha256": {
+    "experiments/handheld_mapping/depth_filter.py": "771755028fd1dc79be310835e7a876330f460cd14d84617287f042079f841665",
+    "experiments/handheld_mapping/ground.py": "0155421b63df6dabb3850a325e735deb7ae54d38bdedb6975b7cf6a8c0c8c09d",
+    "experiments/handheld_mapping/transport.py": "997c2bab3b9e242fccfe5c937663a3fa6a475c5536a4ffab2d32861eca26e6f8",
+    "experiments/handheld_mapping/pi_worker.py": "bdba2730a4dfae4cbcc73dce6996cd2dbaf8e1f3a8b1f6f85318da5205598b48",
+    "experiments/handheld_mapping/controller.py": "83d48969ab3f9e5e2d91e29c13acb9aae7ff824d036d24cd91a8ed2182d777cc",
+    "experiments/handheld_mapping/reconstruct.py": "4736ee871e734cbfe36725c77614ce2ad2654c9b005844bed5516a97fa1ad468",
+    "experiments/handheld_mapping/terrain_replay.py": "5a1c240c2bb2aa1bfce971159ad2bca1a09f51f92bca76ae4c27180cc10ae203",
+    "experiments/handheld_mapping/costmap.py": "730e565ce4a0e172e891627d3825fc71386890bfc91b201330fe11236d90c63f",
+    "experiments/handheld_mapping/terrain_preview.py": "b0253ac09a8629f99280581387d40e1732872e078e83b7e385008af2007061c5"
+  },
+  "final_related_tests": {
+    "passed": 38,
+    "seconds": 3.25,
+    "scope": "core TSDF, terrain replay, depth/ground and capture pipeline/metrics"
+  }
+}

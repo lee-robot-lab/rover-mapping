@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-15",
+  "scope": "IMU diagnostic display smoothing, explicit level reference, delivery recovery and recording quality",
+  "regression": {"passed": 278, "skipped": 9, "elapsed_s": 44.81},
+  "saved_recording_replay": {
+    "run": "20261015_152413_6fea4a",
+    "accepted_samples": 18727,
+    "pi_receipt_gap_max_ms": 40.632657,
+    "laptop_receipt_gap_max_ms": 1331.890974,
+    "laptop_receipt_gaps_over_500ms": 5,
+    "raw_step_p95_roll_pitch_deg": [2.8551169214869754, 4.595128297040311],
+    "display_step_p95_roll_pitch_deg": [0.30197848801874727, 0.5278836278041936],
+    "first150_raw_median_roll_pitch_deg": [-1.218652663020911, 2.5585380111194125],
+    "first150_display_median_roll_pitch_deg": [-1.2168352061191143, 2.560225926487462],
+    "recording_unchanged": true,
+    "zero_automatically_applied": false,
+    "ground_truth_attitude_available": false,
+    "note": "Smoothing reduces sample-to-sample display jumps; these statistics do not demonstrate improved physical attitude accuracy. Initial angles were not treated as sensor bias."
+  },
+  "behavior": {
+    "display_filter": "EMA of corrected acceleration in Pi sample-receipt time; tau 0.2 seconds",
+    "level_zero": "User asserts level surface, stationary 2 second window, fresh recording; display only",
+    "original_sensor_calibration_changed": false,
+    "mapping_gravity_reference_changed": false,
+    "recovered_delivery_delay_keeps_current_warning": false,
+    "recording_faults_preserved": ["source packet gap", "reset", "clock jump", "tee drop", "stale at termination"]
+  },
+  "ui_screenshot_inspected": true,
+  "new_hardware_capture_performed": false
+}

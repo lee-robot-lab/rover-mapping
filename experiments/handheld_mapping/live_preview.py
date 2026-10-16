@@ -17,7 +17,7 @@ class CoverageView(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.state = None
-        self.setMinimumSize(350,360)
+        self.setMinimumSize(350,300)
 
     def set_snapshot(self, state: dict | None) -> None:
         self.state = state
@@ -31,15 +31,17 @@ class CoverageView(QWidget):
         painter.setPen(QColor('#e8edf2'))
         painter.drawText(14,24,'촬영 범위 · 위에서 본 참고 지도')
         painter.setPen(QColor('#a6b8c8'))
-        painter.drawText(14,45,'초기 카메라 X-Z 투영 · 중력 미정렬')
         state = self.state
+        painter.drawText(14,45,'중력 기준 X-Y 투영 · 정지 IMU/장착 모델 기반'
+                         if state and state.get('gravity_aligned') else '초기 카메라 X-Z 투영 · 중력 미정렬')
         if not state or 'image' not in state:
             painter.drawText(self.rect(),Qt.AlignCenter,
                              '실시간 안내 오류\n'+str(state['error']) if state and state.get('error')
                              else '촬영하면 관측 범위가 표시됩니다')
             return
         error = state.get('error')
-        label = ('오류 · 원본 기록은 별도 유지' if error else '촬영 종료 · 잠정 지도'
+        label = ('오류 · 원본 기록은 별도 유지' if error else state.get('gravity_error')
+                 if state.get('gravity_requested') and state.get('gravity_error') else '촬영 종료 · 잠정 지도'
                  if state.get('finished') else 'ORB 준비 · 아직 위치 없음'
                  if not state.get('processed') else '위치 오래됨 · 갱신 대기'
                  if state.get('stale') else '추적 정상' if state.get('tracking_state') == 2

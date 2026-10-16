@@ -13,6 +13,7 @@ KSRC 스워브 로버용 화면 마우스 조이스틱 텔레옵.
 키다운/키업 이벤트를 주므로 **누르고 있는 동안** 적용된다).
 최종 omega = 오른쪽 패드를 끄는 중이면 그 값, 아니면 Q/E 로 누르고 있는 값,
 아니면 0. 즉 마우스로 왼쪽 패드를 끌면서 Q/E 를 눌러 **호를 그리며 주행**할 수 있다.
+매핑 중 급회전을 줄이기 위해 패드/Q/E 회전 명령은 --max-ang 기준의 50%로 보낸다.
 
 두 패드 모두 마우스를 떼면 (0,0) 으로 돌아온다 -- "명령하지 않는 중" 이라는
 모호하지 않은 안전 상태다. 스페이스바를 누르거나 창 포커스를 잃으면 전부 즉시
@@ -54,6 +55,7 @@ PAD_RADIUS = 100
 LEFT_CENTER = (170, 190)
 RIGHT_CENTER = (470, 190)
 GRAB_SLACK = 1.4  # click within radius*GRAB_SLACK of center still grabs the pad
+ROTATION_SPEED_SCALE = 0.5  # 패드와 Q/E의 회전 명령만 50%로 제한
 
 
 class Pad:
@@ -259,6 +261,7 @@ def run(args):
                 omega = -args.max_ang
             else:
                 omega = 0.0
+            omega *= ROTATION_SPEED_SCALE
             if keys[pygame.K_SPACE]:
                 vx = vy = omega = 0.0
 
@@ -356,7 +359,8 @@ def main():
                     help="serial 대신 ROS2 Twist 를 /cmd_vel 로 발행")
     ap.add_argument("--topic", default="/cmd_vel", help="--ros 발행 토픽")
     ap.add_argument("--max-lin", type=float, default=0.5, help="pad-full-deflection |vx|,|vy| in m/s")
-    ap.add_argument("--max-ang", type=float, default=2.0, help="pad-full-deflection |omega| in rad/s")
+    ap.add_argument("--max-ang", type=float, default=2.0,
+                    help="rotation reference in rad/s; pad and Q/E send 50%% of this value")
     ap.add_argument("--deadzone", type=float, default=0.1,
                     help="패드 중심 데드존 (반경 비율). 중심 근처 손떨림이 바퀴 방향을 "
                          "홱홱 돌리지 않게 한다. 0 이면 끔")

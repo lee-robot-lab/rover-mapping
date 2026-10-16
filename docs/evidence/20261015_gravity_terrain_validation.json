@@ -1,0 +1,57 @@
+{
+  "date": "2026-10-15",
+  "full_regression": {
+    "passed": 265,
+    "skipped": 9,
+    "elapsed_s": 40.36,
+    "command": "KSRC_REVIEW_ROOT=$PWD/teleop/ksrc_snapshot QT_QPA_PLATFORM=offscreen PYTHONNOUSERSITE=1 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 .venv-mapping/bin/python -m pytest -q",
+    "note": "Local UNIX socket tests required execution outside the filesystem/network sandbox. No rover connection or motor actuation."
+  },
+  "ui_followup_after_layout_adjustment": {
+    "passed": 28,
+    "elapsed_s": 5.28,
+    "files": ["test_app.py", "test_live_session.py", "test_gravity.py"],
+    "screenshot_inspected": true
+  },
+  "native_runner": {
+    "rebuilt": true,
+    "capabilities": {"stereo": true, "offline_imu_stereo": true, "live_imu_stereo": false},
+    "saved_stereo_recording_smoke": {
+      "source_run": "20261015_142916_5a05b8",
+      "frames": 120,
+      "keyframes": 9,
+      "status": "complete",
+      "imu_initialized_maps": 0,
+      "accuracy_evaluated": false
+    }
+  },
+  "synthetic_depth_ramp": {
+    "source": "Analytic ray/plane intersection; synthetic poses and stationary IMU, not real capture",
+    "profile": "640x480, D435 capture intrinsics, Z16 millimetres",
+    "known_slope_deg": 15,
+    "rover_pitch_deg": [0, -8, -15],
+    "camera_mount_pitch_down_deg": 20,
+    "frames": 3,
+    "depth_stride": 4,
+    "terrain_resolution_m": 0.05,
+    "fitted_tsdf_slope_deg": 15.000525970257486,
+    "median_terrain_slope_deg": 14.890113830566406,
+    "valid_terrain_cells": 1011,
+    "trajectory_points": 3,
+    "preview_inspected": true
+  },
+  "sampling_limit_probe": {
+    "profile": "80x60 synthetic input",
+    "depth_stride": 4,
+    "valid_terrain_cells": 12,
+    "median_terrain_slope_deg": 16.45315170288086,
+    "note": "Sparse samples bias cell averages and reduce valid slope coverage; this probe did not meet the 1 degree QA target."
+  },
+  "real_hardware_gravity_or_inertial_validation": false,
+  "remaining": [
+    "Measure camera/IMU extrinsics and acquisition-clock alignment",
+    "Provide individual IMU sample timestamps and measured noise density/random walk",
+    "Validate stationary reference and known ramp angle on the powered rover",
+    "Connect and validate live visual-inertial input after the acquisition contract is met"
+  ]
+}
