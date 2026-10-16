@@ -143,6 +143,7 @@ def main() -> None:
     parser.add_argument("--queue-mib", type=float, default=4.)
     parser.add_argument("--projector-on", action="store_true", help="D435 IR projector를 켠다 (실험용, 기본 OFF)")
     parser.add_argument("--rgb", action="store_true", help="640x480 15 Hz RGB8 원본을 추가 전송")
+    parser.add_argument("--fps", type=int, choices=(10, 15), default=15, help="IR/depth 입력 FPS (시간 지연 비교 실험용)")
     args = parser.parse_args()
     if not .25 <= args.queue_mib <= 64:
         raise ValueError("invalid queue MiB limit")
@@ -323,7 +324,7 @@ def main() -> None:
                         "-r", "__ns:=/camera", "-r", "__node:=camera",
                         "-p", f"enable_color:={str(args.rgb).lower()}", "-p", "enable_depth:=true",
                         "-p", "enable_infra1:=true", "-p", "enable_infra2:=true",
-                        "-p", "depth_module.infra_profile:=640,480,15", "-p", "depth_module.depth_profile:=640,480,15",
+                        "-p", f"depth_module.infra_profile:=640,480,{args.fps}", "-p", f"depth_module.depth_profile:=640,480,{args.fps}",
                         "-p", "depth_module.infra1_format:=Y8", "-p", "depth_module.infra2_format:=Y8",
                         "-p", f"depth_module.emitter_enabled:={int(args.projector_on)}", "-p", "enable_sync:=true"]
                        + (["-p", "rgb_camera.color_profile:=640,480,15", "-p", "rgb_camera.color_format:=RGB8"]
@@ -331,7 +332,7 @@ def main() -> None:
         wait_until(lambda: len(node.infos) == len(node.stamps) and min(len(values) for values in node.stamps.values()) >= 20, 30)
         for side, stamps in node.stamps.items():
             rate = (len(stamps)-1)*1e9/(stamps[-1]-stamps[0])
-            if not 12 <= rate <= 18 or (node.infos[side].width,node.infos[side].height) != (640,480):
+            if not .8*args.fps <= rate <= 1.2*args.fps or (node.infos[side].width,node.infos[side].height) != (640,480):
                 raise RuntimeError(f'{side} camera profile/rate 검증 실패: {rate:.2f} Hz')
         def info_dict(msg) -> dict:
             return {"width": msg.width, "height": msg.height, "k": list(msg.k), "p": list(msg.p),
@@ -348,7 +349,7 @@ def main() -> None:
                            "receipt_rate_hz": (len(receipts)-1)/(receipts[-1]-receipts[0])}
         probe = {"camera_info": {side: info_dict(node.infos[side]) for side in ("left", "right")},
                  "stats": stats, "exact_pair_candidates": len(set(node.stamps["left"]) & set(node.stamps["right"]))}
-        calibration = calibration_from_probe(probe, None, "640x480x15:Y8", True)
+        calibration = calibration_from_probe(probe, None, f"640x480x{args.fps}:Y8", True)
         vocabulary = Path("/home/pi/handheld_mapping/runtime/ORBvoc.txt")
         if not args.sensors_only:
             calibration["vocabulary_sha256"] = sha256(vocabulary)
@@ -386,7 +387,7 @@ def main() -> None:
         if not args.sensors_only:
             prepare_run(prepared, calibration, None)
         send({"kind": "calibration", "source": "D435_Pi", "depth": depth, "stereo": calibration,
-              "emitter_enabled": parameters["emitter_enabled"], "sensor_profile": "640x480x15",
+              "emitter_enabled": parameters["emitter_enabled"], "sensor_profile": f"640x480x{args.fps}",
               "capture_mode": "sensors_only" if args.sensors_only else "pi_orb",
               "rgb_enabled": args.rgb, **({'color':color} if args.rgb else {})})
         def transmit() -> None:

@@ -24,10 +24,11 @@ class MappingWindow(QWidget):
 
     def __init__(self, session: Session, output_root: Path | None = None, demo: bool = False,
                  imu_calibration: Path | None = None, inertial_fusion: bool = False,
-                 projector_on: bool = False) -> None:
+                 projector_on: bool = False, camera_fps: int = 15) -> None:
         super().__init__()
         self.session = session
         self.projector_on = projector_on
+        self.camera_fps = camera_fps
         self.close_pending = False
         self.setWindowTitle("D435 · Handheld Mapping")
         self.resize(1200, 980)
@@ -159,7 +160,7 @@ class MappingWindow(QWidget):
         self.rebuild_button.clicked.connect(self.rebuild)
         self.view_button.clicked.connect(self.view_map)
         self.edit_button.clicked.connect(self.edit_map)
-        layout.addWidget(QLabel(f"입력 요청15 FPS · projector {'ON(실험)' if projector_on else 'OFF'} · depth 0.25~1m · 노트북 저장 | RGB 추가 부하는 실기 확인 필요"))
+        layout.addWidget(QLabel(f"입력 요청{camera_fps} FPS · projector {'ON(실험)' if projector_on else 'OFF'} · depth 0.25~1m · 노트북 저장 | RGB 추가 부하는 실기 확인 필요"))
         self.terrain_button.clicked.connect(self.view_terrain)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
@@ -183,6 +184,7 @@ class MappingWindow(QWidget):
                                 "inertial_fusion": self.inertial_fusion.isChecked() and not self.demo.isChecked(),
                                 "imu_calibration": self.imu_calibration.text().strip(),
                                 "projector_on": self.projector_on and not self.demo.isChecked(),
+                                "camera_fps": self.camera_fps,
                                 "rgb_enabled": self.rgb_enabled.isChecked() and not self.demo.isChecked(),
                                 "gravity_enabled": self.gravity_enabled.isChecked(),
                                 "global_reconstruction": self.global_reconstruction.isChecked()})
@@ -432,12 +434,13 @@ def main() -> None:
     parser.add_argument("--imu-calibration", type=Path)
     parser.add_argument("--imu-fusion", action="store_true", help="촬영 종료 후 별도 IMU 융합 시험 (IMU 기록 자동 활성화)")
     parser.add_argument("--projector-on", action="store_true", help="D435 IR projector 켬 (ORB 추적 영향 비교용 실험)")
+    parser.add_argument("--camera-fps", type=int, choices=(10, 15), default=15, help="IR/depth 입력 FPS (시간 지연 비교 실험용)")
     parser.add_argument("--auto-stop", type=float)
     parser.add_argument("--screenshot", type=Path)
     parser.add_argument("--quit-after-save", action="store_true")
     args = parser.parse_args()
     app = QApplication(sys.argv[:1])
-    window = MappingWindow(Session(), args.output_root, args.demo, args.imu_calibration, args.imu_fusion, args.projector_on)
+    window = MappingWindow(Session(), args.output_root, args.demo, args.imu_calibration, args.imu_fusion, args.projector_on, args.camera_fps)
     signal.signal(signal.SIGINT, lambda *_: window.close())
     signal.signal(signal.SIGTERM, lambda *_: window.close())
     window.show()

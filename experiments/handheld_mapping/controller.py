@@ -29,7 +29,7 @@ ACTIVE = {"starting", "recording", "stopping", "processing", "reconstructing", "
 
 
 def remote_command(host: str, run_id: str, sensors_only: bool = False, queue_mib: float = 4.,
-                   projector_on: bool = False, rgb_enabled: bool = False) -> list[str]:
+                   projector_on: bool = False, rgb_enabled: bool = False, fps: int = 15) -> list[str]:
     if not re.fullmatch(r"[A-Za-z0-9_.@:-]+", host) or host.startswith("-"):
         raise ValueError("잘못된 SSH 연결 대상")
     if not math.isfinite(queue_mib) or not .25 <= queue_mib <= 64:
@@ -46,6 +46,7 @@ def remote_command(host: str, run_id: str, sensors_only: bool = False, queue_mib
         f" --queue-mib {queue_mib}"+(" --sensors-only" if sensors_only else "")
         +(" --projector-on" if projector_on else "")
         +(" --rgb" if rgb_enabled else "")
+        +(f" --fps {int(fps)}" if fps != 15 else "")
     )
     return ["ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=5",
             "-o", "ServerAliveCountMax=3", host, shlex.join(["bash", "-c", code])]
@@ -199,7 +200,8 @@ class Session:
                                          sensors_only=config.get("sensors_only", False),
                                          queue_mib=config.get("queue_mib", 4.),
                                          projector_on=config.get("projector_on", False),
-                                         rgb_enabled=config.get("rgb_enabled", False))
+                                         rgb_enabled=config.get("rgb_enabled", False),
+                                         fps=config.get("camera_fps", 15))
             if config.get("imu_enabled") and not config.get("demo"):
                 from experiments.handheld_mapping.imu import ImuCapture
                 calibration = config.get("imu_calibration")
