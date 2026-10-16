@@ -1,0 +1,141 @@
+# ================================================================
+# site_mission.py
+# 설명: 공동 정상에 이르는 세 경로와 대표점·우회 정책을 지도에 묶어 저장한다.
+# 사용법: from experiments.handheld_mapping.site_mission import SiteMission
+# ================================================================
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+
+import numpy as np
+
+from experiments.handheld_mapping.coverage_path import astar
+from experiments.handheld_mapping.site_map import SiteMap
+from experiments.handheld_mapping.storage import atomic_json
+
+DEFAULT_SETTINGS={'normal_slope_deg':20.,'trial_slope_deg':35.,'arrival_tolerance_m':.12,
+                  'max_speed_m_s':.15,'max_yaw_rate_rad_s':.6,'pose_max_age_s':.5,
+                  'stuck_window_s':3.,'min_progress_m':.04,'max_attempt_s':60.,
+                  'max_pose_jump_m':.5,'lookahead_m':.2}
+
+
+def dense_path(points: np.ndarray, spacing: float=.05) -> np.ndarray:
+    """각 경유점을 보존하고 구간 사이만 등간격으로 나눈다."""
+    points=np.asarray(points,float)
+    output=[points[0]]
+    for a,b in zip(points[:-1],points[1:]):
+        count=max(1,int(np.ceil(np.linalg.norm(b-a)/spacing)))
+        output.extend(np.linspace(a,b,count+1)[1:])
+    return np.asarray(output)
+
+
+def path_with_heading(points: np.ndarray) -> np.ndarray:
+    """metric XY polyline에 다음 구간 heading(rad)을 추가한다."""
+    points=dense_path(points)
+    if len(points)==1:return np.column_stack((points,[0.]))
+    delta=np.diff(points,axis=0);yaw=np.arctan2(delta[:,1],delta[:,0])
+    return np.column_stack((points,np.r_[yaw,yaw[-1]]))
+
+
+class SiteMission:
+    """한 고정 지도에 묶인 출발부·공동 정상·방향별 대체 경로 설정."""
+
+    def __init__(self, site: SiteMap, start: list | np.ndarray, junction: list | np.ndarray,
+                 summit: list | np.ndarray, routes: dict, settings: dict | None=None,
+                 site_name: str='yeouido') -> None:
+        self.site=site;self.start=np.asarray(start,float);self.junction=np.asarray(junction,float)
+        self.summit=np.asarray(summit,float)
+        self.routes={key:np.asarray(value,float).copy() for key,value in routes.items()}
+        values=settings or {}
+        if set(values)-DEFAULT_SETTINGS.keys():raise ValueError('unknown mission setting')
+        self.settings={**DEFAULT_SETTINGS,**values}
+        if (any(type(v) not in (int,float) or not math.isfinite(v) or v<=0 for v in self.settings.values())
+                or not self.settings['normal_slope_deg']<=self.settings['trial_slope_deg']<90
+                or self.settings['max_attempt_s']<=self.settings['stuck_window_s']
+                or self.settings['max_pose_jump_m']<=self.settings['arrival_tolerance_m']
+                or self.settings['max_speed_m_s']>.5 or self.settings['max_yaw_rate_rad_s']>2.):
+            raise ValueError('invalid mission settings')
+        if site_name not in ('yeouido','sacheon','demo'):raise ValueError('invalid site name')
+        self.site_name=site_name
+
+    def path(self, route: str, direction: str='up') -> np.ndarray:
+        if direction not in ('up','down'):raise ValueError('direction must be up/down')
+        return self.routes[route].copy() if direction=='up' else self.routes[route][::-1].copy()
+
+    def connector(self) -> np.ndarray:
+        """출발→갈림길을 safe grid에서 연결하고 실제 좌표 endpoint를 보존한다."""
+        direct=np.asarray([self.start[:2],self.junction])
+        slope=self.settings['normal_slope_deg']
+        if self.site.validate_path(direct,slope)['accepted']:
+            return direct if np.linalg.norm(direct[1]-direct[0])>1e-9 else direct[:1]
+        cells=self.site.cells(direct);rows,cols=self.site.observed.shape
+        if np.any(cells<0) or np.any(cells[:,0]>=cols) or np.any(cells[:,1]>=rows):
+            raise ValueError('start/junction outside map')
+        safe=self.site.safe_mask(slope)
+        a,b=(tuple(cell[::-1]) for cell in cells)
+        if not safe[a] or not safe[b]:raise ValueError('start/junction unsafe')
+        path=astar(safe,a,b)
+        if path is None:raise ValueError('start/junction unreachable')
+        xy=self.site.origin+(np.asarray(path)[:,::-1]+.5)*self.site.resolution
+        joined=np.vstack((direct[0],xy,direct[-1]))
+        keep=np.r_[True,np.linalg.norm(np.diff(joined,axis=0),axis=1)>1e-9]
+        joined=joined[keep]
+        if not self.site.validate_path(joined,slope)['accepted']:
+            raise ValueError('connector clearance failed')
+        return joined
+
+    def validate(self) -> dict:
+        report={'accepted':False,'routes':{},'reason':''}
+        if (self.start.shape!=(3,) or self.junction.shape!=(2,) or self.summit.shape!=(2,)
+                or not np.isfinite(np.r_[self.start,self.junction,self.summit]).all()
+                or set(self.routes)!= {'10','15','30'}
+                or np.linalg.norm(self.summit-self.junction)<self.settings['arrival_tolerance_m']*2):
+            return {**report,'reason':'invalid_start_junction_summit_or_routes'}
+        for name,points in self.routes.items():
+            if (points.ndim!=2 or points.shape[1]!=2 or len(points)<(3 if name=='30' else 2)
+                    or not np.isfinite(points).all()
+                    or not np.allclose(points[0],self.junction,atol=1e-6,rtol=0)
+                    or not np.allclose(points[-1],self.summit,atol=1e-6,rtol=0)
+                    or np.any(np.linalg.norm(np.diff(points,axis=0),axis=1)<1e-5)):
+                report['routes'][name]={'accepted':False,'reason':'invalid_route_geometry'}
+                continue
+            limit=self.settings['trial_slope_deg' if name=='30' else 'normal_slope_deg']
+            report['routes'][name]=self.site.validate_path(points,limit)
+        try:
+            self.connector();report['connector']={'accepted':True}
+        except ValueError as error:
+            report['connector']={'accepted':False,'reason':str(error)}
+        report['accepted']=all(row['accepted'] for row in report['routes'].values()) and report['connector']['accepted']
+        report['reason']='valid' if report['accepted'] else 'route_or_connector_rejected'
+        return report
+
+    def save(self, folder: Path) -> None:
+        report=self.validate()
+        if not report['accepted']:raise ValueError('invalid mission: '+json.dumps(report))
+        folder=Path(folder).expanduser().resolve();folder.mkdir(parents=True,exist_ok=False)
+        self.site.save(folder/'site')
+        routes_dir=folder/'routes';routes_dir.mkdir()
+        for name in ('10','15','30'):
+            for direction in ('up','down'):
+                np.savetxt(routes_dir/f'{name}_{direction}.csv',path_with_heading(self.path(name,direction)),
+                           delimiter=',',header='x_m,y_m,yaw_rad',comments='')
+        atomic_json(folder/'mission.json',{'schema_version':1,'site_name':self.site_name,
+            'frame':self.site.frame,'units':'m','site_identity':self.site.identity,
+            'start':self.start.tolist(),'junction':self.junction.tolist(),'summit':self.summit.tolist(),
+            'routes':{key:value.tolist() for key,value in self.routes.items()},'settings':self.settings,
+            'policy':{'ascent_order':['30','15','10'],'descent_route':'10',
+                      'representative_visit_not_coverage':True,'trial_entry':self.routes['30'][1].tolist()},
+            'validation':report,'hardware_commands_enabled':False})
+
+    @classmethod
+    def load(cls, folder: Path) -> SiteMission:
+        folder=Path(folder).expanduser().resolve();data=json.loads((folder/'mission.json').read_text())
+        if data.get('schema_version')!=1 or data.get('frame')!='site' or data.get('units')!='m':
+            raise ValueError('invalid mission schema/frame/units')
+        site=SiteMap.load(folder/'site')
+        if data['site_identity']!=site.identity:raise ValueError('mission/site hash mismatch')
+        self=cls(site,data['start'],data['junction'],data['summit'],data['routes'],data['settings'],data['site_name'])
+        if not self.validate()['accepted']:raise ValueError('saved mission route validation failed')
+        return self
