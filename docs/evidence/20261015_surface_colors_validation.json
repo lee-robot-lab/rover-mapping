@@ -1,0 +1,37 @@
+{
+  "mesh": {
+    "ground": 204915,
+    "obstacle": 425579,
+    "unknown": 317973,
+    "terrain": "/home/parkshinyoung/rover-mapping/outputs/handheld_mapping/sessions/20261015_152413_6fea4a/terrain/orb_offline/map_0_v3",
+    "ground_tolerance_m": 0.02,
+    "obstacle_threshold_m": 0.06,
+    "source_geometry_sha256": "f3f022118f7ce17c7b3e4aa587cd9ceee3b4b545f15f182af5a1e9b9697324d2",
+    "source_file_unchanged": true
+  },
+  "cloud": {
+    "ground": 191507,
+    "obstacle": 416083,
+    "unknown": 318082,
+    "terrain": "/home/parkshinyoung/rover-mapping/outputs/handheld_mapping/sessions/20261015_152413_6fea4a/terrain/orb_offline/map_0_v3",
+    "ground_tolerance_m": 0.02,
+    "obstacle_threshold_m": 0.06,
+    "source_geometry_sha256": "da39776cbd7ad2526902fe1c53dc3475986974dd654a533b504b3c3c5eedfdbe",
+    "source_file_unchanged": true
+  },
+  "real_slope_accuracy_verified": false,
+  "tests": {
+    "passed": 57,
+    "seconds": 4.54,
+    "scope": "viewer/surface colours/ground/terrain replay/gravity"
+  },
+  "changes_geometry": false,
+  "visualization_only": true,
+  "code_sha256": {
+    "experiments/handheld_mapping/surface_colors.py": "fc4d9c49fa05cd32379168523a55b551f97d1d2cb298cbfa2b32cece8e0b39c9",
+    "experiments/handheld_mapping/viewer.py": "d7aeef14b72cad3c6ae39eb066db750dfa59580e10d5a69e4371fd7197187469",
+    "experiments/handheld_mapping/ground.py": "ca558510e1ebae50fc64bdc41fe989dfab92efc7054344160adfffd97f0240ae",
+    "experiments/handheld_mapping/terrain_replay.py": "95e869a25ecfa976e396a5be567e3e6c5e2e29e1ba24f14e138322d59d95132a",
+    "tests/handheld_mapping/test_surface_colors.py": "768134d05e05bc3946cea35da17e874d77384a3c477f535eca1ef9e0f951b6e5"
+  }
+}

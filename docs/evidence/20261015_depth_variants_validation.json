@@ -1,0 +1,97 @@
+{
+  "run": "/home/parkshinyoung/rover-mapping/outputs/handheld_mapping/sessions/20261015_152413_6fea4a",
+  "variants": {
+    "1": {
+      "output": "/home/parkshinyoung/rover-mapping/outputs/handheld_mapping/sessions/20261015_152413_6fea4a/depth_variants/orb_offline/depth_1m",
+      "depth_max_m": 1.0,
+      "cache_lookup_seconds": 0.007287573000212433,
+      "keyframes": 364,
+      "integrated_frames": 252,
+      "vertices": 114337,
+      "triangles": 216516,
+      "cloud_points": 109125,
+      "surface_colors": {
+        "ground": 96412,
+        "obstacle": 8557,
+        "unknown": 4156,
+        "terrain": "/home/parkshinyoung/rover-mapping/outputs/handheld_mapping/sessions/20261015_152413_6fea4a/depth_variants/orb_offline/depth_1m/terrain/orb_offline/map_0",
+        "ground_tolerance_m": 0.02,
+        "obstacle_threshold_m": 0.06
+      },
+      "terrain_cells": {
+        "unknown": 20785,
+        "blocked": 624,
+        "valid": 3434
+      },
+      "trajectory_matches_original": true,
+      "variant_geometry_unchanged_by_coloring": true
+    },
+    "2": {
+      "output": "/home/parkshinyoung/rover-mapping/outputs/handheld_mapping/sessions/20261015_152413_6fea4a/depth_variants/orb_offline/depth_2m",
+      "depth_max_m": 2.0,
+      "cache_lookup_seconds": 0.007450643999618478,
+      "keyframes": 364,
+      "integrated_frames": 252,
+      "vertices": 446914,
+      "triangles": 743542,
+      "cloud_points": 445564,
+      "surface_colors": {
+        "ground": 175244,
+        "obstacle": 188886,
+        "unknown": 81434,
+        "terrain": "/home/parkshinyoung/rover-mapping/outputs/handheld_mapping/sessions/20261015_152413_6fea4a/depth_variants/orb_offline/depth_2m/terrain/orb_offline/map_0",
+        "ground_tolerance_m": 0.02,
+        "obstacle_threshold_m": 0.06
+      },
+      "terrain_cells": {
+        "unknown": 17736,
+        "blocked": 3159,
+        "valid": 3948
+      },
+      "trajectory_matches_original": true,
+      "variant_geometry_unchanged_by_coloring": true
+    },
+    "3": {
+      "output": "/home/parkshinyoung/rover-mapping/outputs/handheld_mapping/sessions/20261015_152413_6fea4a/depth_variants/orb_offline/depth_3m",
+      "depth_max_m": 3.0,
+      "cache_lookup_seconds": 0.007008958000369603,
+      "keyframes": 364,
+      "integrated_frames": 252,
+      "vertices": 948467,
+      "triangles": 1437803,
+      "cloud_points": 925672,
+      "surface_colors": {
+        "ground": 191507,
+        "obstacle": 416083,
+        "unknown": 318082,
+        "terrain": "/home/parkshinyoung/rover-mapping/outputs/handheld_mapping/sessions/20261015_152413_6fea4a/depth_variants/orb_offline/depth_3m/terrain/orb_offline/map_0",
+        "ground_tolerance_m": 0.02,
+        "obstacle_threshold_m": 0.06
+      },
+      "terrain_cells": {
+        "unknown": 15297,
+        "blocked": 5845,
+        "valid": 3701
+      },
+      "trajectory_matches_original": true,
+      "variant_geometry_unchanged_by_coloring": true
+    }
+  },
+  "original_default_geometry_unchanged": true,
+  "real_slope_accuracy_verified": false,
+  "tests": {
+    "passed": 89,
+    "seconds": 6.89
+  },
+  "code_sha256": {
+    "experiments/handheld_mapping/depth_variants.py": "c0d0209d8e3298f7bf4b08b48c100f550441ed8c488240a87040e4a85f8c3a56",
+    "experiments/handheld_mapping/viewer.py": "f167a268f7db18d3996949622aea38d2a7f5e17063cc07c5a2e5db670bafb2b2",
+    "experiments/handheld_mapping/reconstruct.py": "431b389bed3d1372ed54e92fc2d8c5d67f25d7d3034f5b07ca0ce389da1d8e97",
+    "experiments/handheld_mapping/terrain_replay.py": "d3c074fcc5c2821f9ed2e7f619c2d7a0bfe9682248fe634020727c30b44c1c9f",
+    "experiments/handheld_mapping/gravity.py": "a000221609eef2d2110194d9f39f9b294f04a25f39c171c6cd2618d537d06031",
+    "experiments/handheld_mapping/surface_colors.py": "8a3a4ac3e9078c2a8af1795b070ca00c5a5c2330dae1c6566eba549f895daf96",
+    "tools/view_mapping.sh": "260f3e951347019fa6a128328203bc51793390d2d267cd364812adba40e0d9dc",
+    "tests/handheld_mapping/test_depth_variants.py": "13c1bb403910ad50b11803ae2555ce54f4d397a62f7a8d79606af68c4fb2a507"
+  },
+  "verification_scope": "89 related tests + actual 1/2/3m rebuilds, cache reuse, unchanged default geometry, matching paths and per-variant colours; no new physical capture"
+}

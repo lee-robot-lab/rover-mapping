@@ -2,7 +2,7 @@
 
 갱신: **2026-10-15** · 작업 위치: **`/path/to/rover-mapping`**
 
-최신 기구 기준: 사용자 확인 카메라 **하향 20°**, 새 장착 좌표와 headless 보정 지원은 [URDF 갱신 기록](../experiments/2026-10-14-rover-extrinsics-update.md)을 따른다. Qt 지도는 계속 카메라 기준이며 중력 정렬 자동화는 별도다.
+최신 기구 기준: 사용자 확인 카메라 **하향 20°**, 새 장착 좌표와 headless 보정 지원은 [URDF 갱신 기록](../experiments/2026-10-14-rover-extrinsics-update.md)을 따른다. 기본 Qt 지도는 카메라 기준이다. 후속 [중력·지형 경로](../experiments/2026-10-15-gravity-terrain-pipeline.md)는 정지 IMU 기반 z-up 정렬과 GUI 지형 생성을 추가한다. 동적 융합은 실측 동기화·장착·잡음 검증이 필요한 별도 native offline 입력이며 GUI live는 stereo를 유지한다.
 
 2026-10-15 추적 갱신: 노트북 FIFO256쌍·depth 대기 제거·최대5Hz 관측색 갱신·입력 지연을 포함한 stale 표시와 stereo15초 복구 대기를 추가했다. 기존 설치는 core patch와 runner를 재빌드한다. [복구 비교·검증 범위](../experiments/2026-10-15-tracking-recovery.md). IMU는 계속 동시 기록이며 관성 융합은 별도다.
 

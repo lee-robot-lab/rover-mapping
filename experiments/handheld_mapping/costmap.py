@@ -37,7 +37,11 @@ def build_costmap(layers: dict[str, np.ndarray], resolution: float, limits: Rove
     metrics = (('slope_deg', limits.max_slope_deg, .4),
                ('roughness_m', limits.max_roughness_m, .3), ('step_m', limits.max_step_m, .3))
     risk = np.zeros(shape, np.float32)
+    # Ground-mode span excludes upper objects. Obstacles have their own evidence layer.
+    obstacle = layers.get('obstacle_observed', np.zeros(shape, bool))
     blocked = layers['observed'] & (layers['vertical_span_m'] >= limits.max_step_m)
+    if 'obstacle_height_m' in layers:
+        blocked |= obstacle & (layers['obstacle_height_m'] >= limits.max_step_m)
     for name, maximum, weight in metrics:
         value = layers[name]
         valid &= np.isfinite(value) & (value >= 0)
@@ -47,5 +51,5 @@ def build_costmap(layers: dict[str, np.ndarray], resolution: float, limits: Rove
         blocked = distance_transform_edt(~blocked, sampling=resolution) <= limits.safety_radius_m
     cost = np.full(shape, 255, np.uint8)
     cost[valid] = np.rint(np.clip(risk[valid], 0., 1.)*252).astype(np.uint8)
-    cost[blocked & layers['observed']] = 254
+    cost[blocked & layers.get('surface_observed', layers['observed'])] = 254
     return cost

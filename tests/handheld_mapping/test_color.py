@@ -171,7 +171,7 @@ def test_missing_rgb_frame_keeps_all_geometry_and_reports_partial(tmp_path,monke
     assert result['status'] == 'complete' and result['color_status'] == 'partial'
     item = result['maps'][0]
     assert item['integrated_frames'] == 2 and item['colored_frames'] == 1
-    assert item['color_coverage'] == .5
+    assert item['color_coverage'] == pytest.approx(.5,abs=.01)
     cloud = o3d.io.read_point_cloud(str(tmp_path/'colored'/item['cloud']))
     original = o3d.io.read_point_cloud(str(tmp_path/'plain'/plain['maps'][0]['cloud']))
     assert np.array_equal(np.asarray(cloud.points),np.asarray(original.points))

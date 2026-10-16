@@ -21,6 +21,52 @@ import time
 MAX_LINE = 65536
 
 
+class TiltDisplay:
+    """가속도 참고 각도의 표시만 평활화/영점 조절한다. 센서 보정·지도 입력과 분리한다."""
+
+    def __init__(self) -> None:
+        self.acc = None
+        self.last_ns = None
+        self.segment = None
+        self.zero = (0.,0.)
+        self.zero_set = False
+
+    @staticmethod
+    def angles(acc) -> tuple[float,float]:
+        return (math.degrees(math.atan2(acc[1],acc[2])),
+                math.degrees(math.atan2(-acc[0],math.hypot(acc[1],acc[2]))))
+
+    def set_zero(self, up: list[float]) -> None:
+        self.zero = self.angles(up)
+        self.zero_set = True
+
+    def update(self, acc: list[float], stamp_ns: int, segment: int) -> dict:
+        if self.segment != segment:
+            self.acc,self.last_ns = None,None
+            self.zero,self.zero_set = (0.,0.),False
+        if self.last_ns is not None and stamp_ns <= self.last_ns:
+            raise ValueError('nonmonotonic tilt display sample')
+        dt = (stamp_ns-self.last_ns)/1e9 if self.last_ns is not None else None
+        if self.acc is None or dt > .5:
+            self.acc = list(acc)
+        else:
+            alpha = -math.expm1(-dt/.2)
+            self.acc = [old+alpha*(new-old) for old,new in zip(self.acc,acc)]
+        self.last_ns,self.segment = stamp_ns,segment
+        return self.snapshot()
+
+    def snapshot(self) -> dict:
+        if self.acc is None:
+            return {}
+        roll,pitch = self.angles(self.acc)
+        return {'display_roll_deg':(roll-self.zero[0]+180)%360-180,
+                'display_pitch_deg':(pitch-self.zero[1]+180)%360-180,
+                'display_zero_set':self.zero_set,'display_zero_roll_deg':self.zero[0],
+                'display_zero_pitch_deg':self.zero[1],
+                'display_tilt_method':'smoothed_accelerometer_diagnostic_not_motion_attitude',
+                'display_filter_tau_s':.2}
+
+
 def finite_vector(value: object, name: str) -> list[float]:
     """3축 유한 수치만 허용한다."""
     if not isinstance(value, (list, tuple)) or len(value) != 3:
@@ -101,9 +147,12 @@ class ImuCapture:
         self._stderr_reader: threading.Thread | None = None
         self._stderr: deque[str] = deque(maxlen=16)
         self._recent: deque[tuple[int, int]] = deque(maxlen=256)
+        self._gravity_samples: deque[dict] = deque(maxlen=2048)
+        self._tilt_display = TiltDisplay()
         self._last_t: int | None = None
         self._last_pi_ns: int | None = None
         self._last_fresh_ns: int | None = None
+        self._last_accepted = None
         self._tee_baseline: int | None = None
         self._ready = False
         self._log = None
@@ -112,6 +161,9 @@ class ImuCapture:
         self._status = {'state': 'starting', 'recorded': 0, 'valid': 0, 'unique': 0,
                         'duplicates': 0, 'startup_discarded': 0, 'resets': 0,
                         'clock_jumps': 0, 'malformed': 0, 'tee_drops': 0,
+                        'source_gap_events':0,'max_source_gap_ms':0.,
+                        'delivery_delay_events':0,'max_delivery_gap_ms':0.,
+                        'source_gap_basis':'unique MCU control packet t_ms; not raw IMU acquisition rate',
                         'imu_clock_verified': False, 'orb_fused': False,
                         'extrinsic_provisional': True, 'run_id': self.run.name,
                         'hz_basis': 'pi_receipt_monotonic_unique_packets'}
@@ -283,8 +335,24 @@ class ImuCapture:
                     row['acceptance'] = 'accepted'
             self._last_t, self._last_pi_ns = t_ms, pi_ns
             if row['acceptance'] == 'accepted':
+                segment = row['clock']['segment']
+                if self._last_accepted is not None:
+                    previous_t,previous_segment,previous_arrival = self._last_accepted
+                    delivery_gap = (now-previous_arrival)/1e6
+                    self._status['max_delivery_gap_ms'] = max(self._status['max_delivery_gap_ms'],delivery_gap)
+                    if delivery_gap > 500:self._status['delivery_delay_events'] += 1
+                    if segment == previous_segment:
+                        source_gap = (t_ms-previous_t) % 2**32
+                        self._status['max_source_gap_ms'] = max(self._status['max_source_gap_ms'],float(source_gap))
+                        if source_gap > 120:self._status['source_gap_events'] += 1
+                self._last_accepted = (t_ms,segment,now)
+                self._gravity_samples.append({'pi_ns':pi_ns,'segment':row['clock']['segment'],
+                                              'acc_g':corrected['acc_g'],'gyro_dps':corrected['gyro_dps']})
                 self._status['unique'] += 1
                 self._status.update(corrected)
+                display = self._tilt_display.update(corrected['acc_g'],pi_ns,row['clock']['segment'])
+                self._status.update(display)
+                row['display'] = display
                 self._status.update(state='recording', t_ms=t_ms, tick=tick, imu_n=telemetry.get('imu_n'))
                 self._last_fresh_ns = now
                 self._recent.append((pi_ns, now))
@@ -294,6 +362,30 @@ class ImuCapture:
             raise
         finally:
             self._log.write(json.dumps(row, allow_nan=False, separators=(',', ':')) + '\n')
+
+    def gravity_samples(self) -> list[dict]:
+        """정지 기준을 찾기 위한 bounded Pi 수신 시각/로버축 표본의 복사본."""
+        with self._lock:
+            return copy.deepcopy(list(self._gravity_samples))
+
+    def zero_display(self) -> dict:
+        """사용자가 평지/정지를 확인하고 누른 경우의 표시 영점. 보정 원본은 바꾸지 않는다."""
+        from experiments.handheld_mapping.gravity import stationary_reference
+        with self._lock:
+            if self._final is not None or self._stopping.is_set() or self.snapshot().get('stale') or not self._gravity_samples:
+                raise ValueError('최신 IMU가 수신되는 촬영 중에 평지에서 3초 정지한 뒤 누르세요')
+            reference = stationary_reference(list(self._gravity_samples),
+                                             self._gravity_samples[-1]['pi_ns']-1_000_000_000)
+            event = {'kind':'display_zero','reference':reference,'run_id':self.run.name,
+                     'calibration_sha256':self._manifest.get('calibration_sha256'),
+                     'scope':'display_only_user_asserted_level_surface; sensor calibration and mapping unchanged'}
+            # 영점 이력 기록이 성공한 경우에만 표시 기준을 바꾼다.
+            with (self.run/'imu_display_events.jsonl').open('a') as stream:
+                stream.write(json.dumps(event,allow_nan=False)+'\n')
+            self._tilt_display.set_zero(reference['body_up'])
+            display = self._tilt_display.snapshot()
+            self._status.update(display)
+            return display
 
     def snapshot(self) -> dict:
         """UI용 detached snapshot을 반환하며 수신 정지는 unique 표본으로 판단한다."""

@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 
 from experiments.handheld_mapping.storage import atomic_json
+from experiments.handheld_mapping.depth_filter import DepthFilter, filtered_depths
 from experiments.handheld_mapping.recording import matched_depths
 from experiments.handheld_mapping.color import color_matcher, project_depth_color
 
@@ -55,10 +56,17 @@ def nearest(stamps: list[int], stamp: int, tolerance_ns: int = 2_000_000) -> int
 
 
 def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 1.,
-                progress=None, backend: str = "orb", *, keyframe_dir: Path | None = None,
+                progress=None, backend: str = "orb", gravity_alignments: dict | None = None,
+                depth_filter: DepthFilter | None = None, output_root: Path | None = None,
+                *, keyframe_dir: Path | None = None,
                 output_dir: Path | None = None, color: bool = False) -> dict:
     import open3d as o3d
     run_dir = Path(run_dir).resolve()
+    filtering = depth_filter or DepthFilter(max_depth_m=depth_max)
+    if not math.isclose(filtering.max_depth_m, depth_max, rel_tol=0., abs_tol=1e-9):
+        raise ValueError('depth filter and TSDF maximum distance differ')
+    if output_root is not None and output_dir is not None:
+        raise ValueError('choose output_root or output_dir, not both')
     if backend not in ("orb", "orbline", "orb_offline", "orb_inertial"):
         raise ValueError("invalid reconstruction backend")
     if not math.isfinite(voxel_size) or not .002 <= voxel_size <= .1 or not .3 < depth_max <= 10:
@@ -89,12 +97,14 @@ def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 1.,
         raise ValueError("원본 depth 또는 최종 keyframe이 없습니다")
     output_name = {"orb": "dense", "orbline": "dense_orbline", "orb_offline": "dense_offline", "orb_inertial": "dense_inertial"}[backend]
     explicit_output = output_dir is not None
-    output = Path(output_dir).resolve() if explicit_output else run_dir / output_name
-    if explicit_output and (output == run_dir or run_dir.is_relative_to(output)
+    destination = Path(output_root).resolve() if output_root is not None else run_dir
+    output = Path(output_dir).resolve() if explicit_output else destination / output_name
+    new_output = explicit_output or output_root is not None
+    if new_output and (output == run_dir or run_dir.is_relative_to(output)
                             or output.is_relative_to(run_dir/'raw')
                             or output.is_relative_to(run_dir/backend) or output.is_relative_to(pose_dir)):
         raise ValueError('output overlaps source data or poses')
-    output.mkdir(parents=True, exist_ok=not explicit_output)
+    output.mkdir(parents=True, exist_ok=not new_output)
     # 이전 결과는 원본과 분리한 채 새 summary가 성공한 경우에만 갱신한다.
     (output / "summary.json").unlink(missing_ok=True)
     intrinsic = o3d.camera.PinholeCameraIntrinsic(width, height, k[0, 0], k[1, 1], k[0, 2], k[1, 2])
@@ -103,6 +113,7 @@ def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 1.,
               "depth_max_m": depth_max, "timestamp_tolerance_ns": 2_000_000,
               "coordinate_system": "per-map initial camera optical; gravity alignment not applied",
               "accuracy_verified_on_real_camera": False, "maps": [], "skipped_maps": []}
+    result['depth_filter'] = filtering.metadata()
     if explicit_output:
         result['paths_relative_to'] = 'summary'
     result.update(color_requested=bool(color), color_status='unavailable' if color else 'disabled',
@@ -120,6 +131,11 @@ def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 1.,
             map_id = keyfile.name.removeprefix("map_").removesuffix("_keyframes.csv")
             if not map_id.isdecimal():
                 raise ValueError("keyframe map identity mismatch")
+            from experiments.handheld_mapping.gravity import load_alignment
+            gravity = (load_alignment(run_dir, backend, int(map_id))
+                       if gravity_alignments is None and keyframe_dir is None
+                       else (gravity_alignments or {}).get(int(map_id)))
+            world_from_slam = transform(gravity['world_from_slam']) if gravity else np.eye(4)
             can_color = matcher is not None and matcher.count > 0 and color_info is not None
             volume = o3d.pipelines.integration.ScalableTSDFVolume(
                 voxel_length=voxel_size, sdf_trunc=voxel_size*4,
@@ -128,21 +144,15 @@ def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 1.,
             integrated = 0
             total = max_gap = 0
             colored_frames = colored_pixels = valid_pixels = max_color_gap = matched_color_frames = 0
-            for row, frame, gap in matched_depths(run_dir, keyfile, int(map_id), info['depth_frame']):
+            filter_stats = {}
+            for row, frame, gap, depth in filtered_depths(run_dir, keyfile, int(map_id), info,
+                                                         world_from_slam, filtering, filter_stats):
                 total += 1
                 if frame is None:
                     continue
-                path = (run_dir / frame["path"]).resolve()
-                if not path.is_relative_to(run_dir / "raw"):
-                    raise ValueError("invalid depth path")
-                depth = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
-                if depth is None or depth.dtype != np.uint16 or depth.shape != (height, width):
-                    raise ValueError("depth file/profile mismatch")
-                depth = depth.copy()
-                depth[(depth*scale < .25) | (depth*scale > depth_max)] = 0
                 if np.count_nonzero(depth) < 100:
                     continue
-                world_depth = pose_matrix(row) @ left_depth
+                world_depth = world_from_slam @ pose_matrix(row) @ left_depth
                 rgb = np.full((height,width,3), 128, np.uint8)
                 valid_pixels += int(np.count_nonzero(depth))
                 if can_color:
@@ -190,6 +200,11 @@ def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 1.,
                                   "unintegrated_keyframes": total-integrated,
                                   "max_timestamp_difference_ns": max_gap, "mesh": mesh_path, "cloud": cloud_path,
                                   "vertices": len(mesh.vertices), "triangles": len(mesh.triangles),
+                                  'coordinate_system': 'gravity_z_up' if gravity else 'initial_camera_optical',
+                                  'world_from_slam': world_from_slam.tolist(),
+                                  'gravity_method': gravity['method'] if gravity else None,
+                                  'gravity_extrinsic_verified': gravity.get('extrinsic_verified', False) if gravity else False,
+                                  'depth_filter_stats': filter_stats,
                                   'colored_frames': colored_frames, 'colored_depth_pixels': colored_pixels,
                                   'matched_color_frames': matched_color_frames,
                                   'color_unavailable_reason': unavailable_reason,
@@ -208,6 +223,8 @@ def reconstruct(run_dir: Path, voxel_size: float = .01, depth_max: float = 1.,
         statuses = {item['color_status'] for item in result['maps']}
         result['color_status'] = ('complete' if statuses == {'complete'} else
                                   'unavailable' if statuses == {'unavailable'} else 'partial')
+    if any(row['coordinate_system'] == 'gravity_z_up' for row in result['maps']):
+        result['coordinate_system'] = 'per-map; see maps[].coordinate_system; elevation relative to anchor camera'
     atomic_json(output / "summary.json", result)
     return result
 
@@ -220,10 +237,12 @@ def main() -> None:
     parser.add_argument('--rgb', action='store_true', help='보정·동기화 가능한 RGB를 depth에 투영하여 색을 융합')
     parser.add_argument('--backend', choices=('orb','orbline','orb_offline','orb_inertial'), default='orb')
     parser.add_argument('--output', type=Path, help='새 출력 폴더; 기존 폴더는 거부')
+    parser.add_argument('--output-root', type=Path, help='새 결과 루트 아래 backend별 dense 폴더 생성')
     parser.add_argument('--keyframe-dir', type=Path, help='명시한 map_*_keyframes.csv pose 폴더')
     args = parser.parse_args()
     print(json.dumps(reconstruct(args.run_dir, args.voxel_size, args.depth_max, backend=args.backend,
-                                 keyframe_dir=args.keyframe_dir, output_dir=args.output, color=args.rgb), indent=2))
+                                 keyframe_dir=args.keyframe_dir, output_dir=args.output, color=args.rgb,
+                                 output_root=args.output_root), indent=2))
 
 
 if __name__ == "__main__":

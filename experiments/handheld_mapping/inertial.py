@@ -266,3 +266,6 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
+
+
+from experiments.handheld_mapping.inertial_verified import prepare_input

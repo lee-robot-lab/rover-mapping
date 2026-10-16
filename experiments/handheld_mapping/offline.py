@@ -64,13 +64,14 @@ def write_settings(run: Path, folder: Path) -> Path:
     return settings
 
 
-def run_point(run: Path) -> dict:
+def run_point(run: Path, inertial_profile: Path | None = None) -> dict:
     """기존 Pi 결과를 덮어쓰지 않고 노트북 ORB의 최종 keyframe을 저장한다."""
     run = Path(run).resolve()
     binary = ROOT/'outputs/handheld_mapping/orb3_comparison_build/rover_orb3_compare'
     if not binary.is_file():
         raise FileNotFoundError('노트북 ORB 실행기가 없습니다: tools/build_mapping_baseline.sh')
-    folder = run/'orb_offline'
+    backend = 'orb_inertial' if inertial_profile is not None else 'orb_offline'
+    folder = run/backend
     folder.mkdir(exist_ok=False)
     index = folder/'pairs.tsv'
     paired = 0
@@ -81,16 +82,31 @@ def run_point(run: Path) -> dict:
     if not paired:
         raise ValueError('동일 timestamp의 좌우 IR 원본이 없습니다')
     settings = write_settings(run, folder)
+    inertial = None
+    if inertial_profile is not None:
+        from experiments.handheld_mapping.inertial import prepare_input
+        inertial = prepare_input(run,folder,inertial_profile)
     orb_voc, line_voc = vocabularies()
     with (folder/'runner.log').open('wb') as log:
-        subprocess.run([str(binary), str(orb_voc), str(line_voc), str(settings), str(index), str(folder)],
+        arguments = [str(binary), str(orb_voc), str(line_voc), str(settings), str(index), str(folder)]
+        if inertial is not None:
+            arguments.append(inertial['runner_samples'])
+        subprocess.run(arguments,
                        cwd=folder, env=runner_environment(True), stdout=log, stderr=log, check=True, timeout=3600)
-    if (json.loads((folder/'runner_complete.json').read_text()).get('status') != 'complete'
+    completion = json.loads((folder/'runner_complete.json').read_text())
+    if (completion.get('status') != 'complete'
             or not any(folder.glob('map_*_keyframes.csv'))):
         raise RuntimeError('노트북 ORB 최종 keyframe 저장 확인 실패')
-    result = {**summarize_timings(folder/'timings.csv'), 'status': 'complete', 'backend': 'orb_offline',
+    initialized_maps = completion.get('exported_imu_initialized_maps', [])
+    if inertial is not None and not initialized_maps:
+        raise RuntimeError('IMU 초기화된 최종 지도가 없습니다. 융합 성공으로 처리하지 않습니다.')
+    skipped = len(list(folder.glob('map_*_keyframes.csv')))-len(initialized_maps) if inertial is not None else 0
+    result = {**summarize_timings(folder/'timings.csv'),
+              'status': 'partial' if skipped else 'complete', 'backend': backend,
               'paired_frames': paired, 'source': str(run), 'raw_preserved': True,
-              'input_calibration_sha256': hashlib.sha256((run/'capture_calibration.json').read_bytes()).hexdigest()}
+              'input_calibration_sha256': hashlib.sha256((run/'capture_calibration.json').read_bytes()).hexdigest(),
+              'orb_fused':inertial is not None,'inertial_input':inertial,
+              'exported_imu_initialized_maps':initialized_maps if inertial is not None else None}
     atomic_json(folder/'summary.json', result)
     return result
 
@@ -98,8 +114,9 @@ def run_point(run: Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('run', type=Path)
+    parser.add_argument('--inertial-profile',type=Path,help='실측 시간·장착·잡음과 개별 IMU 표본을 검증한 RUN별 profile')
     args = parser.parse_args()
-    print(json.dumps(run_point(args.run), indent=2))
+    print(json.dumps(run_point(args.run,args.inertial_profile), indent=2))
 
 
 if __name__ == '__main__':

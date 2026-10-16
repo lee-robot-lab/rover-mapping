@@ -83,6 +83,14 @@ def test_exact_pairing_preserves_consecutive_fifo_and_depth_tolerance(tmp_path):
     assert box.take(.001) is None
 
 
+def test_pair_keeps_oldest_laptop_receipt_so_receive_queue_wait_counts_as_lag(tmp_path):
+    from experiments.handheld_mapping.coverage import StereoMailbox
+    box = StereoMailbox(tmp_path)
+    box.offer({'stream':'left','stamp_ns':5,'laptop_receipt_monotonic_ns':2_000_000_000})
+    box.offer({'stream':'right','stamp_ns':5,'laptop_receipt_monotonic_ns':1_000_000_000})
+    assert box.take(.001)['offered_at'] == pytest.approx(1.)
+
+
 def test_fifo_overflow_drops_new_pairs_and_unmatched_metadata_stays_bounded(tmp_path):
     from experiments.handheld_mapping.coverage import StereoMailbox
     box = StereoMailbox(tmp_path)

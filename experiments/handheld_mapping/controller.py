@@ -6,6 +6,7 @@
 from datetime import datetime
 from collections import deque
 import io
+import json
 import math
 import os
 from pathlib import Path
@@ -20,8 +21,8 @@ import threading
 import time
 import uuid
 
-from experiments.handheld_mapping.protocol import read_packet
 from experiments.handheld_mapping.storage import RunWriter, atomic_json
+from experiments.handheld_mapping.transport import PacketReader
 
 ROOT = Path(__file__).resolve().parents[2]
 ACTIVE = {"starting", "recording", "stopping", "processing", "reconstructing", "comparing"}
@@ -171,8 +172,12 @@ class Session:
         process = None
         log = None
         live = None
+        packet_reader = None
         imu_partial = False
         try:
+            gravity_requested = bool(config.get('gravity_enabled'))
+            if gravity_requested and (not config.get('imu_enabled') or config.get('demo')):
+                raise ValueError('중력 기준 지도에는 실제 보정 IMU 기록이 필요합니다')
             root = Path(config["output_root"]).expanduser().resolve()
             root.mkdir(parents=True, exist_ok=True)
             if shutil.disk_usage(root).free < 2_000_000_000:
@@ -182,7 +187,7 @@ class Session:
             writer = RunWriter(run)
             self.update(run_dir=str(run), source="synthetic_demo" if config.get("demo") else "D435_Pi",
                         rgb_requested=bool(config.get('rgb_enabled')),
-                        global_requested=bool(config.get('global_reconstruction')))
+                        global_requested=bool(config.get('global_reconstruction')), gravity_requested=gravity_requested)
             atomic_json(run / "session.json", self.snapshot())
             if config.get("demo"):
                 command = [sys.executable, "-u", "-m", "experiments.handheld_mapping.demo"]
@@ -224,21 +229,22 @@ class Session:
                               "writer_accept_ms_total": 0., "writer_accept_ms_max": 0.,
                               "packet_process_ms_max": 0., "packet_process_ms_max_kind": None,
                               "packet_process_ms_max_stamp_ns": None}
+            packet_reader = PacketReader(process.stdout)
             while True:
                 if self.imu is not None:
                     imu_status = self.imu.snapshot()
                     if imu_status.get("error"):
                         raise RuntimeError("IMU 기록 오류: "+str(imu_status["error"]))
                     if imu_status.get("stale"):
-                        imu_partial = True
-                        self.update(imu_warning="IMU 수신 지연 · 기록 공백 가능")
-                read_start = time.monotonic_ns()
-                packet = read_packet(process.stdout)
-                receipt_ns = time.monotonic_ns()
+                        self.update(imu_warning="IMU 표시 갱신 대기 · 노트북 수신 지연")
+                    else:
+                        self.update(imu_warning=None)
+                packet = packet_reader.get()
                 if packet is None:
                     break
                 header, payload = packet
-                read_ms = (receipt_ns-read_start)/1e6
+                receipt_ns = header['laptop_receipt_monotonic_ns']
+                read_ms = header['laptop_read_wait_ms']
                 # Pi와 노트북 monotonic은 서로 다른 clock이다. read 대기는 latency가 아니다.
                 header = {**header, "laptop_receipt_monotonic_ns": receipt_ns,
                           "laptop_read_wait_ms": read_ms}
@@ -251,7 +257,10 @@ class Session:
                     if config.get('live_mapping'):
                         try:
                             from experiments.handheld_mapping.live import LiveMapper
-                            live = LiveMapper(run, demo=bool(config.get('demo')))
+                            live_options = {'demo':bool(config.get('demo'))}
+                            if gravity_requested:
+                                live_options['gravity_provider'] = self.imu.gravity_samples
+                            live = LiveMapper(run, **live_options)
                             with self.lock:
                                 self.live = live
                         except Exception as error:
@@ -292,12 +301,13 @@ class Session:
                 for key, value in (("read_wait_ms", read_ms), ("writer_accept_ms", accept_ms)):
                     laptop_capture[key+'_total'] += value
                     laptop_capture[key+'_max'] = max(laptop_capture[key+'_max'], value)
-                processing_ms = (time.monotonic_ns()-receipt_ns)/1e6
+                processing_ms = (time.monotonic_ns()-accept_start)/1e6
                 if processing_ms > laptop_capture['packet_process_ms_max']:
                     laptop_capture.update(packet_process_ms_max=processing_ms,
                         packet_process_ms_max_kind=header['kind'],
                         packet_process_ms_max_stamp_ns=header.get('stamp_ns'))
                 self.update(laptop_capture={**laptop_capture,
+                    'receive_buffer': packet_reader.snapshot(),
                     'images': {side: dict(stats) for side, stats in writer.image_timings.items()}})
             exitcode = process.wait(timeout=10)
             imu_status = self._finish_imu()
@@ -306,7 +316,10 @@ class Session:
             if imu_status:
                 if imu_status.get("error"):
                     raise RuntimeError("IMU 기록 오류: "+str(imu_status["error"]))
-                imu_partial = imu_partial or bool(imu_status.get("stale"))
+                imu_partial = bool(imu_status.get('stale') or any(imu_status.get(key,0) for key in
+                                   ('source_gap_events','resets','clock_jumps','tee_drops')))
+                if not imu_status.get('stale'):
+                    self.update(imu_warning=None)
             writer.close()
             writer = None
             if live is not None:
@@ -326,11 +339,18 @@ class Session:
                 from experiments.handheld_mapping.offline import run_point
                 self.update(offline=run_point(run))
                 backend = 'orb_offline'
+            gravity = None
+            if gravity_requested:
+                self.update(state='reconstructing',message='정지 IMU로 지도별 중력 기준 계산 중')
+                from experiments.handheld_mapping.gravity import process_maps
+                gravity = process_maps(run,backend)
+                self.update(gravity=gravity)
             self.update(state="reconstructing", message="최종 keyframe으로 TSDF 지도 생성 중")
             from experiments.handheld_mapping.reconstruct import reconstruct
             fusion_options = {'color': True} if config.get('rgb_enabled') and not config.get('demo') else {}
+            dense_gravity = {'gravity_alignments': gravity['maps']} if gravity_requested else {}
             dense = reconstruct(run, progress=lambda message: self.update(message=message),
-                                backend=backend, **fusion_options)
+                                backend=backend, **fusion_options, **dense_gravity)
             self.update(dense=dense)
             if fusion_options and dense.get('color_status') in ('partial', 'unavailable'):
                 self.update(color_warning='RGB가 없거나 일부만 일치함 · 형상은 보존하고 색상 상태 별도 기록')
@@ -359,6 +379,12 @@ class Session:
                     if fusion_result is None:
                         self.update(inertial_fusion={"status": "failed", "orb_fused": False, "error": str(error)})
                     self.update(inertial_warning="IMU 융합 후처리 실패 · 기본 지도는 저장됨: "+str(error))
+            terrain = None
+            if gravity_requested:
+                self.update(message='중력 기준 높이·경사·단차 지도 생성 중')
+                from experiments.handheld_mapping.gravity import terrain_maps
+                terrain = terrain_maps(run, backend, gravity, depth_max=1.)
+                self.update(terrain=terrain)
             line_partial = False
             if config.get("compare_lines"):
                 self.update(state="comparing", message="동일 원본으로 점+선 SLAM 비교 중")
@@ -384,12 +410,15 @@ class Session:
                     global_partial = True
                     self.update(reference_warning='전역 재구성 실패 · 기존 지도 보존: '+str(error))
             partial = (dense["status"] != "complete" or finished.get("dropped", 0) > 0
-                       or line_partial or imu_partial or inertial_partial or global_partial)
+                       or line_partial or imu_partial or inertial_partial or global_partial
+                       or (gravity_requested and (gravity['status'] != 'complete' or terrain['status'] != 'complete')))
             self.update(state="partial" if partial else "complete", message="일부 누락 있음 · 지도 저장 완료" if partial else "지도 저장 완료",
                         dense=dense, dropped=finished.get("dropped", 0))
         except Exception as error:
             self.update(state="failed", error=str(error), message=str(error))
         finally:
+            if packet_reader is not None:
+                packet_reader.close()
             self._finish_imu()
             if live is not None:
                 try:
@@ -411,6 +440,8 @@ class Session:
                 process.stdout.close()
                 if not process.stdin.closed:
                     process.stdin.close()
+            if packet_reader is not None:
+                packet_reader.thread.join(timeout=3)
             if writer is not None:
                 writer.close()
             if log is not None:
@@ -443,6 +474,15 @@ class Session:
         finally:
             with self.lock:
                 self.imu = None
+
+    def zero_imu_display(self) -> dict:
+        with self.lock:
+            imu = self.imu
+        if imu is None:
+            raise ValueError('IMU를 함께 기록하는 촬영 중에 평지에서 정지한 뒤 누르세요')
+        result = imu.zero_display()
+        self.update(message='롤·피치 참고 표시 영점 설정 완료')
+        return result
 
     def _postprocess_global(self, run: Path, backend: str, color: bool = False) -> dict:
         """명시 backend의 map을 각각 새 폴더에 재구성하고 실패도 따로 보존한다."""

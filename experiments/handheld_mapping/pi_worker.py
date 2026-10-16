@@ -22,7 +22,7 @@ from typing import Callable
 
 from experiments.handheld_mapping.protocol import write_packet
 from experiments.handheld_mapping.reconstruct import pose_matrix
-from experiments.handheld_mapping.transport import ByteQueue
+from experiments.handheld_mapping.transport import ByteQueue, FrameBundler
 
 
 class CaptureMetrics:
@@ -37,8 +37,10 @@ class CaptureMetrics:
                         for side in (('left', 'right', 'depth', 'color') if rgb else ('left', 'right', 'depth'))}
         self.non_image_dropped = {'status': 0, 'pose': 0}
         self.sender = {'sent_packets': 0, 'last_compress_ms': 0., 'max_compress_ms': 0.,
-                       'last_write_ms': 0., 'max_write_ms': 0.}
+                       'last_write_ms': 0., 'max_write_ms': 0., 'write_ms_total': 0.,
+                       'compress_ms_total': 0., 'payload_bytes_sent': 0}
         self.send_start_ns: int | None = None
+        self.bundle_provider = None
 
     def image_received(self, side: str, stamp_ns: int, receipt_ns: int) -> int:
         with self.lock:
@@ -68,12 +70,15 @@ class CaptureMetrics:
             if compress_ms is not None:
                 self.sender['last_compress_ms'] = compress_ms
                 self.sender['max_compress_ms'] = max(self.sender['max_compress_ms'], compress_ms)
+                self.sender['compress_ms_total'] += compress_ms
 
-    def send_finished(self, write_ms: float) -> None:
+    def send_finished(self, write_ms: float, payload_bytes: int = 0) -> None:
         with self.lock:
             self.sender['sent_packets'] += 1
             self.sender['last_write_ms'] = write_ms
             self.sender['max_write_ms'] = max(self.sender['max_write_ms'], write_ms)
+            self.sender['write_ms_total'] += write_ms
+            self.sender['payload_bytes_sent'] += payload_bytes
             self.send_start_ns = None
 
     def snapshot(self, now_ns: int | None = None) -> dict:
@@ -83,6 +88,7 @@ class CaptureMetrics:
             return {'streams': {side: dict(stream) for side, stream in self.streams.items()},
                     'non_image_dropped': dict(self.non_image_dropped),
                     'sender': {**self.sender, 'send_in_progress_age_ms': age},
+                    'bundles': self.bundle_provider() if self.bundle_provider is not None else None,
                     'scope': 'recording-only stream callbacks and queued sender packets; '
                              'source gaps use camera stamps; other timings use Pi-local monotonic clock, '
                              'not end-to-end latency; '
@@ -185,6 +191,8 @@ def main() -> None:
             self.error = None
             self.sent = 0
             self.capture_metrics = CaptureMetrics(rgb=getattr(args, 'rgb', False))
+            self.bundler = FrameBundler(self.enqueue_bundle, self.discard_image)
+            self.capture_metrics.bundle_provider = self.bundler.snapshot
             # 기존 source_frames는 준비 중 callback도 포함하며 capture_metrics는 녹화 중만 센다.
             self.source_frames = 0
             self.buffer = tf2_ros.Buffer()
@@ -208,6 +216,9 @@ def main() -> None:
             if not self.recording:
                 return
             if header['kind'] == 'image':
+                if header['stream'] != 'color':
+                    self.bundler.push((header, payload))
+                    return
                 header['pi_enqueue_monotonic_ns'] = time.monotonic_ns()
             try:
                 self.pending.put_nowait((header, payload))
@@ -216,6 +227,26 @@ def main() -> None:
                 self.capture_metrics.enqueue_result(header, enqueued=False)
             else:
                 self.capture_metrics.enqueue_result(header, enqueued=True)
+
+        def discard_image(self, item) -> None:
+            self.dropped += 1
+            self.capture_metrics.enqueue_result(item[0], enqueued=False)
+
+        def enqueue_bundle(self, items) -> None:
+            now = time.monotonic_ns()
+            for header, _ in items:
+                header.update(pi_enqueue_monotonic_ns=now,
+                              capture_group_stamp_ns=items[0][0]['stamp_ns'], capture_group_size=3,
+                              pi_bundle_wait_ms=(now-header['pi_receipt_monotonic_ns'])/1e6)
+            try:
+                # Persist depth before offering the stereo pair to live ORB on the laptop.
+                self.pending.put_many_nowait([items[2], items[0], items[1]])
+            except queue.Full:
+                for item in items:
+                    self.discard_image(item)
+            else:
+                for header, _ in items:
+                    self.capture_metrics.enqueue_result(header, enqueued=True)
 
         def image(self, side: str, msg: Image) -> None:
             clock = receipt_clock()
@@ -376,7 +407,7 @@ def main() -> None:
                                       pi_compress_ms=compress_ms, pi_send_start_monotonic_ns=send_start_ns)
                     node.capture_metrics.send_started(send_start_ns, compress_ms)
                     send(header, payload)
-                    node.capture_metrics.send_finished((time.monotonic_ns()-send_start_ns)/1e6)
+                    node.capture_metrics.send_finished((time.monotonic_ns()-send_start_ns)/1e6, len(payload))
                     node.sent += 1
             except Exception as error:
                 node.error = str(error)
@@ -415,6 +446,7 @@ def main() -> None:
                               "capture_metrics": node.capture_metrics.snapshot(), "ram_disk_free_bytes": free})
                 last_status = time.monotonic()
         node.recording = False
+        node.bundler.finish()
         stop_child(orb)
         stop_child(camera, 10)
         node.pending.finish(timeout=10)

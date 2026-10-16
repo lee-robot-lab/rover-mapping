@@ -44,7 +44,7 @@ python ros2_ws/src/orbslam3_ros2/scripts/mapping_preflight.py sensors \
 
 이 명령은 준비 상태 검사다. `prepare_mapping_run.py --from-probe ... --urdf "$ROVER_URDF" --camera-profile ... --rectified-input`으로 새 run을 준비하면 보정값과 URDF 사본·SHA-256을 run에 보존한다. vocabulary/run-dir 등의 나머지 인자는 [headless 실행 절차](headless-pi-manual-mapping.md)를 따른다. 과거 run의 URDF·보정값을 바꾸거나 새 각도로 덮어쓰지 않는다.
 
-**현재 Qt 매핑 앱은 camera optical 기준으로 ORB·TSDF를 계산하며 이 URDF를 자동으로 읽지 않는다.** 이번 변경은 headless 로버 pose 보정 입력과 최신 기구 기준을 준비한 것이다. Qt의 지도·coverage가 자동으로 수평화되거나 IMU 융합이 추가된 것은 아니다. 지형 분석의 `grid_from_world` 중력 정렬은 여전히 명시적으로 검증해 제공해야 한다. 카메라 장착각만으로 경사면 위 로버의 중력을 알 수는 없다.
+작성 당시 Qt 매핑 앱은 camera optical 기준으로 ORB·TSDF를 계산하며 이 URDF를 읽지 않았다. **2026-10-15 후속 [중력·지형 경로](2026-10-15-gravity-terrain-pipeline.md)**는 선택한 IMU 기록의 URDF 사본과 정지 중력 기준으로 지도/coverage를 정렬한다. 장착각만으로 중력을 정하지 않으며 `extrinsic_verified=false`를 유지한다. 동적 IMU 융합과 실측 지형 검증은 별도다.
 
 ## 전달 패키지에서 발견한 불일치
 
