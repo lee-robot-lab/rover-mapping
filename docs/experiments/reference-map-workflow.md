@@ -55,6 +55,7 @@ bash tools/edit_reference_map.sh /path/to/map.stl --stl-meters
 
 ## 확인한 결과와 남은 검증
 
+- 최종 `tests/handheld_mapping` + `tests/headless_mapping` 검사: **387 passed, 10 skipped**. 독립 리뷰의 관련 검사 78개와 shell syntax·diff check도 통과했다. idle UI의 RGB/global 기본 설정과 원본 수집 없이 창 생성도 확인했다.
 - 실제 604-keyframe 기록: 36 fragments, 수용한 depth 제약 10개, loop 0개. 제안된 최대 보정 1.398 m·24.997°가 제한 0.5 m·20°를 넘어 `optimization_rejected`로 기존 경로를 유지했다. 정확도 향상은 입증되지 않았다.
 - 같은 기록의 baseline/보정 결과는 각각 60,176 vertices·103,241 triangles다. 약 25.7초, peak RSS 약 541 MiB는 이 노트북·기록의 한 번 측정값이다.
 - 실제 지도 편집에서 crop·출발 prior·mesh 처리 후 저장/재로드 geometry·경로 일치와 source hash 불변을 확인했다. 합성 정합·loop·거부 경로도 회귀 검사한다.

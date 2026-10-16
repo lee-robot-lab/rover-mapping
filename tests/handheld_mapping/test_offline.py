@@ -33,6 +33,8 @@ def test_remote_command_selects_sensors_only_and_byte_limit():
     assert '--sensors-only' in command[-1]
     assert '--queue-mib 2.0' in command[-1]
     assert '--sensors-only' not in remote_command('pi@raspberrypi.local', 'fixture')[-1]
+    assert '--projector-on' not in remote_command('pi@raspberrypi.local', 'fixture')[-1]
+    assert '--projector-on' in remote_command('pi@raspberrypi.local', 'fixture', projector_on=True)[-1]
     with pytest.raises(ValueError):
         remote_command('pi@raspberrypi.local', 'fixture', queue_mib=float('nan'))
 

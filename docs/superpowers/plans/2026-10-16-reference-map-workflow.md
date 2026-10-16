@@ -101,4 +101,4 @@ Files: `controller.py`, `app.py`, `viewer.py`, new `tools/reference_mapping.sh`,
 - Task 1~4 구현 완료. RGB/전역 재구성/편집 모듈 및 앱·wrapper·사용 설명서 통합. 기존 fixture 수정 후 전체 범위 385 passed, 10 skipped, 최종 편집 검사 28 passed. shell syntax·diff check 정상.
 - 실제 604-keyframe 재처리는 전역 보정 1.398 m·24.997°를 거부하고 baseline poses를 유지했다. 실제 정확도 향상은 미입증. 편집 crop·출발 prior·처리·저장/재로드 및 원본 hash 불변 확인.
 - 독립 검토의 stale merge, crop/processing 재적용, 잘린 경로 재등장, 재처리 상태 잔류, 수동 up 누적, Taubin NaN 문제에 회귀 검사와 수정을 추가했다. 장비 검증은 하지 않았다.
-- 남은 통합 작업: 최종 검토 판정 확인, Git 반영, 실행 폴더 소스 동기화·idle 앱 실행.
+- 최종 검토: 미해결 주요 문제 없음, 독립 관련 검사 78 passed. 최종 전체 검사 387 passed, 10 skipped. 실제 실행 폴더 소스 동기화와 idle UI smoke를 확인했다. 기존 runtime 파일은 별도 backup을 남겼고 촬영·센서·모터는 시작하지 않았다.
