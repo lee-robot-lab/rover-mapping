@@ -125,7 +125,8 @@ def fusion_evidence(path: Path, completion: dict) -> dict:
 
 def run_inertial(run: Path, output: Path | None = None, correction_s: float | None = None,
                  allow_legacy: bool = False, segment: int | None = None,
-                 correlation_window_s: tuple[float, float] | None = None) -> dict:
+                 correlation_window_s: tuple[float, float] | None = None,
+                 noise_override: dict[str, float] | None = None) -> dict:
     """비파괴 offline 비교를 실행하며 미검증 보정·noise를 실험 결과에 명시한다."""
     from experiments.handheld_mapping.inertial_timing import aligned_inputs
     from experiments.handheld_mapping.time_alignment import file_sha256
@@ -170,7 +171,7 @@ def run_inertial(run: Path, output: Path | None = None, correction_s: float | No
             raise ValueError('implausible effective IMU frequency')
         # ORB EuRoC 시작값이다. 이 센서의 Allan variance 보정값으로 주장하지 않는다.
         noise = {'IMU.NoiseGyro': .00017, 'IMU.NoiseAcc': .002,
-                 'IMU.GyroWalk': .000019393, 'IMU.AccWalk': .003}
+                 'IMU.GyroWalk': .000019393, 'IMU.AccWalk': .003, **(noise_override or {})}
         with settings.open('a') as stream:
             for key, value in {**noise, 'IMU.Frequency': float(frequency), 'IMU.InsertKFsWhenLost': 0}.items():
                 stream.write(f'{key}: {value}\n')
