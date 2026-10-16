@@ -94,3 +94,21 @@ def test_stl_source_change_is_detected(tmp_path):
     site.save(tmp_path/'site')
     source.write_bytes(source.read_bytes()+b'changed')
     with pytest.raises(ValueError,match='source'):SiteMap.load(tmp_path/'site')
+
+
+def test_subcell_position_does_not_bypass_small_radius_wall_clearance():
+    wall=o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector([[2,0,0],[2,3,0],[2,3,1],[2,0,1]]),
+                                  o3d.utility.Vector3iVector([[0,1,2],[0,2,3]]))
+    from experiments.handheld_mapping.site_map import SiteMap
+    site=SiteMap.from_mesh(plane()+wall,resolution=.1,robot_radius=.01)
+    assert not site.validate_path([[1.999,1.],[1.999,2.]],20)['accepted']
+
+
+def test_overlapping_full_surfaces_require_explicit_top_selection():
+    from experiments.handheld_mapping.site_map import SiteMap
+    upper=plane();upper.translate([0,0,.5]);mesh=plane()+upper
+    with pytest.raises(ValueError,match='surface'):SiteMap.from_mesh(mesh,resolution=.1,robot_radius=.05)
+    selected=SiteMap.from_mesh(mesh,resolution=.1,robot_radius=.05,surface_mode='top')
+    assert selected.validate_path([[.5,.5],[3.5,2.5]],20)['accepted']
+    assert np.nanmedian(selected.height_m)==pytest.approx(.5)
+    assert selected.metadata['surface_mode']=='top'

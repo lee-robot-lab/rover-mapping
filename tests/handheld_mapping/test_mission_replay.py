@@ -63,3 +63,21 @@ def test_trial_slope_permission_is_retained_while_retracing(tmp_path):
     assert out['state']=='complete',out
     assert out['failed_ascent_routes']==['30']
     assert out['paused_samples']==0
+
+
+def test_unavailable_descent_does_not_claim_return_success(tmp_path):
+    from experiments.handheld_mapping.mission_replay import replay
+    out=replay(mission_fixture(),tmp_path/'blocked_return','descent_blocked')
+    assert out['state']=='failed'
+    assert out['visits']['summit']=='reached'
+    assert out['visits']['return']=='failed'
+    assert out['reason']=='descent_route_unavailable'
+
+
+def test_stall_before_trial_representative_still_retreats_and_falls_back(tmp_path):
+    from experiments.handheld_mapping.mission_replay import replay
+    out=replay(mission_fixture(),tmp_path/'entry_stall','stall30_entry')
+    assert out['state']=='complete',out
+    assert out['visits']['entry30']=='failed'
+    assert out['visits']['summit']=='reached'
+    assert out['failed_ascent_routes']==['30']

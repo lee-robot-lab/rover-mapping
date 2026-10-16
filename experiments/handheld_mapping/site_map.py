@@ -35,11 +35,12 @@ class SiteMap:
     def from_mesh(cls, mesh: o3d.geometry.TriangleMesh, *, units: str='m',
                   up: list[float] | None=None, resolution: float=.05,
                   robot_radius: float=.15, max_step_m: float=.06,
-                  source: Path | None=None) -> SiteMap:
+                  source: Path | None=None, surface_mode: str='conservative') -> SiteMap:
         if units not in ('m','mm') or not all(math.isfinite(v) for v in (resolution,robot_radius,max_step_m)):
             raise ValueError('invalid units or grid parameters')
         if not .005<=resolution<=.5 or robot_radius<0 or max_step_m<=0:
             raise ValueError('invalid grid resolution/radius/step')
+        if surface_mode not in ('conservative','top'):raise ValueError('invalid surface selection')
         mesh=copy.deepcopy(mesh)
         vertices,triangles=np.asarray(mesh.vertices),np.asarray(mesh.triangles)
         if (len(vertices)<3 or not len(triangles) or len(triangles)>2_000_000
@@ -65,11 +66,13 @@ class SiteMap:
                        'source_geometry_sha256':geometry_hash,'scale_to_m':scale,
                        'T_site_source_axes':matrix.tolist(),'origin':origin.tolist(),
                        'resolution':self.resolution,'robot_radius':self.robot_radius,'max_step_m':self.max_step_m,
-                       'shape':[int(rows),int(cols)],'accuracy_verified':False,
+                       'shape':[int(rows),int(cols)],'accuracy_verified':False,'surface_mode':surface_mode,
                        'grid_method':'vertical first surface; multiple separated hits unknown; projected steep walls blocked',
                        'limitation':'2.5D; thick closed solids or overlapping floors can remain unknown'}
         self.identity=hashlib.sha256(json.dumps(self.metadata,sort_keys=True).encode()).hexdigest()
         self._rasterize(int(rows),int(cols))
+        if not self.observed.any():
+            raise ValueError('no unambiguous ground surface: check units/up; explicitly select top surface for a solid base')
         return self
 
     def _rasterize(self, rows: int, cols: int) -> None:
@@ -97,7 +100,7 @@ class SiteMap:
             multi=np.zeros(len(idx),bool)
             both=valid & np.isfinite(second)
             multi[both]=z[both]-lower[both]>self.max_step_m
-            good=valid & (nz>=.35) & ~multi
+            good=valid & (nz>=.35) & (~multi if self.metadata['surface_mode']=='conservative' else True)
             height[idx]=np.where(good,z,np.nan)
             slope[idx]=np.where(good,np.degrees(np.arccos(np.clip(nz,0,1))),np.nan)
             observed[idx]=good
@@ -130,7 +133,7 @@ class SiteMap:
         clear=self.observed & ~self.blocked & (self.slope_deg<=max_slope_deg+1e-4)
         distance=distance_transform_edt(np.pad(clear,1,constant_values=False))[1:-1,1:-1]*self.resolution
         # cell centers require at least the configured radius; map exterior remains occupied.
-        return clear & (distance>=self.robot_radius+self.resolution/math.sqrt(2)-1e-9)
+        return clear & (distance>=self.robot_radius+self.resolution*math.sqrt(2)-1e-9)
 
     def cells(self, xy: np.ndarray) -> np.ndarray:
         return np.floor((np.asarray(xy,float)-self.origin)/self.resolution).astype(int)

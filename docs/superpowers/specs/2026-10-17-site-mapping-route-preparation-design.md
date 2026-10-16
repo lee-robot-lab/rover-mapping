@@ -25,6 +25,8 @@ STL 단위 m/mm를 명시하고 up 또는 rigid transform으로 중력 방향을
 ## 구현 단위
 
 1. site_map.py: STL hash·단위·rigid transform을 보존하고 bounded 2.5D grid 생성. 높이·경사·단차·unknown·벽·footprint 여유를 검사한다. 구멍을 보간해 free로 만들지 않고 다층/지면 불명확 영역은 unknown으로 둔다.
+
+실제 CAD STL의 두꺼운 바닥 호환: 기본 보수 검사로 지면을 얻지 못하면 오류로 알린다. 운영자가 geometry를 확인해 상부 표면만 쓰겠다고 명시한 경우에만 `surface_mode=top`을 허용하고 provenance에 기록한다. 이 모드에서도 wall/step/hole/footprint 검사는 유지되며 아래층 통로는 표현하지 않는다.
 2. site_mission.py: 출발/갈림길/정상·대표점·세 directed route·정책 검증·저장·재로드. 기존 GridMap/A* 기초를 필요한 범위에서 재사용한다. 사용자 경유점 경로와 자동 연결 구간을 구분한다.
 3. mission_editor.py: 별도 Qt 창의 3D/XY 지도·출발 heading·대표점·세 경로·Undo·검사·저장·재로드·demo. 기존 매핑 앱을 확장하지 않는다.
 4. mission_runtime.py: GUI 없는 임무 상태 관리·경로 추종·진행 부족 감지·실제 실행 구간 후퇴·fallback·다른 경로 복귀. frame/timestamp/validity 검사와 bounded body velocity 요청 출력.

@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import math
 from pathlib import Path
@@ -114,7 +113,7 @@ class MissionRuntime:
         budget=(self.settings['max_attempt_s'] if self.state=='ascending' else
                 max(self.settings['max_attempt_s'],self.arcs[-1]/self.settings['max_speed_m_s']*4))
         if self.effort>=self.settings['stuck_window_s'] or self.phase_elapsed>budget:
-            if self.state=='ascending':return self._ascent_failed(position,stamp)
+            if self.state in ('ascending','trial_entry'):return self._ascent_failed(position,stamp)
             return self._fail(stamp,'no_progress_'+self.state)
         reverse=self.state=='retreating'
         target=self.points[self.index]
@@ -138,6 +137,9 @@ class MissionRuntime:
         elif self.state=='ascending':
             self.visits['summit']='reached';self.route_status[self.route]['up']='passed'
             self._event('summit_reached',stamp)
+            if not self.mission.site.validate_path(self.mission.path('10','down'),self.settings['normal_slope_deg'])['accepted']:
+                self.route_status['10']['down']='failed'
+                return self._fail(stamp,'descent_route_unavailable')
             self.state='descending';self.route='10';self.direction='down';self.visits['return']='active'
             self._set_path(np.vstack((position,self.mission.path('10','down'))))
         elif self.state=='retreating':
@@ -157,6 +159,7 @@ class MissionRuntime:
 
     def _ascent_failed(self, position: np.ndarray, stamp: float) -> dict:
         self.failed_routes.append(self.route);self.route_status[self.route]['up']='failed'
+        if self.visits['entry'+self.route]!='reached':self.visits['entry'+self.route]='failed'
         self._event('ascent_failed',stamp,reason='observed_no_progress_not_wheel_slip')
         points=np.asarray(self.breadcrumbs)
         if len(points)<2:points=np.vstack((position,self.mission.junction))

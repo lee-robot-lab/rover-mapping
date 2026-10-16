@@ -18,7 +18,7 @@ from experiments.handheld_mapping.site_mission import SiteMission
 from experiments.handheld_mapping.mission_runtime import MissionRuntime,angle_wrap
 from experiments.handheld_mapping.storage import atomic_json
 
-SCENARIOS=('success','stall30','stall30_15','stall_all','tracking_loss','return_stall')
+SCENARIOS=('success','stall30','stall30_15','stall_all','tracking_loss','return_stall','descent_blocked','stall30_entry')
 
 
 def demo_mission() -> SiteMission:
@@ -38,19 +38,24 @@ def replay(mission: SiteMission, output: Path, scenario: str='stall30') -> dict:
     output=Path(output);output.mkdir(parents=True,exist_ok=False)
     runtime=MissionRuntime(mission);xy=mission.start[:2].copy();yaw=float(mission.start[2])
     stall={'success':set(),'stall30':{'30'},'stall30_15':{'30','15'},'stall_all':{'30','15','10'},
-           'tracking_loss':set(),'return_stall':set()}[scenario]
+           'tracking_loss':set(),'return_stall':set(),'descent_blocked':set(),'stall30_entry':set()}[scenario]
     rows=[];dt=.1
     for step in range(20_000):
         stamp=round(step*dt,6)
         valid=not(scenario=='tracking_loss' and 12.<stamp<18.)
         packet={'stamp_s':stamp,'now_s':stamp,'frame':'site','site_identity':mission.site.identity,
                 'position_m':xy.tolist(),'yaw_rad':yaw,'tracking_valid':valid}
+        if (scenario=='descent_blocked' and runtime.state=='ascending'
+                and np.linalg.norm(xy-mission.summit)<=mission.settings['arrival_tolerance_m']):
+            col,row=mission.site.cells(mission.routes['10'][1])
+            mission.site.blocked[max(0,row-1):row+2,max(0,col-1):col+2]=True
         result=runtime.update(packet,stamp)
         cmd=result['command'];rows.append({'stamp_s':stamp,'x_m':xy[0],'y_m':xy[1],
             'yaw_rad':yaw,'state':runtime.state,'route':runtime.route,'tracking_valid':valid,**cmd})
         if runtime.state in ('complete','failed'):break
         blocked=((runtime.state=='ascending' and runtime.route in stall and xy[0]>1.3)
-                 or (scenario=='return_stall' and runtime.state=='returning'))
+                 or (scenario=='return_stall' and runtime.state=='returning')
+                 or (scenario=='stall30_entry' and runtime.state=='trial_entry' and xy[0]>.65))
         if not blocked:
             xy+=cmd['vx_m_s']*dt*np.array([np.cos(yaw),np.sin(yaw)])
             yaw=angle_wrap(yaw+cmd['yaw_rate_rad_s']*dt)
