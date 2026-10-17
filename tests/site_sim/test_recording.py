@@ -57,3 +57,13 @@ def test_live_experience_exposes_only_observed_cells(mission,tmp_path):
     r=RunRecorder(mission,tmp_path/'run');r.observe(packet(0.),[]);r.finalize('timeout','limit')
     live=json.loads((tmp_path/'run/live/state.json').read_text())
     assert live['experience']==[[10,15,1,0]]
+
+
+def test_estimator_run_does_not_report_gt_as_the_control_pose_source(mission,tmp_path) -> None:
+    from experiments.site_sim.recording import RunRecorder
+    out=tmp_path/'run';r=RunRecorder(mission,out,pose_source='orb_eskf_estimate')
+    row=packet(0.);row['pose_source']='orb_eskf_estimate'
+    r.observe(row,[]);summary=r.finalize('timeout','limit')
+    assert summary['pose_source']=='orb_eskf_estimate'
+    assert json.loads((out/'manifest.json').read_text())['pose_source']=='orb_eskf_estimate'
+    assert json.loads((out/'completion.json').read_text())['pose_source']=='orb_eskf_estimate'

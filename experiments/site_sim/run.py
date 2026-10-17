@@ -31,7 +31,8 @@ def run(args: argparse.Namespace) -> dict:
     mission=SiteMission.load(args.mission,load_mesh=False)
     stereo_hz=float(getattr(args,'stereo_hz',0.))
     if not math.isfinite(stereo_hz) or not 0<=stereo_hz<=30:raise ValueError('stereo_hz must be in [0,30]')
-    recorder=RunRecorder(mission,args.output,fault_injection=args.fault_injection)
+    recorder=RunRecorder(mission,args.output,fault_injection=args.fault_injection,
+                         pose_source='orb_eskf_estimate' if getattr(args,'estimator',False) else 'sim_ground_truth')
     stereo_writer=None;next_stereo=0.;estimator=orb=None;frame_info=None
     if getattr(args,'estimator',False) and stereo_hz<=0:raise ValueError('--estimator needs --stereo-hz')
     app=drive=world=None;status='failed';reason='initialization_failed';cameras={};wall_start=time.monotonic()
@@ -143,7 +144,12 @@ def run(args: argparse.Namespace) -> dict:
             from scipy.spatial.transform import Rotation
             start_rotation=Rotation.from_quat([q[1],q[2],q[3],q[0]]).as_matrix()
             start_pose=np.eye(4);start_pose[:3,:3]=start_rotation;start_pose[:3,3]=p
-            estimator=OnlineEstimator(start_pose,estimator_calibration,lag_s=RENDER_LAG_S)
+            estimator=OnlineEstimator(start_pose,estimator_calibration,lag_s=RENDER_LAG_S,
+                                     adaptive_visual_noise=getattr(args,'adaptive_visual_noise',False))
+            atomic_json(Path(args.output)/'estimator_calibration.json',{
+                'calibration':estimator_calibration,'start_world_from_base':start_pose.tolist(),
+                'render_lag_s':RENDER_LAG_S,'adaptive_visual_noise':estimator.adaptive_visual_noise,
+                'simulation_only':True})
             orb=OrbClient(Path(args.orb_io))
             print('SITE_SIM_ESTIMATOR ready (control uses ORB+ESKF estimate; GT is logged only)',flush=True)
         drive=SimulationDrive(robot,session,mission,fault_injection=args.fault_injection,hold_s=args.start_hold_s,estimator=estimator)
@@ -205,7 +211,15 @@ def run(args: argparse.Namespace) -> dict:
                         info=estimator.on_frame(stamp_ns*1e-9,result['state'],result['map_id'],result['world_from_camera'])
                         frame_info={'stamp_s':stamp_ns*1e-9,'orb_state':result['state'],'map_id':result['map_id'],
                                     'keypoints':result['keypoints'],'accepted':bool(info.get('accepted')),
-                                    'reason':info.get('reason'),'nis':info.get('nis'),'residual':info.get('residual')}
+                                    'reason':info.get('reason'),'nis':info.get('nis'),'residual':info.get('residual'),
+                                    'position_scale':info.get('position_scale'),'rotation_scale':info.get('rotation_scale'),
+                                    'world_from_camera':result['world_from_camera'].tolist(),
+                                    'filter_time_s':estimator.filter_time,
+                                    'velocity_imu_world_m_s':estimator.filter.velocity.tolist(),
+                                    'gyro_bias_rad_s':estimator.filter.gyro_bias.tolist(),
+                                    'accel_bias_m_s2':estimator.filter.accel_bias.tolist()}
+                        with (Path(args.output)/'estimator_frames.jsonl').open('a') as stream:
+                            stream.write(json.dumps(frame_info,allow_nan=False)+'\n')
                 recorder.publish()
     except KeyboardInterrupt as error:status='interrupted';reason=str(error)
     except Exception as error:
@@ -240,6 +254,7 @@ def main() -> None:
     parser.add_argument('--stereo-hz',type=float,default=0.)
     parser.add_argument('--start-hold-s',type=float,default=0.)
     parser.add_argument('--estimator',action='store_true')
+    parser.add_argument('--adaptive-visual-noise',action='store_true',help='실험적 경사·회전별 영상 noise 배율(기본 OFF)')
     parser.add_argument('--orb-io',type=Path,default=Path('/workspace/orbio'))
     parser.add_argument('--fault-injection',action='store_true');args=parser.parse_args();code=1
     try:

@@ -44,8 +44,9 @@ class SimulationDrive:
                 pose,valid,quality,status=self.estimator.pose(sim_s)
                 q=Rotation.from_matrix(pose[:3,:3]).as_quat()
                 sample.update(position_m=pose[:3,3].tolist(),yaw_rad=yaw_from_wxyz(np.array([q[3],q[0],q[1],q[2]])),
-                              tracking_valid=bool(valid),tracking_quality=quality)
-                estimate={'estimated_position_m':pose[:3,3].tolist(),'estimator_status':status,'estimator_quality':quality,
+                              tracking_valid=bool(valid),tracking_quality=quality,filter_status=status)
+                estimate={'estimated_position_m':pose[:3,3].tolist(),'estimated_yaw_rad':sample['yaw_rad'],
+                          'estimator_status':status,'estimator_quality':quality,
                           'estimator_valid':bool(valid)}
             result=self.runtime.update(sample,now_s=sim_s)
             requested=result['command'];applied=requested.copy()

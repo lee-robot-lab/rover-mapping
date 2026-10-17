@@ -36,10 +36,11 @@ class RunRecorder:
     """주행 시계열과 고정 크기 경험 grid를 새 run에 누적하며 부분 실패를 보존한다."""
 
     def __init__(self, mission: SiteMission, output: Path, *, max_snapshots: int=1200,
-                 fault_injection: bool=False) -> None:
+                 fault_injection: bool=False, pose_source: str='sim_ground_truth') -> None:
         if type(max_snapshots) is not int or max_snapshots<2:raise ValueError('at least two snapshots required')
         self.mission=mission;self.output=Path(output);self.output.mkdir(parents=True,exist_ok=False)
         self.fault_injection=bool(fault_injection);self.fault_occurred=False
+        self.pose_source=pose_source
         self.live=self.output/'live';self.live.mkdir();(self.output/'snapshots').mkdir()
         self.normal,self.trial=geometry_costs(mission)
         shape=mission.site.observed.shape
@@ -58,7 +59,7 @@ class RunRecorder:
             'observed':s.observed.tolist(),
             'routes':{k:v.tolist() for k,v in mission.routes.items()},'start':mission.start.tolist(),
             'junction':mission.junction.tolist(),'summit':mission.summit.tolist()})
-        atomic_json(self.output/'manifest.json',{'simulation_only':True,'pose_source':'sim_ground_truth',
+        atomic_json(self.output/'manifest.json',{'simulation_only':True,'pose_source':self.pose_source,
             'frame':'site','site_identity':s.identity,'physics_dt_s':.005,'control_dt_s':.05,
             'geometry_cost_source':'known simulator geometry','experience_source':'actual simulator pose samples',
             'slip':None,'sinkage':None,'hardware_commands_enabled':False,'mission_settings':mission.settings,
@@ -111,7 +112,7 @@ class RunRecorder:
         self.last_publish=time.monotonic()
         yy,xx=np.nonzero(self.visits)
         atomic_json(self.live/'state.json',{'status':status,'reason':reason,'updated_wall_s':time.time(),
-            'simulation_only':True,'pose_source':self.last.get('pose_source','sim_ground_truth'),'recording':str(self.output),
+            'simulation_only':True,'pose_source':self.last.get('pose_source',self.pose_source),'recording':str(self.output),
             'fault_injection':self.fault_injection,'fault_occurred':self.fault_occurred,
             'snapshot_count':self.snapshot_count,'last':self.last,'trajectory':self.trajectory[-20000:],'estimated_trajectory':self.estimated_trajectory[-20000:],
             'experience':np.c_[xx,yy,self.visits[yy,xx],self.stuck[yy,xx]].tolist(),
@@ -123,7 +124,7 @@ class RunRecorder:
         if self.done:return json.loads((self.output/'summary.json').read_text())
         self.done=True;self.snapshot(max(0.,self.last_stamp),'final')
         for f in (self.telemetry,self.events,self.csv_file):f.close()
-        summary={'status':status,'reason':reason,'simulation_only':True,'pose_source':'sim_ground_truth',
+        summary={'status':status,'reason':reason,'simulation_only':True,'pose_source':self.last.get('pose_source',self.pose_source),
             'fault_injection':self.fault_injection,'fault_occurred':self.fault_occurred,
             'fault_active':self.last.get('fault_active',False),
             'duration_sim_s':max(0.,self.last_stamp),'duration_wall_s':self.last.get('wall_s'),

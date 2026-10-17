@@ -113,11 +113,11 @@ def test_wheel_encoders_recover_the_commanded_body_twist(twist) -> None:
 
 class FakeEstimator:
     """GT와 다른 위치를 돌려주는 추정기 대역."""
-    def __init__(self, valid=True, quality='good'):
-        self.valid,self.quality=valid,quality
+    def __init__(self, valid=True, quality='good', status='ok'):
+        self.valid,self.quality,self.status=valid,quality,status
     def pose(self, now):
         pose=np.eye(4);pose[:3,3]=[.4,.6,.0]
-        return pose,self.valid,self.quality,'ok'
+        return pose,self.valid,self.quality,self.status
 
 
 def test_mission_decisions_use_the_estimate_not_gt_and_log_both(mission) -> None:
@@ -134,3 +134,24 @@ def test_invalid_estimate_stops_the_rover(mission) -> None:
     robot,session=Robot(),Session();drive=SimulationDrive(robot,session,mission,estimator=FakeEstimator(valid=False))
     row=drive.step(.05)
     assert row['applied_command']=={'vx_m_s':0.,'yaw_rate_rad_s':0.} and row['mission']['reason']=='tracking_lost'
+
+
+def test_estimated_yaw_is_recorded_separately_from_ground_truth(mission) -> None:
+    from experiments.site_sim.drive import SimulationDrive
+    robot=Robot();robot.quaternion=np.array([np.cos(.25),0.,0.,np.sin(.25)])
+    row=SimulationDrive(robot,Session(),mission,estimator=FakeEstimator()).step(.05)
+    assert row['estimated_yaw_rad']==pytest.approx(0.)
+    assert row['quaternion_wxyz']==pytest.approx(robot.quaternion)
+
+
+def test_filter_status_reaches_sensor_safety_even_when_pose_is_valid(mission) -> None:
+    from experiments.site_sim.drive import SimulationDrive
+    estimator=FakeEstimator();drive=SimulationDrive(Robot(),Session(),mission,estimator=estimator)
+    for t in (.05,.3,.6):drive.step(t)
+    estimator.status='recovering'
+    recovering=drive.step(.65)
+    assert recovering['mission']['sensor_safety']['scale']==pytest.approx(.3)
+    estimator.status='imu_gap'
+    gap=drive.step(.7)
+    assert gap['mission']['sensor_safety']['mode']=='stop'
+    assert gap['applied_command']=={'vx_m_s':0.,'yaw_rate_rad_s':0.}

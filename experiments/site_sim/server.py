@@ -69,7 +69,7 @@ def upload(label: str, mission: Path, assets: Path, texture: Path | None=None) -
     print('uploaded:',run)
 
 
-def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1, save_front_s: float=0., stereo_hz: float=0., start_hold_s: float=0., estimator: bool=False) -> None:
+def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1, save_front_s: float=0., stereo_hz: float=0., start_hold_s: float=0., estimator: bool=False, adaptive_visual_noise: bool=False) -> None:
     """지정한 유휴 GPU에서만 새 물리 run과 독립 loopback viewer를 시작한다."""
     from experiments.site_sim.run import validate_limits
     validate_limits(sim,wall)
@@ -94,6 +94,9 @@ def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=
     if estimator:
         if stereo_hz<=0:raise ValueError('estimator needs stereo capture (--stereo-hz)')
         args+=['--estimator']
+    if adaptive_visual_noise:
+        if not estimator:raise ValueError('adaptive visual noise needs --estimator')
+        args+=['--adaptive-visual-noise']
     if remote(f'test -f {shlex.quote(run+"/rover/sand_texture.jpg")} && echo yes || echo no',capture=True).stdout.strip()=='yes':
         args+=['--sand-texture','/workspace/rover/sand_texture.jpg']
     # Match the installed python.sh environment but exec Python as PID1 for SIGTERM/finally.
@@ -198,6 +201,7 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--stereo-hz',type=float,default=0.)
     parser.add_argument('--start-hold-s',type=float,default=0.)
     parser.add_argument('--estimator',action='store_true',help='GT 대신 ORB+ESKF 추정 위치로 주행')
+    parser.add_argument('--adaptive-visual-noise',action='store_true')
     args=parser.parse_args(argv)
     try:
         if not re.fullmatch('[A-Za-z0-9_-]+',args.label):raise ValueError('invalid label')
@@ -205,7 +209,7 @@ def main(argv: list[str] | None=None) -> int:
         if args.action=='upload':
             if not args.path:raise ValueError('mission folder required')
             upload(args.label,Path(args.path).resolve(),args.assets,args.texture)
-        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu,args.save_front_s,args.stereo_hz,args.start_hold_s,args.estimator)
+        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu,args.save_front_s,args.stereo_hz,args.start_hold_s,args.estimator,args.adaptive_visual_noise)
         elif args.action=='status':status(args.label)
         elif args.action=='tunnel':tunnel(args.label,int(args.path or args.port))
         else:stop(args.label)

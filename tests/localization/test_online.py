@@ -69,3 +69,55 @@ def test_estimator_tracks_the_gt_path_with_lag_compensation() -> None:
 
 def test_ignoring_the_render_lag_is_clearly_worse() -> None:
     assert run(lag=.1, compensate=False) > run(lag=.1, compensate=True)
+
+
+@pytest.mark.parametrize('offset,rpy', [([-.018, 0., -.021], [0., 0., 0.]),
+                                      ([0., 0., 0.], [30., 0., 0.])])
+def test_in_place_turn_preserves_base_position_with_nonidentity_imu_mount(offset: list[float], rpy: list[float]) -> None:
+    """장착 위치·방향이 달라도 제자리 회전을 차체의 병진으로 적분하지 않는다."""
+    base_from_imu = np.eye(4)
+    base_from_imu[:3, 3] = offset
+    base_from_imu[:3, :3] = Rotation.from_euler('xyz', rpy, degrees=True).as_matrix()
+    calibration = {**CALIBRATION, 'IMU.T_b_c1': np.linalg.inv(base_from_imu).tolist()}
+    estimator = OnlineEstimator(np.eye(4), calibration, lag_s=0.)
+    for k in range(601):
+        t = k*.01
+        q = Rotation.from_euler('z', max(0., t-1.)*.6).as_quat()
+        estimator.on_step(t, np.zeros(3), np.r_[q[3], q[:3]])
+    pose, _, _, _ = estimator.pose(6.)
+    assert np.linalg.norm(pose[:3, 3]) < .003
+
+
+@pytest.mark.parametrize('include_zero_step', [True, False])
+def test_initial_tilt_change_does_not_become_horizontal_acceleration(include_zero_step: bool) -> None:
+    """시작 pose와 첫 물리 step 사이 회전도 적분해 정지 중 중력이 수평으로 새지 않는다."""
+    estimator = OnlineEstimator(np.eye(4), CALIBRATION, lag_s=.1)
+    for k in range(0 if include_zero_step else 1, 101):
+        t = k*.05
+        q = Rotation.from_euler('x', .001 if k else 0.).as_quat()
+        estimator.on_step(t, np.zeros(3), np.r_[q[3], q[:3]])
+    pose, _, _, _ = estimator.pose(5.)
+    assert np.linalg.norm(pose[:3, 3]) < 1e-5
+    assert Rotation.from_matrix(pose[:3, :3]).as_rotvec() == pytest.approx([.001, 0., 0.], abs=1e-7)
+
+
+def test_optional_turn_schedule_reduces_noisy_visual_attitude_error() -> None:
+    """회전 중 흔들리는 영상 자세가 정확한 IMU 자세를 끌어가는 정도를 줄인다."""
+    errors = []
+    for adaptive in (False, True):
+        estimator = OnlineEstimator(np.eye(4), CALIBRATION, lag_s=0., adaptive_visual_noise=adaptive)
+        angles = []
+        for k in range(161):
+            t = k*.05
+            rotation = Rotation.from_euler('z', max(0., t-1.)*.6)
+            q = rotation.as_quat()
+            estimator.on_step(t, np.zeros(3), np.r_[q[3], q[:3]])
+            if k % 2 == 0:
+                observed = np.eye(4)
+                observed[:3, :3] = (rotation*Rotation.from_euler('x', .04*np.sin(6*t))).as_matrix()
+                estimator.on_frame(t, 2, '0', observed)
+            if t > 2.:
+                pose, _, _, _ = estimator.pose(t)
+                angles.append((rotation.inv()*Rotation.from_matrix(pose[:3, :3])).magnitude())
+        errors.append(float(np.sqrt(np.mean(np.square(angles)))))
+    assert errors[1] < errors[0]*.7

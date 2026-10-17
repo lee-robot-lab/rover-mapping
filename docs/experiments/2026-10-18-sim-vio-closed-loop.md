@@ -75,7 +75,80 @@ bash tools/run_site_sim_server.sh start L --gpu 0 --port 8775 --stereo-hz 15 --s
 
 ## 아직 안 된 것
 
-- 경사에서 영상·엔코더 신뢰도를 낮추고, 회전 중 IMU를 더 믿는 **상황별 신뢰도 스케줄**: `relative_update`의 `position_scale`/`rotation_scale` 인자까지만 있고 주행 경로에는 연결하지 않았다.
-- **당근 추종기와 슬립 기반 감속**, 필터 상태 → 안전 정책 연결(`SensorSafety`는 추정 품질을 받지만 `imu_gap` 상태 연결은 시뮬 IMU가 끊기지 않아 시험하지 못했다).
+- **상황별 신뢰도 스케줄**의 기본 채택·실기 검증. 아래 후속 진단의 선택적 실험 옵션과 구분한다.
+- **당근 추종기·슬립 기반 감속·필터 상태 → 안전 정책**은 Claude Code의 `353ee2a`, `0852c04`로 구현됐다.
+  온라인 시뮬 추정기에는 실제 바퀴 슬립 계수가 연결되지 않았고 IMU 공백의 실기 동작도 별도 검증이 필요하다.
 - 경사 직후 **재포착**(ORB 재지역화 또는 조건부 벽 보정).
 - 실기 IMU 경로(SPI 50 Hz 평균)에 대한 −45 ms 상수는 `inertial_timing.MEASURED_LEGACY_SPI_CORRECTION_S`로 반영했고 raw 전송 경로에는 다시 측정해야 한다.
+
+## Codex 후속 진단 — 2026-10-18
+
+`closed1017c`의 정지 이유 `unsafe_observed_motion`은 `MissionRuntime.update`의
+**이전·현재 추정 위치 사이 지도 통행 가능성 검사**에서 나온다. 명령 속도와 관측 속도의
+불일치를 검사하는 코드가 아니며, 이 이유를 `SensorSafety`가 직접 계산하는 것도 아니다.
+19.8 s의 실제 XY는 (3.670, 0.774), 추정 XY는 (3.826, 0.793) m다.
+수평 오차 약 15.7 cm에 더해 z도 약 14.0 cm 낮게 추정했다.
+
+### 확인한 IMU 생성 오류와 수정
+
+1. `CausalImu`가 pose 세 개를 기다린 뒤 가장 최근 구간만 반환해 시작 구간의 회전을 잃었다.
+   `OnlineEstimator`는 t=0의 자세로 시작하므로 그 누락이 지속적인 기울기 차이로 남았다.
+   해당 기록에서는 약 0.0346°의 roll 차이가 중력을 약 5.9 mm/s²의 수평 가속도로 투영했다.
+   시작 pose를 IMU 이력에 넣고 첫 구간의 gyro·비력도 생성하도록 수정했다.
+   첫 구간 직전 속도는 명시된 정지 시작 조건에 따라 0으로 둔다.
+2. 입력 GT는 base 중심인데 생성한 IMU를 장착된 IMU 중심의 필터에 그대로 넣었다.
+   이제 GT base pose에 `T_base_imu`를 적용한 뒤 자이로·비력을 만든다.
+   회전 중 장착 위치의 구심·접선 가속도와 센서 축 회전을 함께 반영한다.
+
+기존 기록의 telemetry와 stereo GT를 합친 시각에서 재생했다. 원래 physics step 전체를
+저장한 데이터는 아니므로 온라인 실행의 완전한 재현이나 실기 정확도 시험으로 간주하지 않는다.
+
+| 동일 입력 재생 | 수정 전 | 수정 후 |
+|---|---:|---:|
+| `closed1017c`, 영상 없이 IMU만, 19.8 s 최종 3D 오차 | 1.190 m | 0.000423 m |
+| 같은 시험의 최대 3D 오차 | 1.190 m | 0.00270 m |
+| `full1017a` 첫 40 s, 저장 ORB도 융합, 3D RMSE | 0.1249 m | 0.1284 m |
+
+IMU 생성 오류는 독립적으로 재현·수정했지만, **영상 융합 후 전체 오차 개선과 닫힌 루프 완주는
+이 결과로 확인되지 않는다.** 비교 수치는
+`outputs/site_sim/closed_1017c/inspection/startup_replay.json`에 남겼다.
+시작 roll 변화와 서로 다른 IMU 장착 위치·방향의 회귀 검사는 수정 전 실패를 확인했다.
+
+### 추가 진단과 신뢰도 스케줄
+
+- 새 telemetry에 `estimated_yaw_rad`, 프레임별 camera pose·filter time·속도·bias를 기록한다.
+  `estimator_calibration.json`과 `estimator_frames.jsonl`에도 보정값·시작 pose·모든 ORB 응답을 보존한다.
+- `--adaptive-visual-noise`는 **기본 OFF인 시뮬 실험 옵션**이다.
+  IMU가 예측한 base 기울기 >8°에서는 영상 위치·회전 표준편차를 각 4배,
+  그 외 |base yaw rate| >0.3 rad/s에서는 회전 표준편차만 4배로 둔다.
+  이는 보정된 실기 covariance나 모래 임계값이 아니다. 슬립은 이 스케줄에 연결하지 않았다.
+- `full1017a` 첫 40 s에서 회전 시 영상 회전 표준편차만 4배로 한 탐색은
+  방향 RMSE 1.50° → 0.84°였지만 위치 RMSE 12.84 → 13.31 cm였다.
+  따라서 기본 설정으로 채택하지 않았다. 기울기까지 적용한 탐색도 위치 RMSE 13.57 cm였다.
+  탐색 결과: `outputs/site_sim/closed_1017c/inspection/noise_schedule_probe.json`.
+- `SimulationDrive`는 필터 상태를 `SensorSafety`의 `filter_status` 입력으로 전달한다.
+  `recovering` 감속과 `imu_gap` 정지는 가짜 기체 경계 시험으로 검사한다.
+- 추정 pose로 구동한 run을 summary/manifest에서 `sim_ground_truth`로 표시하던 메타데이터도 수정했다.
+  위치 오차 평가와 지형 방문 기록에는 계속 GT를 사용하며, 제어 pose의 출처와 구분한다.
+- Qt 검사는 반드시 `QT_QPA_PLATFORM=offscreen`을 설정한다. 설정 없이 실행하면
+  `test_app.py`의 모의 촬영 창이 실제 데스크톱에서 열렸다 닫힌다.
+
+### 서버 60초 진단 `codex_vio1018a`
+
+- IMU 시작/장착 수정과 `353ee2a`의 당근 추종기를 함께 사용했다. 둘의 주행 효과를
+  분리하는 A/B 실험은 아니다. 신뢰도 스케줄은 사용하지 않았다.
+- 23.25 s 분기점 도착, 28.50 s 30° 등판 시작, 43.76 s 정체 판단 후 후퇴,
+  51.06 s 15° 우회 선택까지 진행했다. 59.96 s에 **설정한 60 s 상한**으로 종료했다.
+  안전 실패나 전체 임무 완주로 표시하지 않는다.
+- 평면 위치 RMSE **2.20 cm**, 최대 **8.52 cm**, 마지막 **6.97 cm**.
+  3D RMSE 2.36 cm, yaw RMSE 0.194°/최대 0.708°. ORB 900프레임 중 state 2는 791개,
+  state 3은 107개, state 0은 2개였다. 이상적인 시뮬 IMU 조건의 수치다.
+- 근거: `outputs/site_sim/codex_vio1018a/{evaluation.json,telemetry.jsonl,estimator_frames.jsonl,events.jsonl,diagnostic.png}`.
+  코드별 hash와 실행 명령도 `source_manifest.json`, `launch.json`으로 보존했다.
+  이 진단의 summary에는 수정 전 `pose_source=sim_ground_truth` 표기가 남아 있으나
+  telemetry는 `orb_eskf_estimate`를 사용했다. 메타데이터 수정은 다음 실행부터 적용한다.
+- 첫 서버 시작은 NVIDIA `libnvidia-rtcore` 그래픽 초기화 중 exit 139로 종료됐다.
+  실패 자료를 서버 `startup_failure/`에 보존하고, 코드·실행 옵션을 바꾸지 않은
+  한 차례 재시작에서 정상 주행했다. 다른 GPU/컨테이너는 중단하지 않았다.
+- 전체 자동 검사: **711 passed, 16 skipped**. 변경분의 읽기 전용 검토에서도
+  Important 이상 결함은 보고되지 않았다. 전체 임무 시험은 이 진단과 별도로 진행한다.
