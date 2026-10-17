@@ -34,6 +34,7 @@ D435와 Raspberry Pi로 현장 영상을 수집하고, 노트북에서 ORB-SLAM3
 | 촬영·조종·지도·costmap 운영 | **[사용 설명서](docs/user-guide.md)** |
 | RGB·전역 재구성·중력·crop·출발점·병합 | **[기준 지도 워크플로](docs/experiments/reference-map-workflow.md)** |
 | 팀원 STL 이후 대표점·세 경로·우회·복귀 준비 | **[STL 임무 도구](docs/experiments/site-mission.md)** |
+| 서버 Isaac 경로 추종·costmap 기록·실시간 관찰 | **[서버 대회 임무 시뮬레이션](docs/experiments/server-site-mission.md)** |
 | 구현·검증 상태와 다음 작업 | [통합 인수인계서](docs/handoff/d435-rover-mapping-handoff.md) |
 | 새 담당자/팀원 공유 | [공유·기여 안내](docs/sharing.md) |
 | 제외된 원본/실행 자산 | [데이터·runtime 안내](docs/data-assets.md) |
@@ -85,6 +86,7 @@ Pi: D435 IR좌/우 + depth 640×480, 요청15FPS, projector OFF
 |---|---|
 | `experiments/handheld_mapping` | Qt·수집/전송·live/offline ORB·TSDF·지형·costmap·STL 대표점 임무 |
 | `tools` | GUI/뷰어/terrain·임무 wrapper, native runner build |
+| `experiments/site_sim` | 서버 물리 임무·costmap/경험 기록·브라우저 관찰·실행 관리 |
 | `ros2_ws/src/orbslam3_ros2` | ROS adapter·headless 준비 도구·native patch |
 | `ros2_ws/src/rover_description/urdf` | 좌표/보정 preflight에 사용하는 URDF 참고본 |
 | `teleop/ksrc_snapshot` | 확인한 KSRC의 조이스틱·SPI bridge 소스 일부 |

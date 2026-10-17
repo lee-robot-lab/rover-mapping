@@ -1,7 +1,7 @@
 # ================================================================
-# test_viewer.py
+# test_sim_viewer.py
 # 설명: 실제 HTTP 경계의 허용 파일·stale·준비 전 상태를 검사한다.
-# 사용법: .venv-mapping/bin/python -m pytest tests/site_sim/test_viewer.py
+# 사용법: .venv-mapping/bin/python -m pytest tests/site_sim/test_sim_viewer.py
 # ================================================================
 import json
 import time
