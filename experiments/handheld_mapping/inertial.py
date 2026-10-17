@@ -126,7 +126,8 @@ def fusion_evidence(path: Path, completion: dict) -> dict:
 def run_inertial(run: Path, output: Path | None = None, correction_s: float | None = None,
                  allow_legacy: bool = False, segment: int | None = None,
                  correlation_window_s: tuple[float, float] | None = None,
-                 noise_override: dict[str, float] | None = None) -> dict:
+                 noise_override: dict[str, float] | None = None,
+                 use_measured_constant: bool = False) -> dict:
     """비파괴 offline 비교를 실행하며 미검증 보정·noise를 실험 결과에 명시한다."""
     from experiments.handheld_mapping.inertial_timing import aligned_inputs
     from experiments.handheld_mapping.time_alignment import file_sha256
@@ -140,7 +141,8 @@ def run_inertial(run: Path, output: Path | None = None, correction_s: float | No
     try:
         calibration = validate_imu_provenance(run)
         data = aligned_inputs(run, correction_s, allow_legacy, segment=segment,
-                              correlation_window_s=correlation_window_s)
+                              correlation_window_s=correlation_window_s,
+                              use_measured_constant=use_measured_constant)
         atomic_json(folder/'alignment.json', data['report'])
         times = data['imu_times_s']
         origin = data['camera_origin_ns']
@@ -251,17 +253,21 @@ def main() -> None:
     parser.add_argument('--output', type=Path)
     parser.add_argument('--correction-s', type=float)
     parser.add_argument('--allow-legacy', action='store_true')
+    parser.add_argument('--measured-constant', action='store_true',
+                        help='기존 SPI 50Hz 경로에서 잰 -45ms 보정을 사용(패치 펌웨어·raw 경로에는 불가)')
     parser.add_argument('--segment', type=int)
     parser.add_argument('--correlation-window-s', type=float, nargs=2)
     parser.add_argument('--auto', action='store_true', help='운동량이 충분한 boot와 상관 구간을 자동 선택')
     args = parser.parse_args()
     window = tuple(args.correlation_window_s) if args.correlation_window_s is not None else None
     if args.auto:
-        if args.correction_s is not None or args.allow_legacy or args.segment is not None or window is not None:
+        if (args.correction_s is not None or args.allow_legacy or args.measured_constant
+                or args.segment is not None or window is not None):
             parser.error('--auto는 수동 시각/구간/legacy 옵션과 함께 사용할 수 없습니다')
         result = run_inertial_auto(args.run, args.output)
     else:
-        result = run_inertial(args.run, args.output, args.correction_s, args.allow_legacy, args.segment, window)
+        result = run_inertial(args.run, args.output, args.correction_s, args.allow_legacy, args.segment, window,
+                              use_measured_constant=args.measured_constant)
     print(json.dumps(result, indent=2))
 
 

@@ -26,7 +26,10 @@ def run(args: argparse.Namespace) -> dict:
     from experiments.handheld_mapping.storage import atomic_json
     from experiments.site_sim.recording import RunRecorder
     mission=SiteMission.load(args.mission,load_mesh=False)
+    stereo_hz=float(getattr(args,'stereo_hz',0.))
+    if not math.isfinite(stereo_hz) or not 0<=stereo_hz<=30:raise ValueError('stereo_hz must be in [0,30]')
     recorder=RunRecorder(mission,args.output,fault_injection=args.fault_injection)
+    stereo_writer=None;next_stereo=0.
     app=drive=world=None;status='failed';reason='initialization_failed';cameras={};wall_start=time.monotonic()
     def interrupted(signum,frame):raise KeyboardInterrupt(f'signal {signum}')
     previous_signal=signal.signal(signal.SIGTERM,interrupted)
@@ -82,13 +85,33 @@ def run(args: argparse.Namespace) -> dict:
         overview_op=UsdGeom.Xformable(overview).AddTransformOp();overview_op.Set(transform)
         # The latest URDF already mounts the camera 20 deg down; no optical-frame compensation.
         # Measured D435 IR 640x480 intrinsics (fx=fy=377.186, principal point 320.54/241.73).
-        front_camera=UsdGeom.Camera(stage.GetPrimAtPath(h.left_camera_path));FX,CX,CY=377.186126708984,320.54248046875,241.732162475586
-        front_camera.GetFocalLengthAttr().Set(FX*20./640);front_camera.GetHorizontalApertureOffsetAttr().Set((320-CX)*20./640)
-        front_camera.GetVerticalApertureOffsetAttr().Set((CY-240)*15./480)
-        for key,path in (('overview','/World/ObserverCamera'),('front',h.left_camera_path)):
+        FX,CX,CY=377.186126708984,320.54248046875,241.732162475586
+        for path in (h.left_camera_path,h.right_camera_path):
+            camera=UsdGeom.Camera(stage.GetPrimAtPath(path))
+            camera.GetFocalLengthAttr().Set(FX*20./640)
+            camera.GetHorizontalApertureOffsetAttr().Set((320-CX)*20./640)
+            camera.GetVerticalApertureOffsetAttr().Set((CY-240)*15./480)
+        camera_paths=[('overview','/World/ObserverCamera'),('front',h.left_camera_path)]
+        if stereo_hz:camera_paths.append(('right',h.right_camera_path))
+        for key,path in camera_paths:
             product=rep.create.render_product(path,(800,600) if key=='overview' else (640,480))
             annotator=rep.AnnotatorRegistry.get_annotator('rgb');annotator.attach(product)
             cameras[key]=(product,annotator)
+        if stereo_hz:
+            from experiments.site_sim.stereo_capture import StereoCapture
+            from experiments.orbslam3_ros2.isaac_scene import _column_world_matrix
+            base=_column_world_matrix(stage.GetPrimAtPath(h.frame_paths['base_link']))
+            left=_column_world_matrix(stage.GetPrimAtPath(h.frame_paths['camera_infra1_optical_frame']))
+            right=_column_world_matrix(stage.GetPrimAtPath(h.frame_paths['camera_infra2_optical_frame']))
+            stereo_writer=StereoCapture(Path(args.output)/'stereo',{
+                'width':640,'height':480,'fx':FX,'fy':FX,'cx':CX,'cy':CY,'distortion':[0.,0.,0.,0.],
+                'T_base_left_optical':(np.linalg.inv(base)@left).tolist(),
+                'T_base_right_optical':(np.linalg.inv(base)@right).tolist(),
+                'T_left_right':(np.linalg.inv(left)@right).tolist(),
+                'requested_hz':stereo_hz,'clock':'simulation relative to control start','timestamp_unit':'ns',
+                'intrinsics_source':'configured USD pinhole camera; not real sensor calibration',
+                'capture':'both RGB annotators after the same world.step(render=True); no IMU',
+                'urdf_sha256':__import__('hashlib').sha256(Path(args.urdf).read_bytes()).hexdigest()})
         from experiments.site_sim.visuals import install_rover_visuals
         install_rover_visuals(stage,args.urdf)
         robot=world.scene.add(Robot(prim_path=h.frame_paths['base_link'],name='rover'))
@@ -122,7 +145,8 @@ def run(args: argparse.Namespace) -> dict:
                 p=np.asarray(row['position_m']);q=np.asarray(row['quaternion_wxyz'])
                 if p[2]<ground-.1 or 1-2*(q[1]**2+q[2]**2)<math.cos(math.radians(70)):
                     status='failed';reason='fallen_or_tipped';break
-            render_due=time.monotonic()>=next_render
+            stereo_due=stereo_writer is not None and sim_s+1e-9>=next_stereo
+            render_due=stereo_due or time.monotonic()>=next_render
             world.step(render=render_due)
             if render_due:
                 next_render=time.monotonic()+.2
@@ -145,6 +169,13 @@ def run(args: argparse.Namespace) -> dict:
                             (Path(args.output)/'front_frames').mkdir(exist_ok=True)
                             Image.fromarray(rgba[:,:,:3]).save(Path(args.output)/'front_frames'/f'{sim_s:07.2f}.png')
                     except Exception as error:last_camera_error=str(error)
+                if stereo_due:
+                    left=np.asarray(cameras['front'][1].get_data());right=np.asarray(cameras['right'][1].get_data())
+                    if left.ndim!=3 or right.ndim!=3:raise RuntimeError('stereo annotators not ready')
+                    rp,rq=robot.get_world_pose()
+                    stamp_ns=round((float(world.current_time)-t0)*1e9)
+                    stereo_writer.write(stamp_ns,left[:,:,:3],right[:,:,:3],rp.tolist(),rq.tolist())
+                    next_stereo+=1./stereo_hz
                 recorder.publish()
     except KeyboardInterrupt as error:status='interrupted';reason=str(error)
     except Exception as error:
@@ -176,6 +207,7 @@ def main() -> None:
     parser.add_argument('--max-sim-s',type=float,default=900.);parser.add_argument('--max-wall-s',type=float,default=3600.)
     parser.add_argument('--sand-texture',type=Path,default=None)
     parser.add_argument('--save-front-s',type=float,default=0.)
+    parser.add_argument('--stereo-hz',type=float,default=0.)
     parser.add_argument('--fault-injection',action='store_true');args=parser.parse_args();code=1
     try:
         summary=run(args);code=0 if summary['status']=='complete' else 2

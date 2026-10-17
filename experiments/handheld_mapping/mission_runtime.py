@@ -14,6 +14,7 @@ import numpy as np
 
 from experiments.handheld_mapping.site_mission import SiteMission, dense_path
 from experiments.handheld_mapping.storage import atomic_json
+from experiments.handheld_mapping.sensor_safety import SensorSafety
 
 
 def angle_wrap(value: float) -> float:
@@ -23,8 +24,9 @@ def angle_wrap(value: float) -> float:
 class MissionRuntime:
     """유효한 site 관측에만 반응하고 실제 지나온 경로로 후퇴하는 임무 상태기계."""
 
-    def __init__(self, mission: SiteMission) -> None:
+    def __init__(self, mission: SiteMission, *, safety: SensorSafety | None=None) -> None:
         if not mission.validate()['accepted']:raise ValueError('valid mission required')
+        self.safety=safety;self.safety_status=None
         self.mission,self.settings=mission,mission.settings
         self.state='to_junction';self.route='30';self.direction='up'
         self.visits={'entry30':'pending','entry15':'pending','entry10':'pending',
@@ -48,14 +50,33 @@ class MissionRuntime:
 
     def _output(self, reason: str='active', command: dict | None=None) -> dict:
         self.command=command or {'vx_m_s':0.,'yaw_rate_rad_s':0.}
-        return {'state':self.state,'route':self.route,'direction':self.direction,'reason':reason,
+        result={'state':self.state,'route':self.route,'direction':self.direction,'reason':reason,
                 'visits':self.visits.copy(),'route_status':{k:v.copy() for k,v in self.route_status.items()},
                 'command':self.command.copy(),'frame':'site','site_identity':self.mission.site.identity,
                 'command_stamp_s':self.last_stamp,
                 'valid_until_s':None if self.last_stamp is None else self.last_stamp+self.settings['pose_max_age_s'],
                 'hardware_commands_enabled':False}
+        if self.safety_status is not None:
+            result['sensor_safety']=self.safety_status.copy()
+            result['valid_until_s']=self.safety_status['valid_until_s']
+        return result
+
+    def observe_imu(self, stamp_s: float, now_s: float, valid: bool=True) -> None:
+        """비동기 IMU 입력을 수용하고 watchdog에서 pose와 독립적으로 freshness를 검사한다."""
+        if self.safety is not None:self.safety.observe_imu(stamp_s,now_s,valid)
+
+    def watchdog(self, now_s: float) -> dict:
+        """센서 입력과 독립적으로 주기 호출하며 끊김 시 두 속도를 0으로 만든다."""
+        if self.state in ('complete','failed'):return self._output(self.state)
+        if self.safety is None:return self._pause('sensor_watchdog_disabled')
+        self.safety_status=self.safety.status(now_s)
+        if self.safety_status['mode']=='stop':return self._pause(self.safety_status['reason'])
+        return self._output('watchdog_ok',command=self.command.copy())
 
     def _pause(self, reason: str) -> dict:
+        if self.safety is not None and reason!='recovering':
+            self.safety.inhibit(reason)
+            self.safety_status={'mode':'stop','reason':reason,'scale':0.,'valid_until_s':None}
         self.paused=True;self.effort=0.;self.paused_samples+=1
         return self._output(reason)
 
@@ -75,6 +96,11 @@ class MissionRuntime:
             return self._pause('stale_pose')
         if self.last_stamp is not None and stamp<=self.last_stamp:return self._pause('nonmonotonic_pose')
         self.last_stamp=stamp
+        if self.safety is not None:
+            if 'imu_stamp_s' in sample:self.observe_imu(sample['imu_stamp_s'],now,sample.get('imu_valid',True))
+            self.safety.observe_pose(stamp,now,sample.get('tracking_valid'),sample.get('tracking_quality','good'))
+            self.safety_status=self.safety.status(now)
+            if self.safety_status['mode']=='stop':return self._pause(self.safety_status['reason'])
         if sample.get('tracking_valid') is not True:return self._pause('tracking_lost')
         epoch=sample.get('pose_epoch',0)
         if type(epoch) not in (int,str):return self._pause('invalid_pose_epoch')
@@ -132,7 +158,8 @@ class MissionRuntime:
         error=angle_wrap(heading-yaw)
         yaw_rate=float(np.clip(error*2.,-self.settings['max_yaw_rate_rad_s'],self.settings['max_yaw_rate_rad_s']))
         speed=self.settings['max_speed_m_s']*max(0.,math.cos(error)) if abs(error)<1. else 0.
-        return self._output(command={'vx_m_s':float(-speed if reverse else speed),'yaw_rate_rad_s':yaw_rate})
+        scale=1. if self.safety_status is None else self.safety_status['scale']
+        return self._output(command={'vx_m_s':float((-speed if reverse else speed)*scale),'yaw_rate_rad_s':yaw_rate*scale})
 
     def _arrived(self, position: np.ndarray, stamp: float) -> dict:
         if self.state=='to_junction':
@@ -187,10 +214,10 @@ class MissionRuntime:
         return self._output(reason)
 
 
-def run_jsonl(mission: SiteMission, input_path: Path, output: Path) -> dict:
+def run_jsonl(mission: SiteMission, input_path: Path, output: Path, *, safety: SensorSafety | None=None) -> dict:
     """명시한 receipt time의 입력을 읽고 파일로만 속도 요청을 기록한다. 송신은 없다."""
     output=Path(output);output.mkdir(parents=True,exist_ok=False)
-    runtime=MissionRuntime(mission);last=None
+    runtime=MissionRuntime(mission,safety=safety);last=None
     with (output/'commands.jsonl').open('w') as dest:
         try:
             with Path(input_path).open() as source:
@@ -198,7 +225,11 @@ def run_jsonl(mission: SiteMission, input_path: Path, output: Path) -> dict:
                     if not line.strip():continue
                     packet=json.loads(line)
                     if 'now_s' not in packet:raise ValueError('explicit same-clock now_s receipt required')
-                    last=runtime.update(packet,packet['now_s'])
+                    if packet.get('sensor_event')=='imu':
+                        runtime.observe_imu(packet['imu_stamp_s'],packet['now_s'],packet.get('imu_valid',True))
+                        last=runtime.watchdog(packet['now_s'])
+                    elif packet.get('watchdog') is True:last=runtime.watchdog(packet['now_s'])
+                    else:last=runtime.update(packet,packet['now_s'])
                     dest.write(json.dumps({**last,'stamp_s':packet.get('stamp_s')},allow_nan=False)+'\n')
         finally:
             dest.write(json.dumps({'state':runtime.state,'reason':'input_end_stop',
@@ -214,7 +245,11 @@ def run_jsonl(mission: SiteMission, input_path: Path, output: Path) -> dict:
 def main() -> None:
     parser=argparse.ArgumentParser(description='파일 기반 site pose 임무 실행; 실제 모터 송신 없음')
     parser.add_argument('mission',type=Path);parser.add_argument('input',type=Path);parser.add_argument('output',type=Path)
-    args=parser.parse_args();print(json.dumps(run_jsonl(SiteMission.load(args.mission),args.input,args.output),ensure_ascii=False))
+    parser.add_argument('--sensor-safety',action='store_true')
+    parser.add_argument('--require-imu',action='store_true')
+    args=parser.parse_args()
+    safety=SensorSafety(require_imu=args.require_imu) if args.sensor_safety or args.require_imu else None
+    print(json.dumps(run_jsonl(SiteMission.load(args.mission),args.input,args.output,safety=safety),ensure_ascii=False))
 
 
 if __name__=='__main__':main()

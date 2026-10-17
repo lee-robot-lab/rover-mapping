@@ -17,6 +17,12 @@ from experiments.handheld_mapping.time_alignment import estimate_offset, file_sh
 TIMING_KEYS = ('imu_timing_valid', 'imu_mean_read_offset_us', 'imu_time_source')
 
 
+# 기존 SPI 50Hz telemetry 경로(제어 tick 시각)에서 영상 회전과 자이로 상관으로 잰 값이다.
+# 근거 기록: 20261015_212049_bc26d3(-45ms), 20261016 패치 기록들(-45~-50ms), 20261017_213103_fa7cf6(-45ms).
+# 평균 읽기 offset을 이미 더하는 패치 펌웨어나 raw 전송 경로에는 쓰지 않는다.
+MEASURED_LEGACY_SPI_CORRECTION_S = -.045
+
+
 def _rows(path: Path, limit: int) -> Iterator[dict]:
     """로그의 행 크기와 개수를 제한하여 원본을 읽는다."""
     with path.open() as stream:
@@ -66,12 +72,15 @@ def _visual(run: Path, camera: dict[int, float]) -> dict:
 
 def aligned_inputs(run: Path, correction_s: float | None = None, allow_legacy: bool = False,
                    segment: int | None = None,
-                   correlation_window_s: tuple[float, float] | None = None) -> dict:
+                   correlation_window_s: tuple[float, float] | None = None,
+                   use_measured_constant: bool = False) -> dict:
     """검증되지 않은 실험용 IMU/camera 시간을 반환하며 불안정·공백·새 timing 누락은 거부한다."""
     if correction_s is not None and (isinstance(correction_s, bool)
             or not isinstance(correction_s, (int, float)) or not math.isfinite(correction_s)
             or abs(correction_s) > .5):
         raise ValueError('manual correction must be finite seconds within [-0.5, 0.5]')
+    if use_measured_constant and correction_s is not None:
+        raise ValueError('use either correction_s or use_measured_constant, not both')
     if segment is not None and (type(segment) is not int or segment < 0):
         raise ValueError('segment must be a nonnegative integer or None')
     if correlation_window_s is not None and (
@@ -82,13 +91,14 @@ def aligned_inputs(run: Path, correction_s: float | None = None, allow_legacy: b
         raise ValueError('correlation_window_s must be two finite increasing seconds')
     try:
         return _aligned_inputs(Path(run).resolve(), correction_s, allow_legacy, segment,
-                               correlation_window_s)
+                               correlation_window_s, use_measured_constant)
     except (KeyError, TypeError, OverflowError) as error:
         raise ValueError(f'invalid alignment input: {error}') from error
 
 
 def _aligned_inputs(run: Path, correction_s: float | None, allow_legacy: bool,
-                    segment: int | None, correlation_window_s: tuple[float, float] | None) -> dict:
+                    segment: int | None, correlation_window_s: tuple[float, float] | None,
+                    use_measured_constant: bool = False) -> dict:
     """선택한 단일 Pi clock에서 제어 tick을 fit한 뒤 평균 읽기 offset을 더한다."""
     summary = run/'imu_summary.json'
     if not summary.is_file() or strict_json(summary.read_text()).get('state') != 'stopped':
@@ -117,6 +127,15 @@ def _aligned_inputs(run: Path, correction_s: float | None, allow_legacy: bool,
         raise ValueError('insufficient or excessive IMU/camera samples')
     telemetry = [row.get('raw', {}).get('telemetry', {}) for row in imu]
     new_timing = any(any(key in item for key in TIMING_KEYS) for item in telemetry)
+    if use_measured_constant and new_timing and not any(
+            item.get('imu_timing_valid') not in (None, False) or item.get('imu_mean_read_offset_us') is not None
+            or item.get('imu_time_source') is not None for item in telemetry):
+        # 펌웨어가 타이밍 필드를 보내지만 전부 '없음'이면 평균 읽기 시각 패치가 없는 기존 경로다.
+        new_timing = False
+    if use_measured_constant:
+        if new_timing:
+            raise ValueError('measured constant is for legacy control-tick timing; patched timing already adds the mean read offset')
+        correction_s, allow_legacy = MEASURED_LEGACY_SPI_CORRECTION_S, True
     if not new_timing and not allow_legacy:
         raise ValueError('legacy IMU control timestamps require allow_legacy=True')
     mean_offsets = []
@@ -217,7 +236,7 @@ def _aligned_inputs(run: Path, correction_s: float | None, allow_legacy: bool,
         correction_s = estimate['imu_time_correction_s']
         source = 'visual_rotation_correlation'
     else:
-        source = 'experimental_manual'
+        source = 'measured_constant_legacy_spi' if use_measured_constant else 'experimental_manual'
     times = times+float(correction_s)
     if times[-1] < 0 or times[0] > camera[int(stamps[-1])]:
         raise ValueError('IMU and camera have no aligned overlap')

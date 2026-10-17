@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import io
+import math
 import json
 import os
 from pathlib import Path
@@ -65,10 +66,11 @@ def upload(label: str, mission: Path, assets: Path, texture: Path | None=None) -
     print('uploaded:',run)
 
 
-def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1, save_front_s: float=0.) -> None:
+def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1, save_front_s: float=0., stereo_hz: float=0.) -> None:
     """지정한 유휴 GPU에서만 새 물리 run과 독립 loopback viewer를 시작한다."""
     from experiments.site_sim.run import validate_limits
     validate_limits(sim,wall)
+    if not math.isfinite(stereo_hz) or not 0<=stereo_hz<=30:raise ValueError("stereo_hz must be in [0,30]")
     run=f'{ROOT}/{label}';name='rover-site-'+label
     remote(f'test -d {shlex.quote(run)} && test ! -e {shlex.quote(run+"/output")}')
     if gpu not in (0,1):raise ValueError('GPU index must be 0 or 1')
@@ -84,6 +86,7 @@ def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=
         '--max-sim-s',str(sim),'--max-wall-s',str(wall)]
     if fault:args.append('--fault-injection')
     if save_front_s>0:args+=['--save-front-s',str(save_front_s)]
+    if stereo_hz>0:args+=['--stereo-hz',str(stereo_hz)]
     if remote(f'test -f {shlex.quote(run+"/rover/sand_texture.jpg")} && echo yes || echo no',capture=True).stdout.strip()=='yes':
         args+=['--sand-texture','/workspace/rover/sand_texture.jpg']
     # Match the installed python.sh environment but exec Python as PID1 for SIGTERM/finally.
@@ -178,6 +181,7 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--assets',type=Path,default=REPO/'outputs/site_sim/rover_assets_new')
     parser.add_argument('--texture',type=Path,default=None)
     parser.add_argument('--save-front-s',type=float,default=0.)
+    parser.add_argument('--stereo-hz',type=float,default=0.)
     args=parser.parse_args(argv)
     try:
         if not re.fullmatch('[A-Za-z0-9_-]+',args.label):raise ValueError('invalid label')
@@ -185,7 +189,7 @@ def main(argv: list[str] | None=None) -> int:
         if args.action=='upload':
             if not args.path:raise ValueError('mission folder required')
             upload(args.label,Path(args.path).resolve(),args.assets,args.texture)
-        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu,args.save_front_s)
+        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu,args.save_front_s,args.stereo_hz)
         elif args.action=='status':status(args.label)
         elif args.action=='tunnel':tunnel(args.label,int(args.path or args.port))
         else:stop(args.label)

@@ -326,3 +326,44 @@ def test_stationary_correlation_window_does_not_bypass_motion_guard(tmp_path: Pa
     from experiments.handheld_mapping.inertial_timing import aligned_inputs
     with pytest.raises(ValueError, match='insufficient_motion'):
         aligned_inputs(make_run(tmp_path/'run', stationary=True), correlation_window_s=(10., 30.))
+
+
+def test_measured_constant_applies_minus_45ms_to_legacy_control_time_only(tmp_path: Path) -> None:
+    from experiments.handheld_mapping.inertial_timing import MEASURED_LEGACY_SPI_CORRECTION_S, aligned_inputs
+    run = make_run(tmp_path/'legacy', legacy=True)
+    manual = aligned_inputs(run, correction_s=MEASURED_LEGACY_SPI_CORRECTION_S, allow_legacy=True)
+    data = aligned_inputs(run, use_measured_constant=True)
+    assert MEASURED_LEGACY_SPI_CORRECTION_S == -.045
+    assert data['report']['imu_time_correction_s'] == -.045
+    assert data['report']['correction_source'] == 'measured_constant_legacy_spi'
+    assert data['report']['imu_time_source'] == 'legacy_control_time_unverified' or data['report']['confidence'] == 'legacy_control_time_unverified'
+    assert data['report']['imu_clock_verified'] is False
+    assert data['imu_times_s'] == pytest.approx(manual['imu_times_s'])
+
+
+def test_measured_constant_is_not_stacked_on_patched_mean_read_offset(tmp_path: Path) -> None:
+    from experiments.handheld_mapping.inertial_timing import aligned_inputs
+    with pytest.raises(ValueError, match='legacy'):
+        aligned_inputs(make_run(tmp_path/'patched'), use_measured_constant=True)
+
+
+def test_measured_constant_cannot_be_combined_with_manual_correction(tmp_path: Path) -> None:
+    from experiments.handheld_mapping.inertial_timing import aligned_inputs
+    with pytest.raises(ValueError, match='either'):
+        aligned_inputs(make_run(tmp_path/'legacy', legacy=True), correction_s=-.03, use_measured_constant=True)
+
+
+def test_measured_constant_accepts_firmware_that_reports_timing_fields_as_absent(tmp_path: Path) -> None:
+    from experiments.handheld_mapping.inertial_timing import aligned_inputs
+    run = make_run(tmp_path/'legacy_fields', legacy=True)
+    rows = [json.loads(line) for line in (run/'imu.jsonl').read_text().splitlines()]
+    for row in rows:
+        row['raw']['telemetry'].update(imu_timing_valid=False, imu_mean_read_offset_us=None, imu_time_source=None)
+    (run/'imu.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in rows))
+    data = aligned_inputs(run, use_measured_constant=True)
+    assert data['report']['correction_source'] == 'measured_constant_legacy_spi'
+    assert data['report']['mean_read_offset_us_min_max'] == [0, 0]
+    with pytest.raises(ValueError, match='legacy'):
+        rows[0]['raw']['telemetry'].update(imu_timing_valid=True, imu_mean_read_offset_us=-9400, imu_time_source='mcu_mean_sample_read')
+        (run/'imu.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in rows))
+        aligned_inputs(run, use_measured_constant=True)
