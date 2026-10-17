@@ -64,6 +64,12 @@ class SiteMission:
         if direction not in ('up','down'):raise ValueError('direction must be up/down')
         return self.routes[route].copy() if direction=='up' else self.routes[route][::-1].copy()
 
+    def descent_path(self) -> np.ndarray:
+        """10° 경로가 출발 waypoint를 지나면 그곳에서 하산을 끝낸다."""
+        path=self.path('10','down')
+        matches=np.flatnonzero(np.linalg.norm(path-self.start[:2],axis=1)<=1e-8)
+        return path[:matches[0]+1] if len(matches) else path
+
     def connector(self) -> np.ndarray:
         """출발→갈림길을 safe grid에서 연결하고 실제 좌표 endpoint를 보존한다."""
         direct=np.asarray([self.start[:2],self.junction])

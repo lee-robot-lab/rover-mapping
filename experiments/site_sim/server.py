@@ -31,7 +31,7 @@ def remote(command: str, *, capture: bool=False, stdin=None) -> subprocess.Compl
     return subprocess.run([*SSH,command],check=True,text=True,capture_output=capture,stdin=stdin)
 
 
-def upload(label: str, mission: Path, assets: Path) -> None:
+def upload(label: str, mission: Path, assets: Path, texture: Path | None=None) -> None:
     """필요한 소스와 asset만 새 run에 기록하고 hash manifest를 동봉한다."""
     if not (mission/'mission.json').is_file():raise ValueError('valid mission bundle required')
     from experiments.handheld_mapping.site_mission import SiteMission
@@ -52,6 +52,9 @@ def upload(label: str, mission: Path, assets: Path) -> None:
                     hashes[relative]=hashlib.sha256(path.read_bytes()).hexdigest()
             tar.add(mission,arcname='mission')
             tar.add(urdf,arcname='rover/rover_portable.urdf');tar.add(geometry,arcname='rover/swerve_geometry.json')
+            if texture is not None:
+                if not texture.is_file():raise ValueError('sand texture file not found')
+                tar.add(texture,arcname='rover/sand_texture.jpg');hashes['rover/sand_texture.jpg']=hashlib.sha256(texture.read_bytes()).hexdigest()
             for name in sorted(referenced):tar.add(assets/name,arcname='rover/'+name)
             commit=subprocess.run(['git','rev-parse','HEAD'],cwd=REPO,text=True,capture_output=True,check=True).stdout.strip()
             body=json.dumps({'code_commit':commit,'source_sha256':hashes,'source_assets':str(assets.resolve()),
@@ -62,7 +65,7 @@ def upload(label: str, mission: Path, assets: Path) -> None:
     print('uploaded:',run)
 
 
-def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1) -> None:
+def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1, save_front_s: float=0.) -> None:
     """지정한 유휴 GPU에서만 새 물리 run과 독립 loopback viewer를 시작한다."""
     from experiments.site_sim.run import validate_limits
     validate_limits(sim,wall)
@@ -80,6 +83,9 @@ def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=
         '--scene-usd','/arena/arena.usd','--output','/workspace/output',
         '--max-sim-s',str(sim),'--max-wall-s',str(wall)]
     if fault:args.append('--fault-injection')
+    if save_front_s>0:args+=['--save-front-s',str(save_front_s)]
+    if remote(f'test -f {shlex.quote(run+"/rover/sand_texture.jpg")} && echo yes || echo no',capture=True).stdout.strip()=='yes':
+        args+=['--sand-texture','/workspace/rover/sand_texture.jpg']
     # Match the installed python.sh environment but exec Python as PID1 for SIGTERM/finally.
     inside=('export CARB_APP_PATH=/isaac-sim/kit ISAAC_PATH=/isaac-sim EXP_PATH=/isaac-sim/apps\n'
             'source /isaac-sim/setup_python_env.sh\n'
@@ -170,14 +176,16 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--port',type=int,default=8765)
     parser.add_argument('--gpu',type=int,choices=(0,1),default=1)
     parser.add_argument('--assets',type=Path,default=REPO/'outputs/site_sim/rover_assets_new')
+    parser.add_argument('--texture',type=Path,default=None)
+    parser.add_argument('--save-front-s',type=float,default=0.)
     args=parser.parse_args(argv)
     try:
         if not re.fullmatch('[A-Za-z0-9_-]+',args.label):raise ValueError('invalid label')
         if not 1024<=args.port<=65535:raise ValueError('invalid observer port')
         if args.action=='upload':
             if not args.path:raise ValueError('mission folder required')
-            upload(args.label,Path(args.path).resolve(),args.assets)
-        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu)
+            upload(args.label,Path(args.path).resolve(),args.assets,args.texture)
+        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu,args.save_front_s)
         elif args.action=='status':status(args.label)
         elif args.action=='tunnel':tunnel(args.label,int(args.path or args.port))
         else:stop(args.label)

@@ -53,6 +53,9 @@ class RunRecorder:
         s=mission.site
         atomic_json(self.live/'map.json',{'origin':s.origin.tolist(),'resolution':s.resolution,
             'normal_cost':self.normal.tolist(),'trial_cost':self.trial.tolist(),
+            'slope_deg':np.where(s.observed,s.slope_deg,0.).tolist(),
+            'height_m':np.where(s.observed,s.height_m.astype(object),None).tolist(),
+            'observed':s.observed.tolist(),
             'routes':{k:v.tolist() for k,v in mission.routes.items()},'start':mission.start.tolist(),
             'junction':mission.junction.tolist(),'summit':mission.summit.tolist()})
         atomic_json(self.output/'manifest.json',{'simulation_only':True,'pose_source':'sim_ground_truth',

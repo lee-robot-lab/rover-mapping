@@ -133,3 +133,23 @@ def test_observed_pose_within_arrival_tolerance_of_safe_boundary_is_not_unsafe()
     run.last_position=p.copy()
     out=run.update(sample(mission,.1,p),.1)
     assert out['reason'] not in ('unsafe_observed_motion','unsafe_local_segment')
+
+
+def test_descent_finishes_at_start_without_revisiting_junction():
+    from experiments.handheld_mapping.mission_runtime import MissionRuntime
+    mission=mission_fixture();mission.start[:2]=mission.routes['10'][1]
+    descent=mission.descent_path()
+    assert np.allclose(descent[-1],mission.start[:2])
+    assert not any(np.allclose(p,mission.junction) for p in descent)
+    run=MissionRuntime(mission);run.state='ascending';run.route='15'
+    run._arrived(mission.summit,1.)
+    assert run.state=='descending' and np.allclose(run.points[-1],mission.start[:2])
+    out=run._arrived(mission.start[:2],2.)
+    assert out['state']=='complete'
+    assert out['visits']['return']=='reached'
+    assert out['command']=={'vx_m_s':0.,'yaw_rate_rad_s':0.}
+
+
+def test_descent_preserves_junction_return_when_start_is_not_on_route():
+    mission=mission_fixture()
+    assert np.array_equal(mission.descent_path(),mission.path('10','down'))

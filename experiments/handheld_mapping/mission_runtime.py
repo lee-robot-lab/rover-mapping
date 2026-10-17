@@ -105,7 +105,7 @@ class MissionRuntime:
         if np.linalg.norm(position-self.points[-1])<=self.settings['arrival_tolerance_m']:
             handoff_safe=True
             if self.state=='ascending':
-                descent=self.mission.path('10','down');normal=self.settings['normal_slope_deg']
+                descent=self.mission.descent_path();normal=self.settings['normal_slope_deg']
                 # Stay in ascent until the actual pose can enter the normal descent corridor.
                 if self.mission.site.validate_path(descent,normal)['accepted']:
                     handoff_safe=self.mission.site.validate_path(np.vstack((position,descent)),normal)['accepted']
@@ -144,11 +144,11 @@ class MissionRuntime:
         elif self.state=='ascending':
             self.visits['summit']='reached';self.route_status[self.route]['up']='passed'
             self._event('summit_reached',stamp)
-            if not self.mission.site.validate_path(self.mission.path('10','down'),self.settings['normal_slope_deg'])['accepted']:
+            if not self.mission.site.validate_path(self.mission.descent_path(),self.settings['normal_slope_deg'])['accepted']:
                 self.route_status['10']['down']='failed'
                 return self._fail(stamp,'descent_route_unavailable')
             self.state='descending';self.route='10';self.direction='down';self.visits['return']='active'
-            self._set_path(np.vstack((position,self.mission.path('10','down'))))
+            self._set_path(np.vstack((position,self.mission.descent_path())))
         elif self.state=='retreating':
             remaining=[name for name in ('30','15','10') if name not in self.failed_routes]
             if not remaining:return self._fail(stamp,'all_ascent_routes_failed')
@@ -157,8 +157,12 @@ class MissionRuntime:
             self._set_path(np.vstack((position,self.mission.path(self.route))))
             self._event('fallback_selected',stamp)
         elif self.state=='descending':
-            self.route_status['10']['down']='passed';self.state='returning'
-            self._set_path(np.vstack((position,self.mission.connector()[::-1])))
+            self.route_status['10']['down']='passed'
+            if np.linalg.norm(position-self.mission.start[:2])<=self.settings['arrival_tolerance_m']:
+                self.visits['return']='reached';self.state='complete';self._event('return_reached',stamp)
+            else:
+                self.state='returning'
+                self._set_path(np.vstack((position,self.mission.connector()[::-1])))
         elif self.state=='returning':
             self.visits['return']='reached';self.state='complete';self._event('return_reached',stamp)
         self._event('phase_started',stamp,direction=self.direction)

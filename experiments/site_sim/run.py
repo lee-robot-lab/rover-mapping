@@ -53,6 +53,26 @@ def run(args: argparse.Namespace) -> dict:
             if prim.HasAPI(UsdLux.LightAPI):
                 intensity=prim.GetAttribute('inputs:intensity')
                 if intensity and intensity.Get() is not None:intensity.Set(float(intensity.Get())*.1)
+        if args.sand_texture:
+            from pxr import Sdf,UsdShade,Vt
+            sand=stage.GetPrimAtPath('/World/SandScene/Sand');pts=np.asarray(UsdGeom.Mesh(sand).GetPointsAttr().Get(),np.float32)
+            lo=pts[:,:2].min(0);span=pts[:,:2].max(0)-lo
+            print('SITE_SIM_SAND_EXTENT',lo.tolist(),span.tolist(),flush=True)
+            # Texture is 0.68 mm/px: 8192x6144 px covers 5.6 x 4.2 m, anchored at the sand corner.
+            uv=(pts[:,:2]-lo)/np.array([5.6,4.2],np.float32)
+            UsdGeom.PrimvarsAPI(sand).CreatePrimvar('st',Sdf.ValueTypeNames.TexCoord2fArray,UsdGeom.Tokens.vertex).Set(Vt.Vec2fArray.FromNumpy(uv))
+            material=UsdShade.Material.Define(stage,'/World/Looks/SandTexture')
+            shader=UsdShade.Shader.Define(stage,'/World/Looks/SandTexture/Shader');shader.CreateIdAttr('UsdPreviewSurface')
+            reader=UsdShade.Shader.Define(stage,'/World/Looks/SandTexture/StReader');reader.CreateIdAttr('UsdPrimvarReader_float2')
+            reader.CreateInput('varname',Sdf.ValueTypeNames.Token).Set('st')
+            texture=UsdShade.Shader.Define(stage,'/World/Looks/SandTexture/Texture');texture.CreateIdAttr('UsdUVTexture')
+            texture.CreateInput('file',Sdf.ValueTypeNames.Asset).Set(str(args.sand_texture))
+            texture.CreateInput('sourceColorSpace',Sdf.ValueTypeNames.Token).Set('sRGB')
+            texture.CreateInput('st',Sdf.ValueTypeNames.Float2).ConnectToSource(reader.ConnectableAPI(),'result')
+            shader.CreateInput('diffuseColor',Sdf.ValueTypeNames.Color3f).ConnectToSource(texture.ConnectableAPI(),'rgb')
+            shader.CreateInput('roughness',Sdf.ValueTypeNames.Float).Set(1.);shader.CreateInput('metallic',Sdf.ValueTypeNames.Float).Set(0.)
+            material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(),'surface')
+            UsdShade.MaterialBindingAPI.Apply(sand).Bind(material)
         overview=UsdGeom.Camera.Define(stage,'/World/ObserverCamera')
         overview.CreateFocalLengthAttr(18.);overview.CreateHorizontalApertureAttr(20.)
         overview.CreateVerticalApertureAttr(15.);overview.CreateClippingRangeAttr(Gf.Vec2f(.1,100))
@@ -61,19 +81,16 @@ def run(args: argparse.Namespace) -> dict:
                                        Gf.Vec3d(float(center[0]),float(center[1]),.35),Gf.Vec3d(0,0,1)).GetInverse()
         overview_op=UsdGeom.Xformable(overview).AddTransformOp();overview_op.Set(transform)
         # The latest URDF already mounts the camera 20 deg down; no optical-frame compensation.
+        # Measured D435 IR 640x480 intrinsics (fx=fy=377.186, principal point 320.54/241.73).
+        front_camera=UsdGeom.Camera(stage.GetPrimAtPath(h.left_camera_path));FX,CX,CY=377.186126708984,320.54248046875,241.732162475586
+        front_camera.GetFocalLengthAttr().Set(FX*20./640);front_camera.GetHorizontalApertureOffsetAttr().Set((320-CX)*20./640)
+        front_camera.GetVerticalApertureOffsetAttr().Set((CY-240)*15./480)
         for key,path in (('overview','/World/ObserverCamera'),('front',h.left_camera_path)):
             product=rep.create.render_product(path,(800,600) if key=='overview' else (640,480))
             annotator=rep.AnnotatorRegistry.get_annotator('rgb');annotator.attach(product)
             cameras[key]=(product,annotator)
-        # Imported rover meshes do not render in the Replicator cameras here, so draw a plain-primitive proxy
-        # (orange body, dark front patch marking heading) purely for the observers.
-        def proxy(parent,name,shape,color,translate,scale=None):
-            geom=shape.Define(stage,parent+'/'+name);geom.CreateDisplayColorAttr([Gf.Vec3f(*color)])
-            xf=UsdGeom.Xformable(geom);xf.AddTranslateOp().Set(Gf.Vec3d(*translate))
-            if scale:xf.AddScaleOp().Set(Gf.Vec3d(*scale))
-            return geom
-        proxy(h.frame_paths['base_link'],'ProxyBody',UsdGeom.Cube,(.95,.4,.05),(-.0167,0,-.0175),(.243,.17,.1))
-        proxy(h.frame_paths['base_link'],'ProxyNose',UsdGeom.Cube,(.05,.05,.3),(.07,0,.045),(.07,.11,.02))
+        from experiments.site_sim.visuals import install_rover_visuals
+        install_rover_visuals(stage,args.urdf)
         robot=world.scene.add(Robot(prim_path=h.frame_paths['base_link'],name='rover'))
         world.set_simulation_dt(physics_dt=.005,rendering_dt=.05)
         print('SITE_SIM_STAGE physics_initialization',flush=True)
@@ -88,7 +105,7 @@ def run(args: argparse.Namespace) -> dict:
         if not np.isfinite(np.r_[p,q]).all() or np.linalg.norm(p[:2]-mission.start[:2])>.1 or not ground+.08<p[2]<ground+.35:
             raise ValueError(f'rover settling failed: {p}')
         drive=SimulationDrive(robot,session,mission,fault_injection=args.fault_injection)
-        t0=float(world.current_time);next_control=0.;next_render=0.;last_camera_error=None
+        t0=float(world.current_time);next_control=0.;next_render=0.;next_front=0.;last_camera_error=None
         print('SITE_SIM_READY',json.dumps({'pose':p.tolist(),'output':str(args.output)}),flush=True)
         atomic_json(Path(args.output)/'ready.json',{'position_m':p.tolist(),'wall_s':time.monotonic()-wall_start})
         while app.is_running():
@@ -120,6 +137,14 @@ def run(args: argparse.Namespace) -> dict:
                         path=recorder.live/f'{key}.jpg';tmp=path.with_suffix('.tmp')
                         Image.fromarray(rgba[:,:,:3]).save(tmp,format='JPEG',quality=82);tmp.replace(path)
                     except Exception as error:last_camera_error=str(error)
+                if args.save_front_s>0 and sim_s>=next_front:
+                    next_front=sim_s+args.save_front_s
+                    try:
+                        rgba=np.asarray(cameras['front'][1].get_data())
+                        if rgba.ndim==3 and rgba.shape[2]>=3:
+                            (Path(args.output)/'front_frames').mkdir(exist_ok=True)
+                            Image.fromarray(rgba[:,:,:3]).save(Path(args.output)/'front_frames'/f'{sim_s:07.2f}.png')
+                    except Exception as error:last_camera_error=str(error)
                 recorder.publish()
     except KeyboardInterrupt as error:status='interrupted';reason=str(error)
     except Exception as error:
@@ -149,6 +174,8 @@ def main() -> None:
     parser=argparse.ArgumentParser()
     for name in ('mission','urdf','geometry','scene-usd','output'):parser.add_argument('--'+name,type=Path,required=True)
     parser.add_argument('--max-sim-s',type=float,default=900.);parser.add_argument('--max-wall-s',type=float,default=3600.)
+    parser.add_argument('--sand-texture',type=Path,default=None)
+    parser.add_argument('--save-front-s',type=float,default=0.)
     parser.add_argument('--fault-injection',action='store_true');args=parser.parse_args();code=1
     try:
         summary=run(args);code=0 if summary['status']=='complete' else 2
