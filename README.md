@@ -1,8 +1,30 @@
 # Rover Mapping
 
-D435와 Raspberry Pi로 영상을 수집하고, 노트북에서 ORB-SLAM3·TSDF 기준 3D 맵을 만드는 프로젝트다. 촬영 중 coverage/오버레이, 촬영 후 지형 층·prototype costmap 분석, 기존 STM 조이스틱 연동을 포함한다.
+D435와 Raspberry Pi로 현장 영상을 수집하고, 노트북에서 ORB-SLAM3·TSDF 기반 3D 지도를 구성해 로버의 대표점 방문 임무를 준비하는 프로젝트다. 촬영 중 coverage/오버레이, 촬영 후 지형 층·prototype costmap 분석, 기존 STM 조이스틱 연동과 STL 기반 경로·임무 도구를 포함한다.
 
-**현재는 기준 맵 품질을 검증하는 단계다.** IMU 융합 시험, depth 구간 전역 정합·재융합, RGB 컬러 기록, 중력 후보·crop·출발점·반복 지도 병합 편집 경로가 있다. RGB 동시 수집의 실기 성능, 실측 정확도, 고정 지도에 대한 주행 보정은 검증이 남아 있다. 최신 운영 절차와 한계는 [기준 지도 워크플로](docs/experiments/reference-map-workflow.md)를 따른다.
+**현재는 지도 품질 검증과 STL 이후 임무 준비 단계다.** IMU 융합 시험, depth 구간 전역 정합·재융합, RGB 컬러 기록, 중력 후보·crop·출발점·반복 지도 병합 편집 경로가 있다. STL 임무 편집기와 pose 기반 상태·속도 요청 실행기, 합성 시나리오 재생도 구현되어 있다. RGB 동시 수집의 실기 성능, 실측 정확도, 고정 지도에 대한 주행 보정은 검증이 남아 있다. 최신 지도 운영 절차는 [기준 지도 워크플로](docs/experiments/reference-map-workflow.md), 임무 운영 절차는 [STL 임무 도구](docs/experiments/site-mission.md)를 따른다.
+
+## 프로젝트 목표와 대회 시나리오
+
+목표는 출발지·갈림길·경사로 진입점·정상 같은 대표점을 방문하고, 등판 진행이 부족하면 후퇴해 다른 경로로 임무를 이어가는 로버를 준비하는 것이다.
+
+- **B: 여의도 중간 테스트.** 사전 지도가 없는 현장에서 매핑한다. 현재 역할 분담은 팀원이 매핑과 STL 생성을 맡고, 이 프로젝트의 임무 도구는 전달받은 STL부터 사용한다.
+- **사천: 실제 대회.** 현장 매핑 품질이 충분하면 사천의 기존 지도와 새 사천 관측 지도를 정합·병합하는 방안을 검토한다. 여의도 지도와 사천 지도를 합치는 계획은 아니다.
+- **세 경로와 공통 정상.** 갈림길에서 10°·15°·30°로 부르는 세 길이 같은 정상으로 연결된다. 상행과 하행을 별도 방향으로 다루며, 경로 이름과 STL에서 계산한 실제 경사값은 구분한다.
+
+기본 임무는 **출발 → 갈림길 → 30° 진입 대표점 → 등판 시도 → 정상 → 10° 하행 → 출발지 복귀**다. 30°에서 진행이 부족하면 실제 지나온 경로를 되짚어 갈림길로 후퇴한 뒤 15°로 우회하고, 15°도 실패하면 10°를 사용한다. 30°가 성공하면 그 성공을 기록한다. 진입점 방문·등판 결과·정상 방문·복귀 완료는 각각 기록한다.
+
+## 구현 범위와 남은 연결
+
+| 구분 | 현재 상태 |
+|---|---|
+| 지도 입력·임무 설정 | STL 단위·up 설정, 지형 격자 생성, 출발·갈림길·정상·세 경로 편집과 저장/재로드 |
+| 경로 검사 | 관측 여부·벽·단차·로버 여유 반경·경사 검사. 일반 경로와 시험 경로의 경사 제한 분리 |
+| 임무 판단 | 대표점 방문, 등판 진행 부족 판정, 실제 주행 경로 후퇴, 대체 상행, 정상·복귀 결과 관리 |
+| 실행 준비 | 정렬된 pose JSONL 입력, 추적 손실·stale·좌표 점프 시 정지 요청, 합성 재생과 결과 로그 |
+| 남은 실기 통합 | live ORB→STL 지도 좌표 정렬·입력 adapter, 실제 구동기 연결과 독립 정지/watchdog, 기체별 설정·현장 검증 |
+
+현재 임무 실행기는 속도 요청을 **파일로 기록하며 실제 모터에는 송신하지 않는다.** 진행 부족 판정은 pose 변화에 기반하고 바퀴별 slip 실측은 아니다. 합성 재생은 평면 운동학과 주입한 정체를 사용하므로 실제 경사·모래·토크 성능을 검증하지 않는다. 실기 제어 연결은 시뮬레이션/fake 통신 검증 후 저속 실기로 확인한다.
 
 ## 먼저 읽을 문서
 
@@ -38,6 +60,9 @@ bash tools/handheld_mapping.sh --demo
 # 장비 없이 지형·costmap 파일 생성 (새 output 필요)
 bash tools/terrain_mapping.sh --demo --output outputs/terrain_demo_01
 
+# 장비 없이 STL 이후 대표점·세 경로 임무 편집기 확인
+bash tools/plan_site_mission.sh --demo
+
 # 저장된 최신 촬영의 3D 지도
 bash tools/view_mapping.sh
 ```
@@ -58,8 +83,8 @@ Pi: D435 IR좌/우 + depth 640×480, 요청15FPS, projector OFF
 
 | 폴더 | 내용 |
 |---|---|
-| `experiments/handheld_mapping` | Qt·수집/전송·live/offline ORB·TSDF·지형·costmap |
-| `tools` | GUI/뷰어/terrain wrapper, native runner build |
+| `experiments/handheld_mapping` | Qt·수집/전송·live/offline ORB·TSDF·지형·costmap·STL 대표점 임무 |
+| `tools` | GUI/뷰어/terrain·임무 wrapper, native runner build |
 | `ros2_ws/src/orbslam3_ros2` | ROS adapter·headless 준비 도구·native patch |
 | `ros2_ws/src/rover_description/urdf` | 좌표/보정 preflight에 사용하는 URDF 참고본 |
 | `teleop/ksrc_snapshot` | 확인한 KSRC의 조이스틱·SPI bridge 소스 일부 |
