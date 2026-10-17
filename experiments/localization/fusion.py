@@ -76,8 +76,28 @@ def propagate_interval(filters: list, imu: np.ndarray, a: float, b: float, max_g
     return None
 
 
+def needs_reanchor(previous_ok: bool, ok: bool, previous_map: str, map_id: str) -> bool:
+    """ORB가 다시 추적을 잡았고 새 map일 수 있으면 True. 리셋된 ORB는 map id를 0부터 다시 시작하므로
+    id만 믿지 않고 추적 상실 뒤 복귀(상실 → OK)도 새 map으로 본다."""
+    return ok and (map_id != previous_map or not previous_ok)
+
+
+def move_baseline(filter_, accepted: bool, refresh: bool) -> bool:
+    """보정 뒤 기준 pose를 현재로 옮겨야 하면 True. 거부된 경우에도 refresh면 clone을 현재로 옮긴다.
+
+    거부 때 기준선을 두면 다음 비교가 누적 예측 오차를 안은 더 긴 기준선이 되어 계속 거부되는 악순환이 생긴다.
+    """
+    if accepted:
+        return True
+    if refresh:
+        filter_.clone_current()
+        return True
+    return False
+
+
 def run(sequence: Path, orb: Path, prior_path: Path, output: Path, reanchor_maps: bool = False,
-        encoder: Path | None = None, encoder_updates: bool = False, slip_limit: float = .6) -> None:
+        encoder: Path | None = None, encoder_updates: bool = False, slip_limit: float = .6,
+        refresh_baseline: bool = True) -> None:
     """센서·ORB 추정·시작 prior만 읽고 GT는 평가 프로그램에 맡긴다.
 
     encoder는 IMU 공백 중 추측 항법에만 쓰며, 슬립 계수가 slip_limit 아래면 신뢰하지 않고 속도 0으로 둔다.
@@ -151,7 +171,7 @@ def run(sequence: Path, orb: Path, prior_path: Path, output: Path, reanchor_maps
     histories, diagnostics = {name: [] for name in names}, []
     output.mkdir(parents=True, exist_ok=False)
     previous = times[0]
-    imu_gap_s, maps_reanchored = 0., 0
+    imu_gap_s, maps_reanchored, previous_ok = 0., 0, True
     for frame, timestamp in enumerate(times):
         knots = np.r_[previous, imu[(imu[:, 0] > previous+1e-10) & (imu[:, 0] < timestamp-1e-10), 0], timestamp]
         for a, b in zip(knots[:-1], knots[1:]):
@@ -166,9 +186,9 @@ def run(sequence: Path, orb: Path, prior_path: Path, output: Path, reanchor_maps
         previous = timestamp
         row = {'timestamp_ns': int(times_ns[frame]), 'orb_state': tracking[frame]['state'],
                'map_id': tracking[frame]['map_id'], 'imu_status': {name: f.status for name, f in filters.items()}}
-        same_map = tracking[frame]['map_id'] == map_id
-        if (reanchor_maps and not same_map and tracking[frame]['state'] == '2'
-                and int(tracking[frame]['map_id']) >= 0):
+        ok = tracking[frame]['state'] == '2' and int(tracking[frame]['map_id']) >= 0
+        same_map = not needs_reanchor(previous_ok, ok, map_id, tracking[frame]['map_id'])
+        if reanchor_maps and not same_map and ok:
             # 새 ORB map은 원점이 다르므로 상대 관측만 쓴다: 필터 현재 pose를 기준으로 새 map의 첫 pose에 닻을 내린다.
             measured = visual[int(times_ns[frame])] @ base_from_imu
             for name in visual_names:
@@ -176,12 +196,13 @@ def run(sequence: Path, orb: Path, prior_path: Path, output: Path, reanchor_maps
                 references[name], last_update[name] = measured, timestamp
             map_id, same_map = tracking[frame]['map_id'], False
             maps_reanchored += 1
+        previous_ok = ok
         for name in visual_names:
             info = {'accepted': False, 'reason': 'not_due_or_no_visual'}
             if tracking[frame]['state'] == '2' and same_map and timestamp-last_update[name] >= .1-1e-8:
                 measured = visual[int(times_ns[frame])] @ base_from_imu
                 info = filters[name].relative_update(np.linalg.inv(references[name]) @ measured)
-                if info['accepted']:
+                if move_baseline(filters[name], info['accepted'], refresh_baseline):
                     references[name], last_update[name] = measured, timestamp
             row[name] = info
         twist = encoder_twist(float(timestamp))

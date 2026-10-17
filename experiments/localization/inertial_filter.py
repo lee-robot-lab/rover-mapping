@@ -188,6 +188,7 @@ class InertialFilter:
         # Fixed metric/angle uncertainty assumptions; ORB does not export a calibrated pose covariance.
         noise = np.diag(np.array([.01*position_scale]*3+[np.deg2rad(1.)*rotation_scale]*3)**2)
         info = self.update(value, jac, noise, 16.812)  # chi-square(6), 99 percent.
+        info['residual'] = value.tolist()  # [상대 위치 차(m) 3, 상대 회전 차(rad) 3]
         if info['accepted']:
             self.clone_current()
             if self.gap_s == 0:

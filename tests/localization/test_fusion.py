@@ -56,3 +56,26 @@ def test_slip_scale_is_clipped_to_a_plausible_range() -> None:
     for _ in range(50):
         slip.update(.1, .001)
     assert slip.value == .3
+
+
+def test_reanchor_after_tracking_loss_even_when_orb_reuses_the_map_id() -> None:
+    from experiments.localization.fusion import needs_reanchor
+    assert needs_reanchor(False, True, '0', '0')        # 리셋된 ORB가 map id 0을 다시 씀
+    assert needs_reanchor(True, True, '3', '4')         # id가 바뀜
+    assert not needs_reanchor(True, True, '3', '3')     # 같은 map에서 계속 추적
+    assert not needs_reanchor(True, False, '3', '3')    # 추적 상실 중에는 기준을 바꾸지 않음
+
+
+def test_rejected_update_moves_the_baseline_only_when_refreshing() -> None:
+    from experiments.localization.fusion import move_baseline
+
+    class Stub:
+        cloned = 0
+
+        def clone_current(self) -> None:
+            self.cloned += 1
+
+    a, b, c = Stub(), Stub(), Stub()
+    assert move_baseline(a, True, True) and a.cloned == 0          # 수락: clone은 필터가 이미 옮김
+    assert move_baseline(b, False, True) and b.cloned == 1         # 거부 + refresh: 기준선을 현재로
+    assert not move_baseline(c, False, False) and c.cloned == 0    # 거부 + 유지: 예전 방식

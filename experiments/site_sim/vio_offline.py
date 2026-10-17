@@ -113,19 +113,35 @@ def run_orb(stereo: Path, out: Path, timeout_s: float) -> None:
                 process.send_signal(signal.SIGINT)
 
 
-def orb_for_fusion(stereo: Path, orb: Path, out: Path) -> None:
-    """ORB live_poses.csv를 필터가 읽는 tracking.csv와 base_trajectory.tum(base pose)으로 바꾼다."""
+def stream_poses_to_live(poses: Path, out: Path) -> None:
+    """stream_orb가 남긴 orb_poses.csv(world_from_camera 위치+쿼터니언)를 live_poses.csv 행렬 형식으로 바꾼다."""
+    with poses.open() as source, out.open('w', newline='') as target:
+        writer = csv.writer(target)
+        writer.writerow(['stamp_ns', 'state', 'map_id', 'process_ms'] + [f'm{i}{j}' for i in range(4) for j in range(4)])
+        for row in csv.DictReader(source):
+            pose = np.eye(4)
+            q = [float(row[k]) for k in ('qx', 'qy', 'qz', 'qw')]
+            pose[:3, :3] = Rotation.from_quat(q).as_matrix()
+            pose[:3, 3] = [float(row[k]) for k in ('tx', 'ty', 'tz')]
+            writer.writerow([row['stamp_ns'], row['state'], row['map_id'], 0] + [f'{v:.12g}' for v in pose.flat])
+
+
+def orb_for_fusion(stereo: Path, orb: Path, out: Path, lag_s: float = 0.) -> None:
+    """ORB live_poses.csv를 필터가 읽는 tracking.csv와 base_trajectory.tum(base pose)으로 바꾼다.
+
+    lag_s는 영상이 실제로 보여 주는 장면이 붙은 시각보다 늦은 양(렌더 지연)이며 시각에서 뺀다.
+    """
     calibration = json.loads((stereo/'calibration.json').read_text())
     cam_from_base = np.linalg.inv(np.asarray(calibration['T_base_left_optical']))
     out.mkdir(parents=True, exist_ok=False)
     tracking, trajectory = [], []
     for row in csv.DictReader((orb/'live_poses.csv').open()):
-        tracking.append({'timestamp_ns': row['stamp_ns'], 'state': row['state'], 'map_id': row['map_id'], 'imu_samples': 0})
+        tracking.append({'timestamp_ns': int(row['stamp_ns'])-round(lag_s*1e9), 'state': row['state'], 'map_id': row['map_id'], 'imu_samples': 0})
         if row['state'] == '2' and int(row['map_id']) >= 0:
             world_from_cam = np.array([float(row[f'm{i}{j}']) for i in range(4) for j in range(4)]).reshape(4, 4)
             base = world_from_cam @ cam_from_base
             q = Rotation.from_matrix(base[:3, :3]).as_quat()
-            trajectory.append(f'{int(row["stamp_ns"])*1e-9:.9f} {" ".join(f"{v:.9f}" for v in [*base[:3, 3], *q])}')
+            trajectory.append(f'{int(row["stamp_ns"])*1e-9-lag_s:.9f} {" ".join(f"{v:.9f}" for v in [*base[:3, 3], *q])}')
     with (out/'tracking.csv').open('w', newline='') as stream:
         writer = csv.DictWriter(stream, fieldnames=['timestamp_ns', 'state', 'map_id', 'imu_samples'])
         writer.writeheader()
@@ -146,7 +162,8 @@ def ideal_imu_from_telemetry(path: Path) -> tuple[np.ndarray, np.ndarray]:
     return ideal_imu_from_poses(times, positions, quaternions, np.arange(times[0], times[-1], .005))
 
 
-def fusion_sequence(stereo: Path, out: Path, *, average: bool, noise: bool, delay_s: float, gaps_s: tuple, seed: int) -> None:
+def fusion_sequence(stereo: Path, out: Path, *, average: bool, noise: bool, delay_s: float, gaps_s: tuple, seed: int,
+                    lag_s: float = 0.) -> None:
     """영상은 링크하고 IMU만 열화한 필터 입력 sequence를 만든다."""
     from experiments.site_sim.imu_degrade import degrade
     out.mkdir(parents=True, exist_ok=False)
@@ -154,7 +171,7 @@ def fusion_sequence(stereo: Path, out: Path, *, average: bool, noise: bool, dela
         (out/f'mav0/cam{side}').parent.mkdir(parents=True, exist_ok=True)
         (out/f'mav0/cam{side}').symlink_to((stereo/f'mav0/cam{side}/data').parent.resolve(), target_is_directory=True)
     (out/'mav0/imu0').mkdir(parents=True, exist_ok=True)
-    stamps = [int(r[0]) for r in list(csv.reader((stereo/'mav0/cam0/data.csv').open()))[1:]]
+    stamps = [int(r[0])-round(lag_s*1e9) for r in list(csv.reader((stereo/'mav0/cam0/data.csv').open()))[1:]]
     (out/'camera_times.txt').write_text(''.join(f'{s}\n' for s in stamps))
     ideal_times, ideal = ideal_imu_from_telemetry(stereo.parent/'telemetry.jsonl')
     times, values = degrade(ideal_times, ideal, average=average, noise=noise, delay_s=delay_s, gaps_s=gaps_s, seed=seed)
@@ -191,6 +208,7 @@ def main() -> None:
     parser.add_argument('--imu', choices=('ideal', 'avg50'), default='avg50')
     parser.add_argument('--gaps', type=float, nargs=2, action='append', default=[])
     parser.add_argument('--delay-s', type=float, default=0.)
+    parser.add_argument('--render-lag-s', type=float, default=0.1, help='영상 장면이 붙은 시각보다 늦은 시뮬 렌더 지연(측정값 약 0.10 s)')
     parser.add_argument('--encoder', action='store_true', help='바퀴 엔코더 융합 필터를 함께 계산')
     parser.add_argument('--timeout-s', type=float, default=400.)
     parser.add_argument('--seed', type=int, default=0)
@@ -204,8 +222,8 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=False)
     average = args.imu == 'avg50'
     fusion_sequence(args.stereo, out/'sequence', average=average, noise=average, delay_s=args.delay_s,
-                    gaps_s=tuple(tuple(g) for g in args.gaps), seed=args.seed)
-    orb_for_fusion(args.stereo, args.first, out/'orb')
+                    gaps_s=tuple(tuple(g) for g in args.gaps), seed=args.seed, lag_s=args.render_lag_s)
+    orb_for_fusion(args.stereo, args.first, out/'orb', args.render_lag_s)
     first = read_gt(args.stereo)
     stamp = sorted(first)[0]
     (out/'prior.json').write_text(json.dumps({'world_from_base': first[stamp].tolist()}))
