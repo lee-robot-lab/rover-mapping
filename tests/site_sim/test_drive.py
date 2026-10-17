@@ -67,3 +67,21 @@ def test_only_explicit_trial_fault_is_injected_and_retreat_is_unblocked(mission)
     row=drive.step(1.05)
     assert not row['fault_active']
     assert row['applied_command']==row['requested_command']
+
+
+@pytest.mark.parametrize('twist',[(.08,0.,0.),(-.08,0.,0.),(0.,0.,.4),(.05,.02,-.3)])
+def test_new_urdf_modules_roll_in_the_commanded_body_direction(twist):
+    from xml.etree import ElementTree as ET
+    from experiments.orbslam3_ros2.swerve import body_twist_to_modules
+    from experiments.site_sim.rover_assets import SOURCE_URDF,swerve_geometry
+    data=swerve_geometry(ET.parse(SOURCE_URDF).getroot(),.0475)
+    geometry=SwerveGeometry(tuple(ModuleGeometry(m['name'],m['steering_joint'],m['wheel_joint'],
+        *m['steering_pivot_base_link_m'][:2],m['steering_sign'],m['rolling_heading_at_zero_rad']) for m in data['modules']),.0475)
+    vx,vy,wz=twist
+    for module,command in zip(geometry.modules,body_twist_to_modules(geometry,vx=vx,vy=vy,yaw_rate=wz)):
+        heading=module.rolling_heading_rad+module.steering_sign*command.steering_angle_rad
+        speed=command.wheel_angular_velocity_rad_s*.0475
+        got=speed*np.array([np.cos(heading),np.sin(heading)])
+        want=np.array([vx-wz*module.y_m,vy+wz*module.x_m])
+        assert np.allclose(got,want,atol=1e-9)
+        assert abs(command.steering_angle_rad)<=np.pi/2+1e-9

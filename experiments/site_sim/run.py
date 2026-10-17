@@ -59,15 +59,21 @@ def run(args: argparse.Namespace) -> dict:
         center=site.origin+np.asarray(site.observed.shape[::-1])*site.resolution/2
         transform=Gf.Matrix4d().SetLookAt(Gf.Vec3d(float(center[0]),float(center[1])-4.5,5.5),
                                        Gf.Vec3d(float(center[0]),float(center[1]),.35),Gf.Vec3d(0,0,1)).GetInverse()
-        UsdGeom.Xformable(overview).AddTransformOp().Set(transform)
-        # Original portable optical frame was 35deg; child camera compensates to the agreed 20deg.
-        phi=math.pi-math.radians(20.-35.)
-        UsdGeom.Xformable(stage.GetPrimAtPath(h.left_camera_path)).GetOrderedXformOps()[0].Set(
-            Gf.Quatd(math.cos(phi/2),math.sin(phi/2),0.,0.))
+        overview_op=UsdGeom.Xformable(overview).AddTransformOp();overview_op.Set(transform)
+        # The latest URDF already mounts the camera 20 deg down; no optical-frame compensation.
         for key,path in (('overview','/World/ObserverCamera'),('front',h.left_camera_path)):
             product=rep.create.render_product(path,(800,600) if key=='overview' else (640,480))
             annotator=rep.AnnotatorRegistry.get_annotator('rgb');annotator.attach(product)
             cameras[key]=(product,annotator)
+        # Imported rover meshes do not render in the Replicator cameras here, so draw a plain-primitive proxy
+        # (orange body, dark front patch marking heading) purely for the observers.
+        def proxy(parent,name,shape,color,translate,scale=None):
+            geom=shape.Define(stage,parent+'/'+name);geom.CreateDisplayColorAttr([Gf.Vec3f(*color)])
+            xf=UsdGeom.Xformable(geom);xf.AddTranslateOp().Set(Gf.Vec3d(*translate))
+            if scale:xf.AddScaleOp().Set(Gf.Vec3d(*scale))
+            return geom
+        proxy(h.frame_paths['base_link'],'ProxyBody',UsdGeom.Cube,(.95,.4,.05),(-.0167,0,-.0175),(.243,.17,.1))
+        proxy(h.frame_paths['base_link'],'ProxyNose',UsdGeom.Cube,(.05,.05,.3),(.07,0,.045),(.07,.11,.02))
         robot=world.scene.add(Robot(prim_path=h.frame_paths['base_link'],name='rover'))
         world.set_simulation_dt(physics_dt=.005,rendering_dt=.05)
         print('SITE_SIM_STAGE physics_initialization',flush=True)
@@ -103,6 +109,10 @@ def run(args: argparse.Namespace) -> dict:
             world.step(render=render_due)
             if render_due:
                 next_render=time.monotonic()+.2
+                # Chase view from above and behind so the small rover stays visible inside the walls.
+                rp=np.asarray(row['position_m'],float)
+                overview_op.Set(Gf.Matrix4d().SetLookAt(Gf.Vec3d(rp[0],rp[1]-.35,rp[2]+2.6),
+                    Gf.Vec3d(rp[0],rp[1],rp[2]),Gf.Vec3d(0,0,1)).GetInverse())
                 for key,(_,annotator) in cameras.items():
                     try:
                         rgba=np.asarray(annotator.get_data())

@@ -88,8 +88,17 @@ def _find_unique_descendant(stage: object, root_path: str, name: str) -> object:
             and prim.GetParent().GetName() != name
         )
     ]
+    # Mesh collision wrappers can contain a same-named descendant; the frame is the outermost match.
+    paths = [str(prim.GetPath()) for prim in matches]
+    matches = [
+        prim for prim, path in zip(matches, paths)
+        if not any(path.startswith(other + "/") for other in paths)
+    ]
     if len(matches) != 1:
-        raise RuntimeError(f"imported frame must be unique: {name}, found {len(matches)}")
+        raise RuntimeError(
+            f"imported frame must be unique: {name}, found {len(matches)}: "
+            + ", ".join(str(prim.GetPath()) for prim in matches)
+        )
     return matches[0]
 
 

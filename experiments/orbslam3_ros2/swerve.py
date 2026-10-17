@@ -20,6 +20,8 @@ class ModuleGeometry:
     wheel_joint: str
     x_m: float
     y_m: float
+    steering_sign: float = 1.0
+    rolling_heading_rad: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -40,12 +42,14 @@ class SwerveGeometry:
                 wheel_joint=item["wheel_joint"],
                 x_m=float(item["steering_pivot_base_link_m"][0]),
                 y_m=float(item["steering_pivot_base_link_m"][1]),
+                steering_sign=float(item.get("steering_sign", 1.0)),
+                rolling_heading_rad=float(item.get("rolling_heading_at_zero_rad", 0.0)),
             )
             for item in data["modules"]
         )
         if len(modules) != 4:
             raise ValueError(f"swerve geometry requires four modules, got {len(modules)}")
-        return cls(modules=modules)
+        return cls(modules=modules, wheel_radius_m=float(data.get("wheel_radius_m", 0.0475)))
 
 
 @dataclass(frozen=True)
@@ -121,7 +125,11 @@ def body_twist_to_modules(
     for module in geometry.modules:
         module_vx = vx - yaw_rate * module.y_m
         module_vy = vy + yaw_rate * module.x_m
-        steering, sign = fold_steering_angle(math.atan2(module_vy, module_vx))
+        # 조향 joint 각도 = 부호 * (목표 heading - 0 rad 조향에서 +wheel 속도의 구름 방향)
+        relative, sign = fold_steering_angle(
+            math.atan2(module_vy, module_vx) - module.rolling_heading_rad
+        )
+        steering = module.steering_sign * relative
         wheel_speed = sign * math.hypot(module_vx, module_vy) / geometry.wheel_radius_m
         commands.append(
             ModuleCommand(

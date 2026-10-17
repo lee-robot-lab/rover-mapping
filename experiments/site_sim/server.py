@@ -169,7 +169,7 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--max-sim-s',type=float,default=900.);parser.add_argument('--max-wall-s',type=float,default=3600.)
     parser.add_argument('--port',type=int,default=8765)
     parser.add_argument('--gpu',type=int,choices=(0,1),default=1)
-    parser.add_argument('--assets',type=Path,default=Path('/home/su/rover/ros2_ws/src/rover_description'))
+    parser.add_argument('--assets',type=Path,default=REPO/'outputs/site_sim/rover_assets_new')
     args=parser.parse_args(argv)
     try:
         if not re.fullmatch('[A-Za-z0-9_-]+',args.label):raise ValueError('invalid label')
