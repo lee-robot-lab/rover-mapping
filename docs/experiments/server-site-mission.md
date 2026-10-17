@@ -107,3 +107,11 @@ Camera RGB annotator 연결은 서버 이미지에 설치된 공식 예제 `/isa
 ## 남는 범위
 
 live ORB→site 정렬, 실제 모터 adapter, 동적 장애물 회피·온라인 재계획, 변형 모래·견인력 보정, RL 비교, 사천 prior 병합은 별도다. 서버 물리 주행과 영상·costmap 기록이 실제 실행된 범위만 아래 검증 기록에 남긴다.
+
+## 최신 URDF·모래 질감·stereo 기록·추정 위치 주행 (2026-10-17~18)
+
+- **로버 자산**: 기본 `--assets`는 `outputs/site_sim/rover_assets_new`다. `python -m experiments.site_sim.rover_assets --output outputs/site_sim/rover_assets_new`가 최신 `rocker_bogie_4wd_rover` URDF를 미터 단위·상대 경로 mesh로 바꾸고 FK로 `swerve_geometry.json`(조향 부호, 구름 방향)을 만든다. Isaac import에서 로버 visual mesh가 관찰 카메라에 그려지지 않아(원인 미규명) 관찰용 주황 상자를 대신 쓴다. 물리와 무관하다.
+- **모래 질감**: `upload ... --texture FILE.jpg`. `texture_quilt.py`로 사진 모래에서 5.6×4.2 m 비반복 이미지와 대비 단계를 만든다. 질감은 외관만 바꾼다(모래는 고정 메시).
+- **stereo 기록**: `start ... --stereo-hz 15 --start-hold-s 3`은 좌우 PNG·GT·보정을 `output/stereo`에 저장하고, 시작 3초 동안 정지해 IMU 영점을 허용한다. 영상 장면은 timestamp보다 약 0.1 s 늦다.
+- **추정 위치 주행**: `start ... --estimator`는 서버에 ORB 보조 컨테이너(`rover-orb-<label>`)를 같이 띄우고 임무 실행기가 **추정 위치만** 본다. GT는 기록과 비교용이다. 사전 준비: 서버에 `stream_orb`(`experiments/site_sim/stream_orb.cpp`를 ORB 이미지에서 빌드)와 `assets/orb_stereo.yaml`. 자세한 구성은 [시뮬 VIO와 닫힌 루프](2026-10-18-sim-vio-closed-loop.md)를 본다.
+- **터널**: 터널은 약 10분 끊김을 견딘다(`ServerAliveCountMax=40`). 죽으면 자동 재연결되지 않으므로 같은 `tunnel` 명령으로 다시 연다. 서버의 8765 등은 다른 실행의 viewer가 잡고 있을 수 있으니 새 포트를 쓴다.

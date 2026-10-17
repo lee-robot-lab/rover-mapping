@@ -24,6 +24,8 @@ from xml.etree import ElementTree
 ROOT='/home/sumee/gyusa/runs/site_mission'
 ARENA='/home/sumee/gyusa/arena_sand_v15_m5.usd'
 IMAGE='nvcr.io/nvidia/isaac-sim:6.1.0'
+ORB_IMAGE='rover-orbslam3-jazzy:4452a3c4'
+STREAM_ORB='/home/sumee/gyusa/runs/stream_orb'  # experiments/site_sim/stream_orb.cpp를 ORB 이미지에서 빌드한 실행 파일
 SSH=['ssh','-o','BatchMode=yes','-o','ConnectTimeout=10','-o','ServerAliveInterval=15','hpi-lab']
 REPO=Path(__file__).resolve().parents[2]
 
@@ -53,6 +55,7 @@ def upload(label: str, mission: Path, assets: Path, texture: Path | None=None) -
                     hashes[relative]=hashlib.sha256(path.read_bytes()).hexdigest()
             tar.add(mission,arcname='mission')
             tar.add(urdf,arcname='rover/rover_portable.urdf');tar.add(geometry,arcname='rover/swerve_geometry.json')
+            if (assets/'orb_stereo.yaml').is_file():tar.add(assets/'orb_stereo.yaml',arcname='rover/orb.yaml')
             if texture is not None:
                 if not texture.is_file():raise ValueError('sand texture file not found')
                 tar.add(texture,arcname='rover/sand_texture.jpg');hashes['rover/sand_texture.jpg']=hashlib.sha256(texture.read_bytes()).hexdigest()
@@ -66,7 +69,7 @@ def upload(label: str, mission: Path, assets: Path, texture: Path | None=None) -
     print('uploaded:',run)
 
 
-def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1, save_front_s: float=0., stereo_hz: float=0., start_hold_s: float=0.) -> None:
+def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1, save_front_s: float=0., stereo_hz: float=0., start_hold_s: float=0., estimator: bool=False) -> None:
     """지정한 유휴 GPU에서만 새 물리 run과 독립 loopback viewer를 시작한다."""
     from experiments.site_sim.run import validate_limits
     validate_limits(sim,wall)
@@ -88,6 +91,9 @@ def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=
     if save_front_s>0:args+=['--save-front-s',str(save_front_s)]
     if stereo_hz>0:args+=['--stereo-hz',str(stereo_hz)]
     if start_hold_s>0:args+=['--start-hold-s',str(start_hold_s)]
+    if estimator:
+        if stereo_hz<=0:raise ValueError('estimator needs stereo capture (--stereo-hz)')
+        args+=['--estimator']
     if remote(f'test -f {shlex.quote(run+"/rover/sand_texture.jpg")} && echo yes || echo no',capture=True).stdout.strip()=='yes':
         args+=['--sand-texture','/workspace/rover/sand_texture.jpg']
     # Match the installed python.sh environment but exec Python as PID1 for SIGTERM/finally.
@@ -106,6 +112,12 @@ def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=
     write='from pathlib import Path; Path('+repr(run+'/launch.json')+').write_text('+repr(json.dumps(launch,indent=2))+')'
     remote(shlex.join(['python3','-c',write]))
     remote(f'docker image inspect {shlex.quote(IMAGE)} --format "{{{{.Id}}}}" > {run}/image_id.txt')
+    if estimator:
+        sidecar=['docker','run','-d','--name','rover-orb-'+label,'--user','0:0','-v',run+':/workspace',
+                 '-v',STREAM_ORB+':/usr/local/bin/stream_orb:ro',ORB_IMAGE,'bash','-lc',
+                 'mkdir -p /workspace/orbio && exec stream_orb /opt/ORB_SLAM3/Vocabulary/ORBvoc.txt /workspace/rover/orb.yaml /workspace/orbio']
+        remote(f'rm -rf {shlex.quote(run+"/orbio")}')
+        remote(shlex.join(sidecar))
     remote(shlex.join(docker))
     remote(f'nohup docker wait {name} > {run}/exit.txt 2> {run}/exit-wait.log < /dev/null &')
     viewer=['python3','-m','experiments.site_sim.viewer','--output',run+'/output','--port',str(port)]
@@ -150,6 +162,7 @@ def process_identity(pid: int) -> dict | None:
 def stop(label: str) -> None:
     run=f'{ROOT}/{label}'
     remote(f'docker stop --time 20 rover-site-{label}')
+    remote(f'docker rm -f rover-orb-{label} >/dev/null 2>&1; true')
     # Verify the recorded PID still belongs to this exact observer before stopping it.
     terminate=f'''import os,signal
 from pathlib import Path
@@ -184,6 +197,7 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--save-front-s',type=float,default=0.)
     parser.add_argument('--stereo-hz',type=float,default=0.)
     parser.add_argument('--start-hold-s',type=float,default=0.)
+    parser.add_argument('--estimator',action='store_true',help='GT 대신 ORB+ESKF 추정 위치로 주행')
     args=parser.parse_args(argv)
     try:
         if not re.fullmatch('[A-Za-z0-9_-]+',args.label):raise ValueError('invalid label')
@@ -191,7 +205,7 @@ def main(argv: list[str] | None=None) -> int:
         if args.action=='upload':
             if not args.path:raise ValueError('mission folder required')
             upload(args.label,Path(args.path).resolve(),args.assets,args.texture)
-        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu,args.save_front_s,args.stereo_hz,args.start_hold_s)
+        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu,args.save_front_s,args.stereo_hz,args.start_hold_s,args.estimator)
         elif args.action=='status':status(args.label)
         elif args.action=='tunnel':tunnel(args.label,int(args.path or args.port))
         else:stop(args.label)

@@ -109,3 +109,28 @@ def test_wheel_encoders_recover_the_commanded_body_twist(twist) -> None:
     vx,vy,wz,residual=body_twist_from_modules(geometry,[m.steering_angle_rad for m in modules],
                                               [m.wheel_angular_velocity_rad_s for m in modules])
     assert (vx,vy,wz)==pytest.approx(twist,abs=1e-9) and residual<1e-9
+
+
+class FakeEstimator:
+    """GT와 다른 위치를 돌려주는 추정기 대역."""
+    def __init__(self, valid=True, quality='good'):
+        self.valid,self.quality=valid,quality
+    def pose(self, now):
+        pose=np.eye(4);pose[:3,3]=[.4,.6,.0]
+        return pose,self.valid,self.quality,'ok'
+
+
+def test_mission_decisions_use_the_estimate_not_gt_and_log_both(mission) -> None:
+    from experiments.site_sim.drive import SimulationDrive
+    robot,session=Robot(),Session();drive=SimulationDrive(robot,session,mission,estimator=FakeEstimator())
+    row=drive.step(.05)
+    assert row['position_m']==pytest.approx([.5,.5,0.])               # 기록은 GT
+    assert row['estimated_position_m']==pytest.approx([.4,.6,0.])      # 판단은 추정
+    assert row['pose_source']=='orb_eskf_estimate' and row['estimator_status']=='ok'
+
+
+def test_invalid_estimate_stops_the_rover(mission) -> None:
+    from experiments.site_sim.drive import SimulationDrive
+    robot,session=Robot(),Session();drive=SimulationDrive(robot,session,mission,estimator=FakeEstimator(valid=False))
+    row=drive.step(.05)
+    assert row['applied_command']=={'vx_m_s':0.,'yaw_rate_rad_s':0.} and row['mission']['reason']=='tracking_lost'

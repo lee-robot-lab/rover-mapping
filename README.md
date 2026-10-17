@@ -4,6 +4,8 @@ D435와 Raspberry Pi로 현장 영상을 수집하고, 노트북에서 ORB-SLAM3
 
 **현재는 지도 품질 검증과 STL 이후 임무 준비 단계다.** IMU 융합 시험, depth 구간 전역 정합·재융합, RGB 컬러 기록, 중력 후보·crop·출발점·반복 지도 병합 편집 경로가 있다. STL 임무 편집기와 pose 기반 상태·속도 요청 실행기, 합성 시나리오 재생도 구현되어 있다. RGB 동시 수집의 실기 성능, 실측 정확도, 고정 지도에 대한 주행 보정은 검증이 남아 있다. 최신 지도 운영 절차는 [기준 지도 워크플로](docs/experiments/reference-map-workflow.md), 임무 운영 절차는 [STL 임무 도구](docs/experiments/site-mission.md)를 따른다.
 
+서버 Isaac 시뮬레이션에는 **로버가 정답 위치 대신 ORB-SLAM3 stereo + IMU(+엔코더) ESKF 추정 위치로 주행하는 닫힌 루프**가 있다. 시뮬레이션 결과이며 실기 예측이 아니다. 구성·측정·한계는 [시뮬 VIO와 닫힌 루프](docs/experiments/2026-10-18-sim-vio-closed-loop.md)에 있다.
+
 ## 프로젝트 목표와 대회 시나리오
 
 목표는 출발지·갈림길·경사로 진입점·정상 같은 대표점을 방문하고, 등판 진행이 부족하면 후퇴해 다른 경로로 임무를 이어가는 로버를 준비하는 것이다.
@@ -22,6 +24,7 @@ D435와 Raspberry Pi로 현장 영상을 수집하고, 노트북에서 ORB-SLAM3
 | 경로 검사 | 관측 여부·벽·단차·로버 여유 반경·경사 검사. 일반 경로와 시험 경로의 경사 제한 분리 |
 | 임무 판단 | 대표점 방문, 등판 진행 부족 판정, 실제 주행 경로 후퇴, 대체 상행, 정상·복귀 결과 관리 |
 | 실행 준비 | 정렬된 pose JSONL 입력, 추적 손실·stale·좌표 점프 시 정지 요청, 합성 재생과 결과 로그 |
+| 위치 추정(시뮬) | ORB stereo + IMU + 엔코더 ESKF(IMU 공백 방어, map 재닻, 렌더 지연 보상)와 서버 닫힌 루프 주행. **벽 보정은 포함하지 않는다** |
 | 남은 실기 통합 | live ORB→STL 지도 좌표 정렬·입력 adapter, 실제 구동기 연결과 독립 정지/watchdog, 기체별 설정·현장 검증 |
 
 현재 임무 실행기는 속도 요청을 **파일로 기록하며 실제 모터에는 송신하지 않는다.** 진행 부족 판정은 pose 변화에 기반하고 바퀴별 slip 실측은 아니다. 합성 재생은 평면 운동학과 주입한 정체를 사용하므로 실제 경사·모래·토크 성능을 검증하지 않는다. 실기 제어 연결은 시뮬레이션/fake 통신 검증 후 저속 실기로 확인한다.
@@ -35,6 +38,7 @@ D435와 Raspberry Pi로 현장 영상을 수집하고, 노트북에서 ORB-SLAM3
 | RGB·전역 재구성·중력·crop·출발점·병합 | **[기준 지도 워크플로](docs/experiments/reference-map-workflow.md)** |
 | 팀원 STL 이후 대표점·세 경로·우회·복귀 준비 | **[STL 임무 도구](docs/experiments/site-mission.md)** |
 | 서버 Isaac 경로 추종·costmap 기록·실시간 관찰 | **[서버 대회 임무 시뮬레이션](docs/experiments/server-site-mission.md)** |
+| 시뮬 VO+IMU 추정과 닫힌 루프 주행 | **[시뮬 VIO와 닫힌 루프](docs/experiments/2026-10-18-sim-vio-closed-loop.md)** |
 | 구현·검증 상태와 다음 작업 | [통합 인수인계서](docs/handoff/d435-rover-mapping-handoff.md) |
 | 새 담당자/팀원 공유 | [공유·기여 안내](docs/sharing.md) |
 | 제외된 원본/실행 자산 | [데이터·runtime 안내](docs/data-assets.md) |
@@ -86,7 +90,8 @@ Pi: D435 IR좌/우 + depth 640×480, 요청15FPS, projector OFF
 |---|---|
 | `experiments/handheld_mapping` | Qt·수집/전송·live/offline ORB·TSDF·지형·costmap·STL 대표점 임무 |
 | `tools` | GUI/뷰어/terrain·임무 wrapper, native runner build |
-| `experiments/site_sim` | 서버 물리 임무·costmap/경험 기록·브라우저 관찰·실행 관리 |
+| `experiments/site_sim` | 서버 물리 임무·costmap/경험 기록·브라우저 관찰·실행 관리, stereo 기록·ORB 스트리밍·VIO 오프라인 평가 |
+| `experiments/localization` | ESKF·오프라인 융합·온라인 추정기(영상+IMU+엔코더, 벽 보정 제외) |
 | `ros2_ws/src/orbslam3_ros2` | ROS adapter·headless 준비 도구·native patch |
 | `ros2_ws/src/rover_description/urdf` | 좌표/보정 preflight에 사용하는 URDF 참고본 |
 | `teleop/ksrc_snapshot` | 확인한 KSRC의 조이스틱·SPI bridge 소스 일부 |
@@ -104,7 +109,7 @@ QT_QPA_PLATFORM=offscreen PYTHONNOUSERSITE=1 OMP_NUM_THREADS=2 OPENBLAS_NUM_THRE
   .venv-mapping/bin/python -m pytest -q
 ```
 
-2026-10-14 원본 workspace의 해당 범위는 **173 passed**였다. 이 저장소는 optional native binary를 제외하므로 그 실행기 검사 1개는 빌드 전 skip될 수 있다. 실제 하드웨어를 열지 않는 fake SPI 테스트를 포함한다. 공유본의 실제 결과는 [공유본 검증](docs/share-validation.md)에 기록한다.
+2026-10-18 기준 이 저장소 전체는 **688 passed, 16 skipped**였다(2026-10-14 원본 workspace의 해당 범위는 173 passed). 이 저장소는 optional native binary를 제외하므로 그 실행기 검사 1개는 빌드 전 skip될 수 있다. 실제 하드웨어를 열지 않는 fake SPI 테스트를 포함한다. 공유본의 실제 결과는 [공유본 검증](docs/share-validation.md)에 기록한다.
 
 Python-only demo·회귀 성공은 실측 지도 정확도나 현재 Pi 전체 처리율 검증을 뜻하지 않는다. voxel 1cm/추적 성공률/초록 coverage를 정확도·통행 가능성의 보증으로 사용하지 않는다.
 

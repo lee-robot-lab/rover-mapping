@@ -44,7 +44,7 @@ class RunRecorder:
         self.normal,self.trial=geometry_costs(mission)
         shape=mission.site.observed.shape
         self.visits=np.zeros(shape,np.uint32);self.stuck=np.zeros(shape,np.uint32)
-        self.last_seen=np.full(shape,np.nan);self.last_stamp=-1.;self.last={};self.trajectory=[]
+        self.last_seen=np.full(shape,np.nan);self.last_stamp=-1.;self.last={};self.trajectory=[];self.estimated_trajectory=[]
         self.event_cursor=0;self.snapshot_count=0;self.max_snapshots=max_snapshots
         self.next_snapshot=0.;self.last_state=None;self.last_publish=-1.;self.done=False
         self.telemetry=(self.output/'telemetry.jsonl').open('w')
@@ -88,6 +88,7 @@ class RunRecorder:
             raise ValueError('finite monotonic telemetry required')
         encoded=json.dumps(row,allow_nan=False)
         self.last_stamp=stamp;self.last=row;self.trajectory.append(position[:2].tolist())
+        if 'estimated_position_m' in row:self.estimated_trajectory.append(row['estimated_position_m'][:2])
         s=self.mission.site;c=s.cells([position[:2]])[0];inside=0<=c[0]<s.observed.shape[1] and 0<=c[1]<s.observed.shape[0]
         if inside:self.visits[c[1],c[0]]+=1;self.last_seen[c[1],c[0]]=stamp
         self.telemetry.write(encoded+'\n')
@@ -110,9 +111,9 @@ class RunRecorder:
         self.last_publish=time.monotonic()
         yy,xx=np.nonzero(self.visits)
         atomic_json(self.live/'state.json',{'status':status,'reason':reason,'updated_wall_s':time.time(),
-            'simulation_only':True,'pose_source':'sim_ground_truth','recording':str(self.output),
+            'simulation_only':True,'pose_source':self.last.get('pose_source','sim_ground_truth'),'recording':str(self.output),
             'fault_injection':self.fault_injection,'fault_occurred':self.fault_occurred,
-            'snapshot_count':self.snapshot_count,'last':self.last,'trajectory':self.trajectory[-20000:],
+            'snapshot_count':self.snapshot_count,'last':self.last,'trajectory':self.trajectory[-20000:],'estimated_trajectory':self.estimated_trajectory[-20000:],
             'experience':np.c_[xx,yy,self.visits[yy,xx],self.stuck[yy,xx]].tolist(),
             'visited_cells':int((self.visits>0).sum()),'stuck_events':int(self.stuck.sum())})
 
@@ -140,7 +141,9 @@ class RunRecorder:
         ax.imshow(self.normal,origin='lower',extent=extent,cmap='magma',vmin=0,vmax=255)
         for key,p in self.mission.routes.items():ax.plot(p[:,0],p[:,1],label=key+' route')
         if self.trajectory:
-            p=np.asarray(self.trajectory);ax.plot(p[:,0],p[:,1],'c-',label='actual simulator path')
+            p=np.asarray(self.trajectory);ax.plot(p[:,0],p[:,1],'c-',label='actual simulator path (GT)')
+        if self.estimated_trajectory:
+            p=np.asarray(self.estimated_trajectory);ax.plot(p[:,0],p[:,1],'-',color='orange',label='ORB+ESKF estimate')
         ax.set(title=f'{status}: {reason}',xlabel='site X (m)',ylabel='site Y (m)',aspect='equal');ax.legend()
         fig.tight_layout();fig.savefig(self.output/'final.png',dpi=120);plt.close(fig)
         return summary

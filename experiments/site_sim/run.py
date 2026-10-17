@@ -12,6 +12,9 @@ from pathlib import Path
 import signal
 import time
 
+# 영상 장면이 붙은 timestamp보다 늦은 시뮬 렌더 지연(2026-10-17 GT 회전속도와의 시차 스캔으로 측정, 약 0.10 s).
+RENDER_LAG_S=0.1
+
 
 def validate_limits(sim_s: float, wall_s: float) -> None:
     """물리와 wall 실행 상한을 유한한 범위로 제한한다."""
@@ -29,7 +32,8 @@ def run(args: argparse.Namespace) -> dict:
     stereo_hz=float(getattr(args,'stereo_hz',0.))
     if not math.isfinite(stereo_hz) or not 0<=stereo_hz<=30:raise ValueError('stereo_hz must be in [0,30]')
     recorder=RunRecorder(mission,args.output,fault_injection=args.fault_injection)
-    stereo_writer=None;next_stereo=0.
+    stereo_writer=None;next_stereo=0.;estimator=orb=None
+    if getattr(args,'estimator',False) and stereo_hz<=0:raise ValueError('--estimator needs --stereo-hz')
     app=drive=world=None;status='failed';reason='initialization_failed';cameras={};wall_start=time.monotonic()
     def interrupted(signum,frame):raise KeyboardInterrupt(f'signal {signum}')
     previous_signal=signal.signal(signal.SIGTERM,interrupted)
@@ -112,6 +116,12 @@ def run(args: argparse.Namespace) -> dict:
                 'intrinsics_source':'configured USD pinhole camera; not real sensor calibration',
                 'capture':'both RGB annotators after the same world.step(render=True); no IMU',
                 'urdf_sha256':__import__('hashlib').sha256(Path(args.urdf).read_bytes()).hexdigest()})
+        if getattr(args,'estimator',False):
+            from experiments.localization.online import DEFAULT_NOISE
+            imu_world=_column_world_matrix(stage.GetPrimAtPath(h.frame_paths['imu_sensor_frame']))
+            base_from_imu=np.linalg.inv(base)@imu_world;base_from_cam=np.linalg.inv(base)@left
+            estimator_calibration={'ROS.T_c1_base':np.linalg.inv(base_from_cam).tolist(),
+                                   'IMU.T_b_c1':(np.linalg.inv(base_from_imu)@base_from_cam).tolist(),**DEFAULT_NOISE}
         from experiments.site_sim.visuals import install_rover_visuals
         install_rover_visuals(stage,args.urdf)
         robot=world.scene.add(Robot(prim_path=h.frame_paths['base_link'],name='rover'))
@@ -127,7 +137,16 @@ def run(args: argparse.Namespace) -> dict:
         p,q=robot.get_world_pose()
         if not np.isfinite(np.r_[p,q]).all() or np.linalg.norm(p[:2]-mission.start[:2])>.1 or not ground+.08<p[2]<ground+.35:
             raise ValueError(f'rover settling failed: {p}')
-        drive=SimulationDrive(robot,session,mission,fault_injection=args.fault_injection,hold_s=args.start_hold_s)
+        if getattr(args,'estimator',False):
+            from experiments.localization.online import OnlineEstimator
+            from experiments.site_sim.orb_client import OrbClient
+            from scipy.spatial.transform import Rotation
+            start_rotation=Rotation.from_quat([q[1],q[2],q[3],q[0]]).as_matrix()
+            start_pose=np.eye(4);start_pose[:3,:3]=start_rotation;start_pose[:3,3]=p
+            estimator=OnlineEstimator(start_pose,estimator_calibration,lag_s=RENDER_LAG_S)
+            orb=OrbClient(Path(args.orb_io))
+            print('SITE_SIM_ESTIMATOR ready (control uses ORB+ESKF estimate; GT is logged only)',flush=True)
+        drive=SimulationDrive(robot,session,mission,fault_injection=args.fault_injection,hold_s=args.start_hold_s,estimator=estimator)
         t0=float(world.current_time);next_control=0.;next_render=0.;next_front=0.;last_camera_error=None
         print('SITE_SIM_READY',json.dumps({'pose':p.tolist(),'output':str(args.output)}),flush=True)
         atomic_json(Path(args.output)/'ready.json',{'position_m':p.tolist(),'wall_s':time.monotonic()-wall_start})
@@ -148,6 +167,9 @@ def run(args: argparse.Namespace) -> dict:
             stereo_due=stereo_writer is not None and sim_s+1e-9>=next_stereo
             render_due=stereo_due or time.monotonic()>=next_render
             world.step(render=render_due)
+            if estimator is not None:
+                gp,gq=robot.get_world_pose()
+                estimator.on_step(float(world.current_time)-t0,gp,gq)
             if render_due:
                 next_render=time.monotonic()+.2
                 # Chase view from above and behind so the small rover stays visible inside the walls.
@@ -176,6 +198,10 @@ def run(args: argparse.Namespace) -> dict:
                     stamp_ns=round((float(world.current_time)-t0)*1e9)
                     stereo_writer.write(stamp_ns,left[:,:,:3],right[:,:,:3],rp.tolist(),rq.tolist())
                     next_stereo+=1./stereo_hz
+                    if orb is not None:
+                        names=(Path(args.output)/'stereo/mav0/cam0/data'/f'{stamp_ns}.png',Path(args.output)/'stereo/mav0/cam1/data'/f'{stamp_ns}.png')
+                        result=orb.track(stamp_ns,*names)
+                        estimator.on_frame(stamp_ns*1e-9,result['state'],result['map_id'],result['world_from_camera'])
                 recorder.publish()
     except KeyboardInterrupt as error:status='interrupted';reason=str(error)
     except Exception as error:
@@ -209,6 +235,8 @@ def main() -> None:
     parser.add_argument('--save-front-s',type=float,default=0.)
     parser.add_argument('--stereo-hz',type=float,default=0.)
     parser.add_argument('--start-hold-s',type=float,default=0.)
+    parser.add_argument('--estimator',action='store_true')
+    parser.add_argument('--orb-io',type=Path,default=Path('/workspace/orbio'))
     parser.add_argument('--fault-injection',action='store_true');args=parser.parse_args();code=1
     try:
         summary=run(args);code=0 if summary['status']=='complete' else 2
