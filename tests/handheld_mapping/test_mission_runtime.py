@@ -181,6 +181,31 @@ def test_slip_slowdown_does_not_count_as_stuck_ascent():
     mission=mission_fixture();safety=SensorSafety();run=MissionRuntime(mission,safety=safety)
     window=mission.settings['stuck_window_s']
     for k in range(int(window*1.6/.1)):
-        t=k*.1;safety.observe_slip(.5)
-        out=run.update(sample(mission,t,tracking_quality='good'),t)
+        t=k*.1;safety.observe_slip(.5,t)
+        out=run.update(sample(mission,t,tracking_quality='good',yaw_rad=np.pi/2),t)
     assert run.state=='to_junction' and out['sensor_safety']['scale']==.3
+
+
+def test_stuck_is_detected_even_when_slowdown_pushes_command_below_ten_mm_per_s():
+    from experiments.handheld_mapping.mission_runtime import MissionRuntime
+    from experiments.handheld_mapping.sensor_safety import SensorSafety
+    mission=mission_fixture();mission.settings['max_speed_m_s']=.03   # ×0.3 → 0.009 m/s
+    safety=SensorSafety();run=MissionRuntime(mission,safety=safety)
+    for k in range(int(40/.1)):
+        t=k*.1;safety.observe_slip(.5,t)
+        out=run.update(sample(mission,t,yaw_rad=np.pi/2),t)
+        if run.state=='failed':break
+    assert run.state=='failed' and 'no_progress' in out['reason']
+
+
+def test_steering_segment_to_the_carrot_is_safety_checked(monkeypatch):
+    from experiments.handheld_mapping.mission_runtime import MissionRuntime
+    mission=mission_fixture();run=MissionRuntime(mission);second=MissionRuntime(mission);real=mission.site.validate_path;calls=[]
+    def spy(points,limit,slack=0.):
+        calls.append(np.linalg.norm(np.asarray(points[-1])-np.asarray(points[0])));return real(points,limit,slack)
+    monkeypatch.setattr(mission.site,'validate_path',spy)
+    run.update(sample(mission,0.),0.);run.update(sample(mission,.1),.1)
+    assert max(calls)>=.15      # 바로 앞 점(≈5 cm)이 아니라 20 cm 앞 당근까지 검사
+    monkeypatch.setattr(mission.site,'validate_path',lambda points,limit,slack=0.:{'accepted':np.linalg.norm(np.asarray(points[-1])-np.asarray(points[0]))<.12})
+    second.update(sample(mission,0.),0.)
+    assert second.update(sample(mission,.1),.1)['reason']=='unsafe_local_segment'

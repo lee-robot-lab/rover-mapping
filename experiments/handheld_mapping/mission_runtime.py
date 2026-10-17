@@ -99,8 +99,8 @@ class MissionRuntime:
         self.last_stamp=stamp
         if self.safety is not None:
             if 'imu_stamp_s' in sample:self.observe_imu(sample['imu_stamp_s'],now,sample.get('imu_valid',True))
-            if 'filter_status' in sample:self.safety.observe_filter(sample['filter_status'])
-            if 'slip_ratio' in sample:self.safety.observe_slip(sample['slip_ratio'])
+            if 'filter_status' in sample:self.safety.observe_filter(sample['filter_status'],stamp)
+            if 'slip_ratio' in sample:self.safety.observe_slip(sample['slip_ratio'],stamp)
             self.safety.observe_pose(stamp,now,sample.get('tracking_valid'),sample.get('tracking_quality','good'))
             self.safety_status=self.safety.status(now)
             if self.safety_status['mode']=='stop':return self._pause(self.safety_status['reason'])
@@ -139,16 +139,16 @@ class MissionRuntime:
                 if self.mission.site.validate_path(descent,normal)['accepted']:
                     handoff_safe=self.mission.site.validate_path(np.vstack((position,descent)),normal)['accepted']
             if handoff_safe:return self._arrived(position,stamp)
-        # 곡선 안쪽을 지나 점 허용 반경을 못 맞춰도 진행 점은 앞쪽 가장 가까운 점까지 나아간다.
-        window=self.points[self.index:self.index+8]
+        # 곡선 안쪽을 지나 점 허용 반경을 못 맞춰도 진행 점은 앞쪽 가장 가까운 점까지 나아간다(한 번에 최대 4점=0.2 m).
+        window=self.points[self.index:self.index+5]
         self.index+=int(np.argmin(np.linalg.norm(window-position,axis=1)))
         while self.index<len(self.points)-1 and np.linalg.norm(position-self.points[self.index])<=self.settings['arrival_tolerance_m']:
             self.index+=1
         progress=float(self.arcs[self.index])
         if self.paused or progress-self.window_progress>=self.settings['min_progress_m']:
             self.window_progress=progress;self.effort=0.
-        elif abs(self.command['vx_m_s'])>.01:
-            # 감속 중에는 진행이 느린 것이 정상이므로 stuck 시간도 감속 배율만큼 늘려 센다.
+        elif abs(self.command['vx_m_s'])>.01*(1. if self.safety_status is None else self.safety_status['scale']):
+            # 감속 중에는 진행이 느린 것이 정상이므로 stuck 시간과 최소 지령 기준을 모두 감속 배율만큼 낮춰 센다.
             self.effort+=dt*(1. if self.safety_status is None else self.safety_status['scale'])
         budget=(self.settings['max_attempt_s'] if self.state=='ascending' else
                 max(self.settings['max_attempt_s'],self.arcs[-1]/self.settings['max_speed_m_s']*4))
@@ -159,15 +159,15 @@ class MissionRuntime:
         target=self.points[self.index]
         limit=self.settings['trial_slope_deg' if self.route=='30' and self.state in ('ascending','trial_entry','retreating')
                             else 'normal_slope_deg']
-        if not self.mission.site.validate_path([position,target],limit,self.settings['arrival_tolerance_m'])['accepted']:
-            return self._pause('unsafe_local_segment')
-        # 안전 검사는 바로 앞 점으로, 조향은 경로 위 lookahead 당근 점으로 한다.
-        carrot=self.carrot.target(self.index,self.settings.get('carrot_lookahead_m',.2))
+        carrot=self.carrot.target(self.index,self.settings['carrot_lookahead_m'])
+        for end in (target,carrot):   # 바로 앞 점과 실제 조향 목표인 당근 점까지 모두 안전해야 한다.
+            if not self.mission.site.validate_path([position,end],limit,self.settings['arrival_tolerance_m'])['accepted']:
+                return self._pause('unsafe_local_segment')
         heading=math.atan2(carrot[1]-position[1],carrot[0]-position[0])+(math.pi if reverse else 0.)
         error=angle_wrap(heading-yaw)
         yaw_rate=float(np.clip(error*2.,-self.settings['max_yaw_rate_rad_s'],self.settings['max_yaw_rate_rad_s']))
         speed=self.settings['max_speed_m_s']*max(0.,math.cos(error)) if abs(error)<1. else 0.
-        speed*=self.carrot.speed_factor(self.index,self.settings.get('carrot_brake_m',.3),self.settings.get('carrot_min_speed_factor',.35))
+        speed*=self.carrot.speed_factor(self.index,self.settings['carrot_brake_m'],self.settings['carrot_min_speed_factor'])
         scale=1. if self.safety_status is None else self.safety_status['scale']
         return self._output(command={'vx_m_s':float((-speed if reverse else speed)*scale),'yaw_rate_rad_s':yaw_rate*scale})
 

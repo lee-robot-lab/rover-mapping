@@ -18,7 +18,7 @@ from experiments.handheld_mapping.storage import atomic_json
 DEFAULT_SETTINGS={'normal_slope_deg':20.,'trial_slope_deg':35.,'arrival_tolerance_m':.12,
                   'max_speed_m_s':.15,'max_yaw_rate_rad_s':.6,'pose_max_age_s':.5,
                   'stuck_window_s':3.,'min_progress_m':.04,'max_attempt_s':60.,
-                  'max_pose_jump_m':.5}
+                  'max_pose_jump_m':.5,'carrot_lookahead_m':.2,'carrot_brake_m':.3,'carrot_min_speed_factor':.35}
 
 
 def dense_path(points: np.ndarray, spacing: float=.05) -> np.ndarray:
