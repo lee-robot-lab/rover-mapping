@@ -50,3 +50,10 @@ def test_recording_rejects_nonmonotonic_or_nonfinite_pose(mission,tmp_path):
     row=packet(2.);row['position_m'][0]=float('nan')
     with pytest.raises(ValueError):r.observe(row,[])
     r.finalize('failed','invalid_input')
+
+
+def test_live_experience_exposes_only_observed_cells(mission,tmp_path):
+    from experiments.site_sim.recording import RunRecorder
+    r=RunRecorder(mission,tmp_path/'run');r.observe(packet(0.),[]);r.finalize('timeout','limit')
+    live=json.loads((tmp_path/'run/live/state.json').read_text())
+    assert live['experience']==[[10,15,1,0]]

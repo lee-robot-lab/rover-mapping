@@ -99,9 +99,11 @@ class RunRecorder:
     def publish(self, *, status: str='running', reason: str='') -> None:
         """viewer에 전달할 최신 상태를 physics API와 독립적인 파일로 공개한다."""
         self.last_publish=time.monotonic()
+        yy,xx=np.nonzero(self.visits)
         atomic_json(self.live/'state.json',{'status':status,'reason':reason,'updated_wall_s':time.time(),
             'simulation_only':True,'pose_source':'sim_ground_truth','recording':str(self.output),
             'snapshot_count':self.snapshot_count,'last':self.last,'trajectory':self.trajectory[-20000:],
+            'experience':np.c_[xx,yy,self.visits[yy,xx],self.stuck[yy,xx]].tolist(),
             'visited_cells':int((self.visits>0).sum()),'stuck_events':int(self.stuck.sum())})
 
     def finalize(self, status: str, reason: str) -> dict:
