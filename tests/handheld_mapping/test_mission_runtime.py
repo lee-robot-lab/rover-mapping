@@ -172,3 +172,15 @@ def test_follower_does_not_weave_on_grid_quantised_path_with_lagged_pose():
     commands=np.array(commands)
     assert out['state']!='to_junction',out['reason']
     assert max(abs(y-.51) for _,y in trace)<=.04 and trace[-1][0]<=40.
+
+
+def test_slip_slowdown_does_not_count_as_stuck_ascent():
+    """감속(×0.3)으로 진행이 느려져도 stuck_window를 감속 배율만큼 늘려 센다."""
+    from experiments.handheld_mapping.mission_runtime import MissionRuntime
+    from experiments.handheld_mapping.sensor_safety import SensorSafety
+    mission=mission_fixture();safety=SensorSafety();run=MissionRuntime(mission,safety=safety)
+    window=mission.settings['stuck_window_s']
+    for k in range(int(window*1.6/.1)):
+        t=k*.1;safety.observe_slip(.5)
+        out=run.update(sample(mission,t,tracking_quality='good'),t)
+    assert run.state=='to_junction' and out['sensor_safety']['scale']==.3

@@ -99,6 +99,8 @@ class MissionRuntime:
         self.last_stamp=stamp
         if self.safety is not None:
             if 'imu_stamp_s' in sample:self.observe_imu(sample['imu_stamp_s'],now,sample.get('imu_valid',True))
+            if 'filter_status' in sample:self.safety.observe_filter(sample['filter_status'])
+            if 'slip_ratio' in sample:self.safety.observe_slip(sample['slip_ratio'])
             self.safety.observe_pose(stamp,now,sample.get('tracking_valid'),sample.get('tracking_quality','good'))
             self.safety_status=self.safety.status(now)
             if self.safety_status['mode']=='stop':return self._pause(self.safety_status['reason'])
@@ -146,7 +148,8 @@ class MissionRuntime:
         if self.paused or progress-self.window_progress>=self.settings['min_progress_m']:
             self.window_progress=progress;self.effort=0.
         elif abs(self.command['vx_m_s'])>.01:
-            self.effort+=dt
+            # 감속 중에는 진행이 느린 것이 정상이므로 stuck 시간도 감속 배율만큼 늘려 센다.
+            self.effort+=dt*(1. if self.safety_status is None else self.safety_status['scale'])
         budget=(self.settings['max_attempt_s'] if self.state=='ascending' else
                 max(self.settings['max_attempt_s'],self.arcs[-1]/self.settings['max_speed_m_s']*4))
         if self.effort>=self.settings['stuck_window_s'] or self.phase_elapsed>budget:

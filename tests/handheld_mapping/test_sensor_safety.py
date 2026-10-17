@@ -127,3 +127,27 @@ def test_new_imu_after_gap_does_not_reenable_motion_immediately():
 def test_optional_imu_fault_does_not_block_visual_only_mode():
     s=SensorSafety();ready(s);s.observe_imu(float('nan'),.55)
     assert s.status(.55)['mode']=='normal'
+
+
+def test_filter_imu_gap_stops_and_recovering_slows():
+    s=SensorSafety();ready(s)
+    s.observe_filter('imu_gap');out=observe(s,.6)
+    assert out['mode']=='stop' and out['reason']=='filter_imu_gap'
+    s.observe_filter('recovering')
+    for t in (.7,.8,.9,1.,1.1,1.2):out=observe(s,t)
+    assert out['mode']=='slow' and out['reason']=='filter_recovering' and out['scale']==.3
+    s.observe_filter('ok');assert observe(s,1.3)['mode']=='normal'
+
+
+@pytest.mark.parametrize('ratio,scale',[(1.,1.),(.85,1.),(.79,.5),(.59,.3)])
+def test_slip_ratio_scales_speed(ratio,scale):
+    s=SensorSafety();ready(s);s.observe_slip(ratio)
+    out=observe(s,.6);assert out['scale']==scale
+    assert out['reason']==('sensors_ok' if scale==1. else 'slip')
+
+
+def test_slip_release_needs_margin_and_slowest_limit_wins():
+    s=SensorSafety();ready(s);s.observe_slip(.79);assert observe(s,.6)['scale']==.5
+    s.observe_slip(.82);assert observe(s,.7)['scale']==.5     # 0.8 바로 위는 아직 해제하지 않는다
+    s.observe_slip(.86);assert observe(s,.8)['scale']==1.
+    s.observe_slip(.79);assert observe(s,.9,'degraded')['scale']==.3   # 추정 품질 감속과는 곱하지 않고 작은 값

@@ -18,6 +18,7 @@ class SensorSafety:
         self.recovery_s=recovery_s;self.slow_scale=slow_scale
         self.pose_stamp=None;self.imu_stamp=None;self.pose_fault=None;self.imu_fault=None
         self.quality='good';self.good_since=None;self.good_count=0;self.armed=False;self.last_check=None
+        self.filter_status='ok';self.slip_scale=1.
 
     def _stop(self, reason: str) -> dict:
         self.armed=False;self.good_since=None;self.good_count=0
@@ -57,6 +58,22 @@ class SensorSafety:
         self.imu_stamp=stamp;self.imu_fault=None if valid is True else 'imu_invalid'
         if self.imu_fault and self.require_imu:self._stop(self.imu_fault)
 
+    def observe_filter(self, status: str) -> None:
+        """추정 필터 상태('ok'|'recovering'|'imu_gap'). 모르는 값은 가장 보수적인 'imu_gap'으로 본다."""
+        self.filter_status=status if status in ('ok','recovering','imu_gap') else 'imu_gap'
+
+    @staticmethod
+    def _slip_level(ratio: float) -> float:
+        return .3 if ratio<.6 else .5 if ratio<.8 else 1.
+
+    def observe_slip(self, ratio: float) -> None:
+        """융합 속력/엔코더 속력 비율. 느려질 때는 즉시, 해제는 임계값보다 0.05 더 올라야 한다."""
+        try:ratio=float(ratio)
+        except (TypeError,ValueError):ratio=0.
+        if not math.isfinite(ratio):ratio=0.
+        level=self._slip_level(ratio)
+        self.slip_scale=level if level<self.slip_scale else max(self.slip_scale,self._slip_level(ratio-.05))
+
     def status(self, now_s: float) -> dict:
         """새 관측이 없어도 호출한다. stale/손실은 정지, 복구는 정상 pose 3개와 안정 시간을 요구한다."""
         try:
@@ -71,6 +88,7 @@ class SensorSafety:
             if self.imu_stamp is None:return self._stop('imu_missing')
             if self.imu_fault:return self._stop(self.imu_fault)
             if now<self.imu_stamp-.02 or now-self.imu_stamp>self.imu_timeout_s+1e-9:return self._stop('imu_stale')
+        if self.filter_status=='imu_gap':return self._stop('filter_imu_gap')
         deadline=self.pose_stamp+self.pose_timeout_s
         if self.require_imu:deadline=min(deadline,self.imu_stamp+self.imu_timeout_s)
         if not self.armed:
@@ -78,6 +96,9 @@ class SensorSafety:
                     or self.pose_stamp-self.good_since<self.recovery_s-1e-9):
                 return {'mode':'stop','reason':'recovering','scale':0.,'valid_until_s':deadline}
             self.armed=True
-        degraded=self.quality=='degraded'
-        return {'mode':'slow' if degraded else 'normal','reason':'tracking_degraded' if degraded else 'sensors_ok',
-                'scale':self.slow_scale if degraded else 1.,'valid_until_s':deadline}
+        scale,reason=1.,'sensors_ok'
+        for limit,why in ((self.slow_scale if self.quality=='degraded' else 1.,'tracking_degraded'),
+                          (self.slip_scale,'slip'),
+                          (self.slow_scale if self.filter_status=='recovering' else 1.,'filter_recovering')):
+            if limit<=scale and limit<1.:scale,reason=limit,why
+        return {'mode':'normal' if scale==1. else 'slow','reason':reason,'scale':scale,'valid_until_s':deadline}

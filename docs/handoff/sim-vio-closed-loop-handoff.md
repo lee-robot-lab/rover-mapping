@@ -62,8 +62,8 @@ bash tools/run_site_sim_server.sh start L --gpu 0 --port 8773 --stereo-hz 15 --s
 ### 4.2 설계는 끝났고 구현 전인 것
 
 1. **당근 추종기(구현됨, 2026-10-18)**: `carrot_follower.py`(`CarrotPath`)와 `mission_runtime.py`에 연결. lookahead 0.2 m, 35° 이상 꼭짓점은 넘지 않고 꼭짓점·끝 0.3 m 안에서 최소 0.35배까지 감속, 진행 점은 앞쪽 가장 가까운 점으로 갱신. 임무 connector가 2.5 cm 격자 지그재그라 기존 "다음 점 추종"이 좌우로 흔들렸고(지연 0.4 s에서 junction 17.6→32 s), 꼭짓점은 현 길이 0.15 m 창으로 찾아야 지그재그가 꼭짓점으로 잡히지 않는다. lookahead 0.25 m 이상은 좁은 구간에서 안쪽을 잘라 `unsafe_observed_motion`이 났다. 처음 설계: 경로 위 lookahead 점 추종, 급한 꼭짓점에서 corner gating, 경로 끝·꼭짓점 근처 속도 조절. Nav2 없이 고정 경로 임무에 충분하다. KSRC 학생 정책은 `cmd_vel` 위의 잔차(조향 ±30°, 바퀴 이득 ±60%) 구조 B로 붙인다.
-2. **슬립 기반 감속**: 슬립 계수 <0.8이면 ×0.5, <0.6이면 ×0.3. 느려진 목표에서 로버가 더 힘을 쓰도록 하는 방식은 실기에서 확인한다.
-3. **필터 상태 → 안전 정책**: `imu_gap` → 정지, `recovering` → degraded를 `SensorSafety`/`MissionRuntime`에 연결.
+2. **슬립 기반 감속(구현됨, 연결 전)**: `SensorSafety.observe_slip`(해제는 +0.05 여유), 샘플 키 `slip_ratio`로 `MissionRuntime`이 전달, 감속 중 stuck 시간은 배율만큼 늘려 센다. 실제 값을 `drive.py`/`run.py`에서 넣는 일은 남음. 처음 설계: 슬립 계수 <0.8이면 ×0.5, <0.6이면 ×0.3. 느려진 목표에서 로버가 더 힘을 쓰도록 하는 방식은 실기에서 확인한다.
+3. **필터 상태 → 안전 정책(구현됨, 연결 전)**: `observe_filter`, 샘플 키 `filter_status`. `imu_gap`→`filter_imu_gap` 정지, `recovering`→느림. 처음 설계: `imu_gap` → 정지, `recovering` → degraded를 `SensorSafety`/`MissionRuntime`에 연결.
 4. **상황별 신뢰도 스케줄**: 평지는 VO 우세, 회전은 IMU 우세, 경사(기울기 > 약 8°, |gz| > 약 0.3, 슬립)는 영상·엔코더 신뢰 낮춤. `relative_update`의 `position_scale`/`rotation_scale` 인자까지만 있다.
 5. **경사 후 재포착**: ORB 재지역화 우선, 벽·STL 점프는 실데이터 검증과 STL 스케일 확인 뒤에만.
 
