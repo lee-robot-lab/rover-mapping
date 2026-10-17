@@ -32,7 +32,7 @@ def run(args: argparse.Namespace) -> dict:
     stereo_hz=float(getattr(args,'stereo_hz',0.))
     if not math.isfinite(stereo_hz) or not 0<=stereo_hz<=30:raise ValueError('stereo_hz must be in [0,30]')
     recorder=RunRecorder(mission,args.output,fault_injection=args.fault_injection)
-    stereo_writer=None;next_stereo=0.;estimator=orb=None
+    stereo_writer=None;next_stereo=0.;estimator=orb=None;frame_info=None
     if getattr(args,'estimator',False) and stereo_hz<=0:raise ValueError('--estimator needs --stereo-hz')
     app=drive=world=None;status='failed';reason='initialization_failed';cameras={};wall_start=time.monotonic()
     def interrupted(signum,frame):raise KeyboardInterrupt(f'signal {signum}')
@@ -155,6 +155,7 @@ def run(args: argparse.Namespace) -> dict:
             if sim_s>=args.max_sim_s or wall_s>=args.max_wall_s:status='timeout';reason='sim_or_wall_limit';break
             if sim_s+1e-9>=next_control:
                 row=drive.step(sim_s);row['wall_s']=wall_s
+                if estimator is not None:row['estimator_frame']=frame_info
                 row['mission']['camera_error']=last_camera_error
                 recorder.observe(row,drive.runtime.events);next_control+=.05
                 if sim_s>=5 and row['mission']['reason'] in ('invalid_pose','pose_jump','unsafe_observed_motion','unsafe_local_segment'):
@@ -201,7 +202,10 @@ def run(args: argparse.Namespace) -> dict:
                     if orb is not None:
                         names=(Path(args.output)/'stereo/mav0/cam0/data'/f'{stamp_ns}.png',Path(args.output)/'stereo/mav0/cam1/data'/f'{stamp_ns}.png')
                         result=orb.track(stamp_ns,*names)
-                        estimator.on_frame(stamp_ns*1e-9,result['state'],result['map_id'],result['world_from_camera'])
+                        info=estimator.on_frame(stamp_ns*1e-9,result['state'],result['map_id'],result['world_from_camera'])
+                        frame_info={'stamp_s':stamp_ns*1e-9,'orb_state':result['state'],'map_id':result['map_id'],
+                                    'keypoints':result['keypoints'],'accepted':bool(info.get('accepted')),
+                                    'reason':info.get('reason'),'nis':info.get('nis'),'residual':info.get('residual')}
                 recorder.publish()
     except KeyboardInterrupt as error:status='interrupted';reason=str(error)
     except Exception as error:
