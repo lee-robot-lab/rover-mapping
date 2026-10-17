@@ -22,6 +22,10 @@ GRAVITY = np.array([0., 0., 9.81])
 DEFAULT_NOISE = {'IMU.NoiseGyro': .00017, 'IMU.NoiseAcc': .002, 'IMU.GyroWalk': 1.9393e-05, 'IMU.AccWalk': .003}
 
 
+# 경사·회전 중 영상 관측 표준편차 배율(adaptive_visual_noise를 켰을 때만 쓴다).
+VISUAL_SCHEDULE = {'tilt_deg': 8., 'slope_scale': 2., 'turn_rate': .3, 'turn_rotation_scale': 4., 'turn_position_scale': 4.}
+
+
 class CausalImu:
     """GT pose에서 구간별 IMU를 만든다. 첫 구간 직전 속도는 정지 시작 조건에 따라 0으로 둔다(시뮬 전용)."""
 
@@ -58,9 +62,11 @@ class OnlineEstimator:
     """IMU는 lag_s만큼 늦춰 필터에 넣고(영상과 시각을 맞춤), 제어용 pose는 남은 IMU로 현재까지 외삽한다."""
 
     def __init__(self, start_world_from_base: np.ndarray, calibration: dict, lag_s: float = .1,
-                 good_s: float = 1., invalid_s: float = 4., adaptive_visual_noise: bool = False) -> None:
+                 good_s: float = 1., invalid_s: float = 4., adaptive_visual_noise: bool = False,
+                 visual_schedule: dict | None = None) -> None:
         self.lag_s, self.good_s, self.invalid_s = lag_s, good_s, invalid_s
         self.adaptive_visual_noise = adaptive_visual_noise
+        self.visual_schedule = {**VISUAL_SCHEDULE, **(visual_schedule or {})}
         self.filter_gyro = np.zeros(3)
         left = np.linalg.inv(np.asarray(calibration['ROS.T_c1_base']))
         self.cam_from_base = np.asarray(calibration['ROS.T_c1_base'])   # world_from_base(ORB 세계) = world_from_cam @ cam_from_base
@@ -120,10 +126,11 @@ class OnlineEstimator:
                     body = self.filter.pose @ self.imu_from_base
                     tilt = max(abs(Rotation.from_matrix(body[:3, :3]).as_euler('xyz')[:2]))
                     gyro = self.base_from_imu[:3, :3] @ (self.filter_gyro-self.filter.gyro_bias)
-                    if tilt > np.deg2rad(8.):
-                        position_scale = rotation_scale = 4.
-                    elif abs(gyro[2]) > .3:
-                        rotation_scale = 4.
+                    plan = self.visual_schedule
+                    if tilt > np.deg2rad(plan['tilt_deg']):
+                        position_scale = rotation_scale = plan['slope_scale']
+                    elif abs(gyro[2]) > plan['turn_rate']:
+                        rotation_scale, position_scale = plan['turn_rotation_scale'], plan['turn_position_scale']
                 info = self.filter.relative_update(np.linalg.inv(self.reference) @ measured,
                                                    position_scale=position_scale, rotation_scale=rotation_scale)
                 info.update(position_scale=position_scale, rotation_scale=rotation_scale)
