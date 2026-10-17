@@ -127,7 +127,7 @@ def run(args: argparse.Namespace) -> dict:
         p,q=robot.get_world_pose()
         if not np.isfinite(np.r_[p,q]).all() or np.linalg.norm(p[:2]-mission.start[:2])>.1 or not ground+.08<p[2]<ground+.35:
             raise ValueError(f'rover settling failed: {p}')
-        drive=SimulationDrive(robot,session,mission,fault_injection=args.fault_injection)
+        drive=SimulationDrive(robot,session,mission,fault_injection=args.fault_injection,hold_s=args.start_hold_s)
         t0=float(world.current_time);next_control=0.;next_render=0.;next_front=0.;last_camera_error=None
         print('SITE_SIM_READY',json.dumps({'pose':p.tolist(),'output':str(args.output)}),flush=True)
         atomic_json(Path(args.output)/'ready.json',{'position_m':p.tolist(),'wall_s':time.monotonic()-wall_start})
@@ -208,6 +208,7 @@ def main() -> None:
     parser.add_argument('--sand-texture',type=Path,default=None)
     parser.add_argument('--save-front-s',type=float,default=0.)
     parser.add_argument('--stereo-hz',type=float,default=0.)
+    parser.add_argument('--start-hold-s',type=float,default=0.)
     parser.add_argument('--fault-injection',action='store_true');args=parser.parse_args();code=1
     try:
         summary=run(args);code=0 if summary['status']=='complete' else 2

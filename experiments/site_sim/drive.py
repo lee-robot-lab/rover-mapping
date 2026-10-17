@@ -17,8 +17,8 @@ from experiments.orbslam3_ros2.swerve import body_twist_to_modules
 class SimulationDrive:
     """물리 pose feedback만으로 임무를 진행하고 실제 적용 명령을 따로 보존한다."""
 
-    def __init__(self, robot: Any, session: Any, mission: SiteMission, *, fault_injection: bool=False) -> None:
-        self.robot,self.session=robot,session
+    def __init__(self, robot: Any, session: Any, mission: SiteMission, *, fault_injection: bool=False, hold_s: float=0.) -> None:
+        self.robot,self.session=robot,session;self.hold_s=float(hold_s)
         self.runtime=MissionRuntime(mission);self.fault_injection=fault_injection
         self.fault_started=False;self.wall_start=time.monotonic()
 
@@ -36,6 +36,7 @@ class SimulationDrive:
                     'tracking_valid':True}
             result=self.runtime.update(sample,now_s=sim_s)
             requested=result['command'];applied=requested.copy()
+            if sim_s<self.hold_s:applied={'vx_m_s':0.,'yaw_rate_rad_s':0.}  # IMU 영점용 정지 구간
             fault=(self.fault_injection and self.runtime.state=='ascending' and self.runtime.route=='30'
                    and np.linalg.norm(position[:2]-self.runtime.mission.routes['30'][1])>=.18)
             if fault:

@@ -6,6 +6,7 @@
 # ================================================================
 
 import json
+import numpy as np
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -200,3 +201,26 @@ class LoopController:
         yaw_error = math.atan2(math.sin(yaw_rad), math.cos(yaw_rad))
         yaw_rate = max(-0.4, min(0.4, -1.5 * yaw_error))
         return BodyCommand(body_vx, body_vy, yaw_rate)
+
+
+def body_twist_from_modules(
+    geometry: SwerveGeometry,
+    steering_angles: list[float],
+    wheel_velocities: list[float],
+) -> tuple[float, float, float, float]:
+    """측정한 네 조향각·바퀴 각속도에서 최소제곱으로 (vx, vy, yaw_rate)와 잔차 RMS(m/s)를 구한다.
+
+    body_twist_to_modules의 역변환이며 인자 순서는 geometry.modules와 같다.
+    """
+    if len(steering_angles) != 4 or len(wheel_velocities) != 4:
+        raise ValueError("four steering angles and wheel velocities required")
+    rows, rhs = [], []
+    for module, angle, omega in zip(geometry.modules, steering_angles, wheel_velocities):
+        heading = module.rolling_heading_rad + module.steering_sign * angle
+        speed = omega * geometry.wheel_radius_m
+        rows += [[1., 0., -module.y_m], [0., 1., module.x_m]]
+        rhs += [speed * math.cos(heading), speed * math.sin(heading)]
+    matrix, vector = np.asarray(rows), np.asarray(rhs)
+    solution = np.linalg.lstsq(matrix, vector, rcond=None)[0]
+    residual = float(np.sqrt(np.mean((matrix @ solution - vector) ** 2)))
+    return float(solution[0]), float(solution[1]), float(solution[2]), residual

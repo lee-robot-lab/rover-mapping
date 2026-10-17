@@ -85,3 +85,27 @@ def test_new_urdf_modules_roll_in_the_commanded_body_direction(twist):
         want=np.array([vx-wz*module.y_m,vy+wz*module.x_m])
         assert np.allclose(got,want,atol=1e-9)
         assert abs(command.steering_angle_rad)<=np.pi/2+1e-9
+
+
+def test_start_hold_zeroes_applied_command_but_keeps_the_request(mission) -> None:
+    from experiments.site_sim.drive import SimulationDrive
+    robot,session=Robot(),Session();drive=SimulationDrive(robot,session,mission,hold_s=1.)
+    row=drive.step(.05)
+    assert row['applied_command']=={'vx_m_s':0.,'yaw_rate_rad_s':0.}
+    assert np.allclose(session.wheels,0.)
+    later=SimulationDrive(Robot(),Session(),mission,hold_s=0.).step(.05)
+    assert later['applied_command']==later['requested_command']
+
+
+@pytest.mark.parametrize('twist',[(.08,0.,0.),(-.08,0.,0.),(0.,0.,.4),(.05,.02,-.3),(.1,0.,.5)])
+def test_wheel_encoders_recover_the_commanded_body_twist(twist) -> None:
+    from xml.etree import ElementTree as ET
+    from experiments.orbslam3_ros2.swerve import body_twist_from_modules,body_twist_to_modules
+    from experiments.site_sim.rover_assets import SOURCE_URDF,swerve_geometry
+    data=swerve_geometry(ET.parse(SOURCE_URDF).getroot(),.0475)
+    geometry=SwerveGeometry(tuple(ModuleGeometry(m['name'],m['steering_joint'],m['wheel_joint'],
+        *m['steering_pivot_base_link_m'][:2],m['steering_sign'],m['rolling_heading_at_zero_rad']) for m in data['modules']),.0475)
+    modules=body_twist_to_modules(geometry,vx=twist[0],vy=twist[1],yaw_rate=twist[2])
+    vx,vy,wz,residual=body_twist_from_modules(geometry,[m.steering_angle_rad for m in modules],
+                                              [m.wheel_angular_velocity_rad_s for m in modules])
+    assert (vx,vy,wz)==pytest.approx(twist,abs=1e-9) and residual<1e-9

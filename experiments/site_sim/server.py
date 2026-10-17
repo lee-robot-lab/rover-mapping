@@ -46,7 +46,7 @@ def upload(label: str, mission: Path, assets: Path, texture: Path | None=None) -
     hashes={};run=f'{ROOT}/{label}'
     with tempfile.TemporaryFile() as archive:
         with tarfile.open(fileobj=archive,mode='w:gz') as tar:
-            for package in ('handheld_mapping','site_sim','orbslam3_ros2','orbslam3_offline'):
+            for package in ('handheld_mapping','site_sim','orbslam3_ros2','orbslam3_offline','localization'):
                 for path in sorted((REPO/'experiments'/package).rglob('*')):
                     if path.suffix not in ('.py','.html') or '__pycache__' in path.parts:continue
                     relative=str(path.relative_to(REPO));tar.add(path,arcname=relative)
@@ -66,7 +66,7 @@ def upload(label: str, mission: Path, assets: Path, texture: Path | None=None) -
     print('uploaded:',run)
 
 
-def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1, save_front_s: float=0., stereo_hz: float=0.) -> None:
+def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1, save_front_s: float=0., stereo_hz: float=0., start_hold_s: float=0.) -> None:
     """지정한 유휴 GPU에서만 새 물리 run과 독립 loopback viewer를 시작한다."""
     from experiments.site_sim.run import validate_limits
     validate_limits(sim,wall)
@@ -87,6 +87,7 @@ def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=
     if fault:args.append('--fault-injection')
     if save_front_s>0:args+=['--save-front-s',str(save_front_s)]
     if stereo_hz>0:args+=['--stereo-hz',str(stereo_hz)]
+    if start_hold_s>0:args+=['--start-hold-s',str(start_hold_s)]
     if remote(f'test -f {shlex.quote(run+"/rover/sand_texture.jpg")} && echo yes || echo no',capture=True).stdout.strip()=='yes':
         args+=['--sand-texture','/workspace/rover/sand_texture.jpg']
     # Match the installed python.sh environment but exec Python as PID1 for SIGTERM/finally.
@@ -130,7 +131,7 @@ def tunnel(label: str, local_port: int) -> None:
         except ValueError:record=None
         if isinstance(record,dict) and process_identity(record['pid'])==record:raise RuntimeError('tunnel already running')
     log=(directory/f'{label}.log').open('ab')
-    command=['ssh','-o','BatchMode=yes','-o','ExitOnForwardFailure=yes','-o','ServerAliveInterval=15','-N',
+    command=['ssh','-o','BatchMode=yes','-o','ExitOnForwardFailure=yes','-o','ServerAliveInterval=15','-o','ServerAliveCountMax=40','-N',
         '-L',f'127.0.0.1:{local_port}:127.0.0.1:{int(launch["observer_port"])}','hpi-lab']
     process=subprocess.Popen(command,stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
     pidfile.write_text(json.dumps(process_identity(process.pid)));log.close()
@@ -182,6 +183,7 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--texture',type=Path,default=None)
     parser.add_argument('--save-front-s',type=float,default=0.)
     parser.add_argument('--stereo-hz',type=float,default=0.)
+    parser.add_argument('--start-hold-s',type=float,default=0.)
     args=parser.parse_args(argv)
     try:
         if not re.fullmatch('[A-Za-z0-9_-]+',args.label):raise ValueError('invalid label')
@@ -189,7 +191,7 @@ def main(argv: list[str] | None=None) -> int:
         if args.action=='upload':
             if not args.path:raise ValueError('mission folder required')
             upload(args.label,Path(args.path).resolve(),args.assets,args.texture)
-        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu,args.save_front_s,args.stereo_hz)
+        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu,args.save_front_s,args.stereo_hz,args.start_hold_s)
         elif args.action=='status':status(args.label)
         elif args.action=='tunnel':tunnel(args.label,int(args.path or args.port))
         else:stop(args.label)
