@@ -15,6 +15,7 @@ import numpy as np
 from experiments.handheld_mapping.site_mission import SiteMission, dense_path
 from experiments.handheld_mapping.storage import atomic_json
 from experiments.handheld_mapping.sensor_safety import SensorSafety
+from experiments.handheld_mapping.carrot_follower import CarrotPath
 
 
 def angle_wrap(value: float) -> float:
@@ -41,7 +42,7 @@ class MissionRuntime:
         self._set_path(mission.connector())
 
     def _set_path(self, points: np.ndarray) -> None:
-        self.points=dense_path(points);self.index=0
+        self.points=dense_path(points);self.index=0;self.carrot=CarrotPath(self.points)
         self.arcs=np.r_[0.,np.cumsum(np.linalg.norm(np.diff(self.points,axis=0),axis=1))]
         self.phase_elapsed=self.effort=self.window_progress=0.
 
@@ -136,6 +137,9 @@ class MissionRuntime:
                 if self.mission.site.validate_path(descent,normal)['accepted']:
                     handoff_safe=self.mission.site.validate_path(np.vstack((position,descent)),normal)['accepted']
             if handoff_safe:return self._arrived(position,stamp)
+        # 곡선 안쪽을 지나 점 허용 반경을 못 맞춰도 진행 점은 앞쪽 가장 가까운 점까지 나아간다.
+        window=self.points[self.index:self.index+8]
+        self.index+=int(np.argmin(np.linalg.norm(window-position,axis=1)))
         while self.index<len(self.points)-1 and np.linalg.norm(position-self.points[self.index])<=self.settings['arrival_tolerance_m']:
             self.index+=1
         progress=float(self.arcs[self.index])
@@ -154,10 +158,13 @@ class MissionRuntime:
                             else 'normal_slope_deg']
         if not self.mission.site.validate_path([position,target],limit,self.settings['arrival_tolerance_m'])['accepted']:
             return self._pause('unsafe_local_segment')
-        heading=math.atan2(target[1]-position[1],target[0]-position[0])+(math.pi if reverse else 0.)
+        # 안전 검사는 바로 앞 점으로, 조향은 경로 위 lookahead 당근 점으로 한다.
+        carrot=self.carrot.target(self.index,self.settings.get('carrot_lookahead_m',.2))
+        heading=math.atan2(carrot[1]-position[1],carrot[0]-position[0])+(math.pi if reverse else 0.)
         error=angle_wrap(heading-yaw)
         yaw_rate=float(np.clip(error*2.,-self.settings['max_yaw_rate_rad_s'],self.settings['max_yaw_rate_rad_s']))
         speed=self.settings['max_speed_m_s']*max(0.,math.cos(error)) if abs(error)<1. else 0.
+        speed*=self.carrot.speed_factor(self.index,self.settings.get('carrot_brake_m',.3),self.settings.get('carrot_min_speed_factor',.35))
         scale=1. if self.safety_status is None else self.safety_status['scale']
         return self._output(command={'vx_m_s':float((-speed if reverse else speed)*scale),'yaw_rate_rad_s':yaw_rate*scale})
 

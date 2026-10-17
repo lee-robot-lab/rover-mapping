@@ -153,3 +153,22 @@ def test_descent_finishes_at_start_without_revisiting_junction():
 def test_descent_preserves_junction_return_when_start_is_not_on_route():
     mission=mission_fixture()
     assert np.array_equal(mission.descent_path(),mission.path('10','down'))
+
+
+def test_follower_does_not_weave_on_grid_quantised_path_with_lagged_pose():
+    """2 cm 지그재그 경로와 0.4 s 늦은 pose·1차 지연 조향에서도 경로에서 4 cm 넘게 벗어나지 않고 끝점에 닿는다."""
+    import math
+    from experiments.handheld_mapping.mission_runtime import MissionRuntime
+    mission=mission_fixture();run=MissionRuntime(mission)
+    xs=np.arange(.5,3.0,.025);run._set_path(np.c_[xs,.5+np.where(np.arange(len(xs))%2==0,0.,.02)])
+    dt,x,yaw,w,hist,commands,trace=.05,np.array(mission.start[:2],float),0.,0.,[],[],[]
+    for k in range(1600):
+        t=k*dt;hist.append((x.copy(),yaw));px,pyaw=hist[max(0,len(hist)-9)]
+        out=run.update({'stamp_s':t,'frame':'site','site_identity':mission.site.identity,
+                        'position_m':px.tolist(),'yaw_rad':pyaw,'tracking_valid':True},t)
+        if out['state']!='to_junction':break
+        c=out['command'];w+=(c['yaw_rate_rad_s']-w)*dt/(.5+dt);yaw+=w*dt
+        x=x+c['vx_m_s']*dt*np.array([math.cos(yaw),math.sin(yaw)]);commands.append(c['yaw_rate_rad_s']);trace.append((t,x[1]))
+    commands=np.array(commands)
+    assert out['state']!='to_junction',out['reason']
+    assert max(abs(y-.51) for _,y in trace)<=.04 and trace[-1][0]<=40.
