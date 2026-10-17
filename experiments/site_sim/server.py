@@ -34,6 +34,19 @@ def remote(command: str, *, capture: bool=False, stdin=None) -> subprocess.Compl
     return subprocess.run([*SSH,command],check=True,text=True,capture_output=capture,stdin=stdin)
 
 
+SIM_ORB_SETTINGS={'ORBextractor.nFeatures':2000,'ORBextractor.iniThFAST':12,'ORBextractor.minThFAST':3}
+
+
+def sim_orb_yaml(text: str) -> str:
+    """시뮬 모래 텍스처의 저대비 구간(경사)에서 추적을 덜 잃도록 특징점 수와 FAST 임계값만 바꾼다. 실기 설정에는 쓰지 않는다."""
+    lines=text.splitlines();seen=set()
+    for index,line in enumerate(lines):
+        key=line.split(':',1)[0].strip()
+        if key in SIM_ORB_SETTINGS:lines[index]=f'{key}: {SIM_ORB_SETTINGS[key]}';seen.add(key)
+    if seen!=SIM_ORB_SETTINGS.keys():raise ValueError('ORB yaml lacks '+', '.join(sorted(SIM_ORB_SETTINGS.keys()-seen)))
+    return '\n'.join(lines)+'\n'
+
+
 def upload(label: str, mission: Path, assets: Path, texture: Path | None=None) -> None:
     """필요한 소스와 asset만 새 run에 기록하고 hash manifest를 동봉한다."""
     if not (mission/'mission.json').is_file():raise ValueError('valid mission bundle required')
@@ -55,7 +68,10 @@ def upload(label: str, mission: Path, assets: Path, texture: Path | None=None) -
                     hashes[relative]=hashlib.sha256(path.read_bytes()).hexdigest()
             tar.add(mission,arcname='mission')
             tar.add(urdf,arcname='rover/rover_portable.urdf');tar.add(geometry,arcname='rover/swerve_geometry.json')
-            if (assets/'orb_stereo.yaml').is_file():tar.add(assets/'orb_stereo.yaml',arcname='rover/orb.yaml')
+            if (assets/'orb_stereo.yaml').is_file():
+                tuned=sim_orb_yaml((assets/'orb_stereo.yaml').read_text()).encode()
+                info=tarfile.TarInfo('rover/orb.yaml');info.size=len(tuned);tar.addfile(info,io.BytesIO(tuned))
+                hashes['rover/orb.yaml']=hashlib.sha256(tuned).hexdigest()
             if texture is not None:
                 if not texture.is_file():raise ValueError('sand texture file not found')
                 tar.add(texture,arcname='rover/sand_texture.jpg');hashes['rover/sand_texture.jpg']=hashlib.sha256(texture.read_bytes()).hexdigest()
