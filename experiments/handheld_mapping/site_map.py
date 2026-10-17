@@ -13,11 +13,13 @@ from pathlib import Path
 import subprocess
 
 import numpy as np
-import open3d as o3d
+from typing import TYPE_CHECKING
 from scipy.ndimage import distance_transform_edt
 
-from experiments.handheld_mapping.reference import manual_gravity
 from experiments.handheld_mapping.storage import atomic_json
+
+if TYPE_CHECKING:
+    import open3d as o3d
 
 
 def file_hash(path: Path) -> str:
@@ -36,6 +38,7 @@ class SiteMap:
                   up: list[float] | None=None, resolution: float=.05,
                   robot_radius: float=.15, max_step_m: float=.06,
                   source: Path | None=None, surface_mode: str='conservative') -> SiteMap:
+        from experiments.handheld_mapping.reference import manual_gravity
         if units not in ('m','mm') or not all(math.isfinite(v) for v in (resolution,robot_radius,max_step_m)):
             raise ValueError('invalid units or grid parameters')
         if not .005<=resolution<=.5 or robot_radius<0 or max_step_m<=0:
@@ -61,13 +64,13 @@ class SiteMap:
         self.frame='site'
         self.source=Path(source).resolve() if source is not None else None
         source_hash=file_hash(self.source) if self.source is not None else geometry_hash
-        self.metadata={'schema_version':1,'grid_revision':2,'frame':self.frame,'units':'m','source_units':units,
+        self.metadata={'schema_version':1,'grid_revision':3,'frame':self.frame,'units':'m','source_units':units,
                        'source_path':str(self.source) if self.source else None,'source_sha256':source_hash,
                        'source_geometry_sha256':geometry_hash,'scale_to_m':scale,
                        'T_site_source_axes':matrix.tolist(),'origin':origin.tolist(),
                        'resolution':self.resolution,'robot_radius':self.robot_radius,'max_step_m':self.max_step_m,
                        'shape':[int(rows),int(cols)],'accuracy_verified':False,'surface_mode':surface_mode,
-                       'grid_method':'vertical surface; up to 16 lower hits; unresolved/multiple layers unknown; steep walls blocked',
+                       'grid_method':'vertical surface; up to 16 lower hits; multiple layers unknown; exposed steep walls blocked',
                        'limitation':'2.5D; thick closed solids or overlapping floors can remain unknown'}
         self.identity=hashlib.sha256(json.dumps(self.metadata,sort_keys=True).encode()).hexdigest()
         self._rasterize(int(rows),int(cols))
@@ -76,6 +79,7 @@ class SiteMap:
         return self
 
     def _rasterize(self, rows: int, cols: int) -> None:
+        import open3d as o3d
         scene=o3d.t.geometry.RaycastingScene()
         scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(self.mesh))
         vertices=np.asarray(self.mesh.vertices)
@@ -123,13 +127,18 @@ class SiteMap:
         steep=np.abs(normals[:,2])<.35
         budget=0
         for triangle in np.asarray(self.mesh.triangles)[steep]:
-            xy=vertices[triangle,:2]
-            for a,b in zip(xy,np.roll(xy,-1,axis=0)):
-                count=max(2,int(np.ceil(np.linalg.norm(b-a)/self.resolution*2))+1)
+            xyz=vertices[triangle]
+            for a,b in zip(xyz,np.roll(xyz,-1,axis=0)):
+                count=max(2,int(np.ceil(np.linalg.norm(b[:2]-a[:2])/self.resolution*2))+1)
                 budget+=count
                 if budget>5_000_000:raise ValueError('projected wall raster budget exceeded')
-                cells=np.floor((np.linspace(a,b,count)-self.origin)/self.resolution).astype(int)
+                samples=np.linspace(a,b,count)
+                cells=np.floor((samples[:,:2]-self.origin)/self.resolution).astype(int)
                 valid=(cells[:,0]>=0)&(cells[:,0]<cols)&(cells[:,1]>=0)&(cells[:,1]<rows)
+                if self.metadata['surface_mode']=='top':
+                    ids=np.flatnonzero(valid);xx,yy=cells[ids].T
+                    # Buried CAD side faces cannot obstruct the explicitly selected upper surface.
+                    valid[ids]&=~self.observed[yy,xx] | (samples[ids,2]>=self.height_m[yy,xx]-1e-4)
                 walls[cells[valid,1],cells[valid,0]]=True
         step=np.zeros((rows,cols),bool)
         for axis in (0,1):
@@ -168,6 +177,8 @@ class SiteMap:
                 'samples':len(cells)}
 
     def save(self, folder: Path) -> None:
+        if self.mesh is None:raise ValueError('mesh required for site save; load full mesh first')
+        import open3d as o3d
         folder=Path(folder).resolve();folder.mkdir(parents=True,exist_ok=False)
         with (folder/'grid.npz').open('wb') as stream:
             np.savez_compressed(stream,height_m=self.height_m,slope_deg=self.slope_deg,
@@ -181,11 +192,11 @@ class SiteMap:
                     'assets':{name:file_hash(folder/name) for name in ('grid.npz','mesh.ply')}})
 
     @classmethod
-    def load(cls, folder: Path) -> SiteMap:
+    def load(cls, folder: Path, *, load_mesh: bool=True) -> SiteMap:
         folder=Path(folder).resolve();data=json.loads((folder/'site.json').read_text())
         if data.get('schema_version')!=1 or data.get('frame')!='site' or data.get('units')!='m':
             raise ValueError('invalid site metadata')
-        if data.get('grid_revision')!=2:raise ValueError('old grid revision; rebuild site with current surface checks')
+        if data.get('grid_revision')!=3:raise ValueError('old grid revision; rebuild site with current surface checks')
         meta={k:v for k,v in data.items() if k not in ('identity','code_commit','assets')}
         if hashlib.sha256(json.dumps(meta,sort_keys=True).encode()).hexdigest()!=data['identity']:
             raise ValueError('site metadata hash changed')
@@ -197,7 +208,10 @@ class SiteMap:
         self=cls();self.metadata=meta;self.identity=data['identity'];self.source=source
         self.frame='site';self.origin=np.asarray(data['origin'],float)
         self.resolution=float(data['resolution']);self.robot_radius=float(data['robot_radius'])
-        self.max_step_m=float(data['max_step_m']);self.mesh=o3d.io.read_triangle_mesh(str(folder/'mesh.ply'))
+        self.max_step_m=float(data['max_step_m']);self.mesh=None
+        if load_mesh:
+            import open3d as o3d
+            self.mesh=o3d.io.read_triangle_mesh(str(folder/'mesh.ply'))
         with np.load(folder/'grid.npz',allow_pickle=False) as arrays:
             for key in ('height_m','slope_deg','observed','blocked'):setattr(self,key,arrays[key].copy())
         if list(self.observed.shape)!=data['shape'] or any(getattr(self,key).shape!=self.observed.shape
@@ -207,6 +221,7 @@ class SiteMap:
 
 
 def load_stl(path: Path, *, units: str, **kwargs) -> SiteMap:
+    import open3d as o3d
     path=Path(path).expanduser().resolve()
     if path.suffix.lower()!='.stl' or not path.is_file():raise ValueError('existing STL required')
     mesh=o3d.io.read_triangle_mesh(str(path))

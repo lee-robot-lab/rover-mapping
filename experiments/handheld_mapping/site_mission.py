@@ -130,11 +130,11 @@ class SiteMission:
             'validation':report,'hardware_commands_enabled':False})
 
     @classmethod
-    def load(cls, folder: Path) -> SiteMission:
+    def load(cls, folder: Path, *, load_mesh: bool=True) -> SiteMission:
         folder=Path(folder).expanduser().resolve();data=json.loads((folder/'mission.json').read_text())
         if data.get('schema_version')!=1 or data.get('frame')!='site' or data.get('units')!='m':
             raise ValueError('invalid mission schema/frame/units')
-        site=SiteMap.load(folder/'site')
+        site=SiteMap.load(folder/'site',load_mesh=load_mesh)
         if data['site_identity']!=site.identity:raise ValueError('mission/site hash mismatch')
         self=cls(site,data['start'],data['junction'],data['summit'],data['routes'],data['settings'],data['site_name'])
         if not self.validate()['accepted']:raise ValueError('saved mission route validation failed')

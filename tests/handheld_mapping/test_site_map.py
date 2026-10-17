@@ -129,3 +129,14 @@ def test_old_grid_revision_requires_rebuild(tmp_path):
     data['identity']=hashlib.sha256(json.dumps(meta,sort_keys=True).encode()).hexdigest()
     path.write_text(json.dumps(data))
     with pytest.raises(ValueError,match='revision'):SiteMap.load(tmp_path/'site')
+
+
+@pytest.mark.parametrize('wall_top,accepted',[(.8,True),(1.5,False)])
+def test_explicit_top_surface_ignores_only_buried_vertical_faces(wall_top,accepted):
+    from experiments.handheld_mapping.site_map import SiteMap
+    surface=plane();surface.translate([0,0,1.])
+    wall=o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(
+        [[2,.5,0],[2,2.5,0],[2,2.5,wall_top],[2,.5,wall_top]]),
+        o3d.utility.Vector3iVector([[0,1,2],[0,2,3]]))
+    site=SiteMap.from_mesh(surface+wall,resolution=.1,robot_radius=.05,surface_mode='top')
+    assert site.validate_path([[1,1.5],[3,1.5]],20)['accepted'] is accepted
