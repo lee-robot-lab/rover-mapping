@@ -63,3 +63,20 @@ def test_explicit_gpu_selection_changes_query_and_docker_device(remote):
     commands=log.read_text()
     assert 'nounits -i 0' in commands
     assert '--gpus device=0' in commands
+
+
+def test_restarting_observer_port_allows_previous_connection_time_wait(tmp_path,monkeypatch):
+    import socket
+    import shlex
+    from types import SimpleNamespace
+    from experiments.site_sim import server
+    listener=socket.socket();listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+    listener.bind(('127.0.0.1',0));port=listener.getsockname()[1];listener.listen()
+    client=socket.create_connection(('127.0.0.1',port));accepted,_=listener.accept()
+    accepted.sendall(b'x');accepted.close();assert client.recv(1)==b'x';assert client.recv(1)==b''
+    client.close();listener.close()
+    def remote(command,**kw):
+        if 'socket.socket()' in command:subprocess.run(shlex.split(command),check=True)
+        return SimpleNamespace(stdout='32000, 0' if 'nvidia-smi' in command else '')
+    monkeypatch.setattr(server,'remote',remote)
+    server.start('restart_port',False,10.,30.,port)

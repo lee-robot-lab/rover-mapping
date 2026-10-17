@@ -73,7 +73,7 @@ def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=
     free,util=(int(v.strip()) for v in gpu_before.split(','))
     if free<12000 or util>20:raise RuntimeError(f'GPU{gpu} free memory {free}MiB / utilization {util}%: refusing launch')
     # Fail before starting either process if the requested observer port is unavailable.
-    probe=f'import socket; s=socket.socket(); s.bind(("127.0.0.1",{port})); s.close()'
+    probe=f'import socket; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind(("127.0.0.1",{port})); s.close()'
     remote(shlex.join(['python3','-c',probe]))
     args=['/isaac-sim/kit/python/bin/python3','-m','experiments.site_sim.run','--mission','/workspace/mission',
         '--urdf','/workspace/rover/rover_portable.urdf','--geometry','/workspace/rover/swerve_geometry.json',
@@ -97,6 +97,7 @@ def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=
     remote(shlex.join(['python3','-c',write]))
     remote(f'docker image inspect {shlex.quote(IMAGE)} --format "{{{{.Id}}}}" > {run}/image_id.txt')
     remote(shlex.join(docker))
+    remote(f'nohup docker wait {name} > {run}/exit.txt 2> {run}/exit-wait.log < /dev/null &')
     viewer=['python3','-m','experiments.site_sim.viewer','--output',run+'/output','--port',str(port)]
     remote(f'cd {shlex.quote(run)}\nnohup {shlex.join(viewer)} > {run}/viewer.log 2>&1 < /dev/null &\necho $! > {run}/viewer.pid')
     print('started:',run,'container:',name,'observer port:',port)

@@ -117,3 +117,19 @@ def test_ascent_keeps_trial_permission_until_safe_descent_handoff():
     assert out['visits']['summit']=='reached'
     out=run.update(sample(mission,t+.3,[3.5,1.5]),t+.3)
     assert out['reason']=='active'
+
+
+def test_observed_pose_within_arrival_tolerance_of_safe_boundary_is_not_unsafe():
+    from experiments.handheld_mapping.mission_runtime import MissionRuntime
+    mission=mission_fixture();site=mission.site;site.robot_radius=max(site.robot_radius,.15)
+    limit=mission.settings['normal_slope_deg']
+    strict=site.safe_mask(limit);loose=site.safe_mask(limit,mission.settings['arrival_tolerance_m'])
+    edge=loose&~strict
+    assert edge.any()
+    row,col=np.argwhere(edge)[0];p=site.origin+(np.array([col,row])+.5)*site.resolution
+    assert not site.validate_path([p,p],limit)['accepted']
+    assert site.validate_path([p,p],limit,mission.settings['arrival_tolerance_m'])['accepted']
+    run=MissionRuntime(mission);run.update(sample(mission,0.),0.)
+    run.last_position=p.copy()
+    out=run.update(sample(mission,.1,p),.1)
+    assert out['reason'] not in ('unsafe_observed_motion','unsafe_local_segment')

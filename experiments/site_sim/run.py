@@ -37,16 +37,22 @@ def run(args: argparse.Namespace) -> dict:
         import omni.usd
         import omni.replicator.core as rep
         from isaacsim.core.api.robots import Robot
-        from pxr import Gf,UsdGeom
+        from pxr import Gf,UsdGeom,UsdLux
         from PIL import Image
         from experiments.orbslam3_ros2.isaac_scene import build_isaac_scene
         from experiments.orbslam3_ros2.drive_runtime import DriveSession
         from experiments.site_sim.drive import SimulationDrive
         site=mission.site;c=site.cells([mission.start[:2]])[0];ground=float(site.height_m[c[1],c[0]])
+        print('SITE_SIM_STAGE scene_import',flush=True)
         world,h=build_isaac_scene(urdf=args.urdf,scene_usd=args.scene_usd,output=Path(args.output),
             start_position=(*mission.start[:2],ground+.23))
         for _ in range(5):app.update()
         stage=omni.usd.get_context().get_stage()
+        # Baked arena already has sunlight and ambient light; lower the combined exposure.
+        for prim in stage.Traverse():
+            if prim.HasAPI(UsdLux.LightAPI):
+                intensity=prim.GetAttribute('inputs:intensity')
+                if intensity and intensity.Get() is not None:intensity.Set(float(intensity.Get())*.1)
         overview=UsdGeom.Camera.Define(stage,'/World/ObserverCamera')
         overview.CreateFocalLengthAttr(18.);overview.CreateHorizontalApertureAttr(20.)
         overview.CreateVerticalApertureAttr(15.);overview.CreateClippingRangeAttr(Gf.Vec2f(.1,100))
@@ -64,9 +70,11 @@ def run(args: argparse.Namespace) -> dict:
             cameras[key]=(product,annotator)
         robot=world.scene.add(Robot(prim_path=h.frame_paths['base_link'],name='rover'))
         world.set_simulation_dt(physics_dt=.005,rendering_dt=.05)
+        print('SITE_SIM_STAGE physics_initialization',flush=True)
         world.initialize_physics();robot.initialize()
         yaw=float(mission.start[2]);robot.set_world_pose(orientation=np.array([math.cos(yaw/2),0,0,math.sin(yaw/2)]))
         session=DriveSession(robot,args.geometry);world.play()
+        print('SITE_SIM_STAGE settling',flush=True)
         for i in range(400):
             if time.monotonic()-wall_start>args.max_wall_s:raise TimeoutError('startup wall timeout')
             session.stop();world.step(render=i%20==0)

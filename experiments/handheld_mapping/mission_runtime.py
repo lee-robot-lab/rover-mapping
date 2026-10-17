@@ -87,7 +87,8 @@ class MissionRuntime:
             return self._pause('pose_jump')
         if self.last_position is not None:
             limit=self.settings['trial_slope_deg' if self.route=='30' and self.state in ('trial_entry','ascending','retreating') else 'normal_slope_deg']
-            if not self.mission.site.validate_path([self.last_position,position],limit)['accepted']:
+            # Observed pose may drift by the arrival tolerance that the planned-path radius already budgets.
+            if not self.mission.site.validate_path([self.last_position,position],limit,self.settings['arrival_tolerance_m'])['accepted']:
                 return self._pause('unsafe_observed_motion')
         dt=0. if self.paused or self.last_valid_stamp is None else stamp-self.last_valid_stamp
         if dt>self.settings['pose_max_age_s']:
@@ -125,7 +126,7 @@ class MissionRuntime:
         target=self.points[self.index]
         limit=self.settings['trial_slope_deg' if self.route=='30' and self.state in ('ascending','trial_entry','retreating')
                             else 'normal_slope_deg']
-        if not self.mission.site.validate_path([position,target],limit)['accepted']:
+        if not self.mission.site.validate_path([position,target],limit,self.settings['arrival_tolerance_m'])['accepted']:
             return self._pause('unsafe_local_segment')
         heading=math.atan2(target[1]-position[1],target[0]-position[0])+(math.pi if reverse else 0.)
         error=angle_wrap(heading-yaw)

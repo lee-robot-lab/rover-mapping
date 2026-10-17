@@ -147,18 +147,18 @@ class SiteMap:
             else:step[:,:-1]|=diff;step[:,1:]|=diff
         self.blocked=walls|step
 
-    def safe_mask(self, max_slope_deg: float=20.) -> np.ndarray:
+    def safe_mask(self, max_slope_deg: float=20., slack_m: float=0.) -> np.ndarray:
         if not math.isfinite(max_slope_deg) or not 0<max_slope_deg<90:
             raise ValueError('slope must be in (0,90)')
         clear=self.observed & ~self.blocked & (self.slope_deg<=max_slope_deg+1e-4)
         distance=distance_transform_edt(np.pad(clear,1,constant_values=False))[1:-1,1:-1]*self.resolution
         # cell centers require at least the configured radius; map exterior remains occupied.
-        return clear & (distance>=self.robot_radius+self.resolution*math.sqrt(2)-1e-9)
+        return clear & (distance>=max(0.,self.robot_radius-slack_m)+self.resolution*math.sqrt(2)-1e-9)
 
     def cells(self, xy: np.ndarray) -> np.ndarray:
         return np.floor((np.asarray(xy,float)-self.origin)/self.resolution).astype(int)
 
-    def validate_path(self, xy: list | np.ndarray, max_slope_deg: float=20.) -> dict:
+    def validate_path(self, xy: list | np.ndarray, max_slope_deg: float=20., slack_m: float=0.) -> dict:
         points=np.asarray(xy,float)
         if points.ndim!=2 or points.shape[1]!=2 or len(points)<1 or not np.isfinite(points).all():
             return {'accepted':False,'reason':'invalid_points'}
@@ -170,7 +170,7 @@ class SiteMap:
         cells=self.cells(np.asarray(samples));cols,rows=self.observed.shape[1],self.observed.shape[0]
         if np.any(cells<0) or np.any(cells[:,0]>=cols) or np.any(cells[:,1]>=rows):
             return {'accepted':False,'reason':'outside_map'}
-        safe=self.safe_mask(max_slope_deg)
+        safe=self.safe_mask(max_slope_deg,slack_m)
         valid=safe[cells[:,1],cells[:,0]]
         return {'accepted':bool(valid.all()),'reason':'clear' if valid.all() else 'unknown_obstacle_clearance_or_slope',
                 'length_m':float(np.linalg.norm(np.diff(points,axis=0),axis=1).sum()),
