@@ -16,6 +16,12 @@ import time
 RENDER_LAG_S=0.1
 
 
+def record_estimator_event(output: Path, event: dict) -> None:
+    """추정기에 실제 전달한 입력과 제어 pose 조회 순서를 부분 실패에도 재생 가능하게 기록한다."""
+    with (Path(output)/'estimator_events.jsonl').open('a') as stream:
+        stream.write(json.dumps(event,allow_nan=False)+'\n')
+
+
 def validate_limits(sim_s: float, wall_s: float) -> None:
     """물리와 wall 실행 상한을 유한한 범위로 제한한다."""
     if not math.isfinite(sim_s) or not 0<sim_s<=900 or not math.isfinite(wall_s) or not 0<wall_s<=3600:
@@ -162,6 +168,10 @@ def run(args: argparse.Namespace) -> dict:
             if sim_s+1e-9>=next_control:
                 row=drive.step(sim_s);row['wall_s']=wall_s
                 if estimator is not None:row['estimator_frame']=frame_info
+                if estimator is not None:
+                    record_estimator_event(args.output,{'kind':'pose','stamp_s':sim_s,
+                        'position_m':row['position_m'],'quaternion_wxyz':row['quaternion_wxyz'],
+                        'estimated_position_m':row['estimated_position_m']})
                 row['mission']['camera_error']=last_camera_error
                 recorder.observe(row,drive.runtime.events);next_control+=.05
                 if sim_s>=5 and row['mission']['reason'] in ('invalid_pose','pose_jump','unsafe_observed_motion','unsafe_local_segment'):
@@ -176,7 +186,11 @@ def run(args: argparse.Namespace) -> dict:
             world.step(render=render_due)
             if estimator is not None:
                 gp,gq=robot.get_world_pose()
-                estimator.on_step(float(world.current_time)-t0,gp,gq)
+                sample=estimator.on_step(float(world.current_time)-t0,gp,gq)
+                if sample is not None:
+                    start,end,gyro,force=sample
+                    record_estimator_event(args.output,{'kind':'imu','stamp_s':end,'dt_s':end-start,
+                        'gyro':gyro.tolist(),'force':force.tolist()})
             if render_due:
                 next_render=time.monotonic()+.2
                 # Chase view from above and behind so the small rover stays visible inside the walls.
@@ -220,6 +234,7 @@ def run(args: argparse.Namespace) -> dict:
                                     'accel_bias_m_s2':estimator.filter.accel_bias.tolist()}
                         with (Path(args.output)/'estimator_frames.jsonl').open('a') as stream:
                             stream.write(json.dumps(frame_info,allow_nan=False)+'\n')
+                        record_estimator_event(args.output,{'kind':'frame',**frame_info})
                 recorder.publish()
     except KeyboardInterrupt as error:status='interrupted';reason=str(error)
     except Exception as error:

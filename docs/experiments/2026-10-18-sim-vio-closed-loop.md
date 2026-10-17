@@ -152,3 +152,36 @@ IMU 생성 오류는 독립적으로 재현·수정했지만, **영상 융합 �
   한 차례 재시작에서 정상 주행했다. 다른 GPU/컨테이너는 중단하지 않았다.
 - 전체 자동 검사: **711 passed, 16 skipped**. 변경분의 읽기 전용 검토에서도
   Important 이상 결함은 보고되지 않았다. 전체 임무 시험은 이 진단과 별도로 진행한다.
+
+### 전체 시험 `codex_vio1018b`와 불규칙 IMU 간격
+
+- `c9f5138`과 Claude Code의 두 변경을 합쳐 360 s 상한으로 실행했으나,
+  **58.82 s, 15° 우회로로 방향을 바꾸는 중 `unsafe_observed_motion`으로 정지**했다.
+  평면 RMSE 1.62 cm/최대·최종 5.68 cm, yaw RMSE 0.166°였다.
+  기존 19.8 s 문제는 통과했지만 전체 완주를 확인한 결과는 아니다.
+- 이 실행의 실제 IMU 입력은 저장되지 않았다. telemetry와 stereo GT를 합쳐 다시
+  미분한 재생은 원래 온라인 위치와 최대 **15.9 cm** 달랐다.
+  이 재생에서 noise 배율을 바꾼 결과를 온라인 개선 근거로 사용하지 않는다.
+  이전 `full1017a` 탐색 수치도 해당 재구성 입력에서의 결과이며 원래 온라인 실행과의
+  동등성을 확인한 것이 아니다.
+- 시뮬 `world.step`은 렌더링 여부에 따라 5/50 ms의 입력 간격을 만들 수 있다.
+  중앙 가속도를 최신 구간 길이로 적분하던 생성기는 비균일 간격에서 일관되지 않았다.
+  독립 회귀 `x=0.0002*(1-cos(40t))`, 5/50 ms 교대 400구간(11 s)에서
+  실제 진동 폭은 0.4 mm인데 위치 오차가 **31.23 mm**로 누적됐다.
+- 비균일 3점 이차식으로 **구간 끝 속도**를 구하고, 직전 끝 속도와의 차이로
+  구간 평균 가속도를 생성하도록 바꿨다. 같은 시험의 최대 오차는 **0.01965 mm**다.
+  근거: `outputs/site_sim/codex_vio1018b/irregular_step_probe.json`.
+  합성 회귀에서 수정 효과를 확인했으며, 58.82 s 실제 정지까지 해결했다는 뜻은 아니다.
+- 다음 실행부터 `estimator_events.jsonl`에 **IMU/ORB/pose 조회의 실제 순서**를 저장한다.
+  `OnlineEstimator.on_imu`로 원래 구간 표본을 넣어 재생하므로 GT를 다시 미분하지 않는다.
+  GT는 재생 오차 평가에만 쓰며, 평가 GT를 10 m 바꿔도 추정이 바뀌지 않는 회귀를 추가했다.
+
+```bash
+PYTHONNOUSERSITE=1 .venv-mapping/bin/python -m experiments.site_sim.vio_offline online RUN NEW_OUT
+# 같은 센서 입력으로 선택적 noise 스케줄만 비교
+PYTHONNOUSERSITE=1 .venv-mapping/bin/python -m experiments.site_sim.vio_offline online RUN NEW_OUT --adaptive-visual-noise
+```
+
+재생 `summary.json`의 `recorded_estimate_max_diff_m`로 원래 온라인 출력과 일치하는지
+먼저 검사한다. 새로운 전체 검사 **714 passed, 16 skipped**. 추가 읽기 전용 검토의
+복합 회전·비대칭 장착·불규칙 간격·JSON 재생 시험에서도 원본/재생 차이 0을 확인했다.

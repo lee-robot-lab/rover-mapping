@@ -27,6 +27,7 @@ class CausalImu:
 
     def __init__(self) -> None:
         self.history = deque(maxlen=3)
+        self.velocity = np.zeros(3)
 
     def push(self, t: float, position: np.ndarray, quaternion_wxyz: np.ndarray) -> tuple[float, float, np.ndarray, np.ndarray] | None:
         """(구간 시작, 끝, 자이로, 비력)을 반환하고 표본이 모자라면 None을 반환한다."""
@@ -37,12 +38,15 @@ class CausalImu:
             return None
         (t1, p1, r1), (t2, p2, r2) = list(self.history)[-2:]
         v12 = (p2-p1)/(t2-t1)
-        if len(self.history) == 2:
-            acceleration = v12/(t2-t1)
-        else:
+        velocity = v12
+        if len(self.history) == 3:
             t0, p0, _ = self.history[0]
             v01 = (p1-p0)/(t1-t0)
-            acceleration = (v12-v01)/(.5*(t2-t0))
+            velocity = v12+(v12-v01)*(t2-t1)/(t2-t0)
+        # 3점 이차식의 구간 끝 속도를 차분해야 불규칙 dt에도 적분한 속도가 일관된다.
+        # 중앙 가속도를 최신 dt에 곱하면 5/50 ms가 섞일 때 진동이 누적 이동으로 바뀐다.
+        acceleration = (velocity-self.velocity)/(t2-t1)
+        self.velocity = velocity
         delta = (r1.inv()*r2).as_rotvec()
         middle = r1*Rotation.from_rotvec(delta/2)
         return t1, t2, delta/(t2-t1), middle.inv().apply(acceleration+GRAVITY)
@@ -73,8 +77,8 @@ class OnlineEstimator:
         self.update_time = -1.
         self.last_info: dict = {}
 
-    def on_step(self, t: float, position: np.ndarray, quaternion_wxyz: np.ndarray) -> None:
-        """물리 step마다 GT pose에서 IMU 표본을 만들고, 영상과 시각이 맞는 만큼만 필터를 전진시킨다."""
+    def on_step(self, t: float, position: np.ndarray, quaternion_wxyz: np.ndarray) -> tuple[float, float, np.ndarray, np.ndarray] | None:
+        """GT에서 만든 IMU 구간을 반환하고, 영상과 시각이 맞는 만큼만 필터를 전진시킨다."""
         if t == 0. and len(self.imu.history) == 1:
             return  # 생성자가 알려진 t=0 pose를 이미 넣었다.
         q = np.asarray(quaternion_wxyz, float)
@@ -85,8 +89,13 @@ class OnlineEstimator:
         sample = self.imu.push(t, imu_position, np.r_[imu_q[3], imu_q[:3]])
         if sample is not None:
             start, end, gyro, force = sample
-            self.pending.append((end, end-start, gyro, force))
-        while self.pending and self.pending[0][0] <= t-self.lag_s+1e-9:
+            self.on_imu(end, end-start, gyro, force)
+        return sample
+
+    def on_imu(self, end_s: float, dt_s: float, gyro: np.ndarray, force: np.ndarray) -> None:
+        """생성한 구간 평균 IMU를 같은 지연 규칙으로 수용한다. 기록 재생은 GT를 다시 미분하지 않는다."""
+        self.pending.append((end_s, dt_s, gyro, force))
+        while self.pending and self.pending[0][0] <= end_s-self.lag_s+1e-9:
             end, dt, gyro, force = self.pending.popleft()
             self.filter.propagate(gyro, force, dt)
             self.filter_gyro = gyro

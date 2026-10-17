@@ -121,3 +121,34 @@ def test_optional_turn_schedule_reduces_noisy_visual_attitude_error() -> None:
                 angles.append((rotation.inv()*Rotation.from_matrix(pose[:3, :3])).magnitude())
         errors.append(float(np.sqrt(np.mean(np.square(angles)))))
     assert errors[1] < errors[0]*.7
+
+
+def test_irregular_sim_steps_do_not_turn_small_vibration_into_position_drift() -> None:
+    """5/50 ms가 번갈아 들어와도 0.4 mm 진동을 수 cm의 누적 이동으로 만들지 않는다."""
+    estimator = OnlineEstimator(np.eye(4), CALIBRATION, lag_s=0.)
+    t, worst = 0., 0.
+    for k in range(400):
+        t += (.005, .05)[k % 2]
+        p = np.array([.0002*(1-np.cos(40*t)), 0., 0.])
+        estimator.on_step(t, p, np.array([1., 0., 0., 0.]))
+        pose, _, _, _ = estimator.pose(t)
+        worst = max(worst, float(np.linalg.norm(pose[:3, 3]-p)))
+    assert worst < .0002
+
+
+def test_recorded_imu_intervals_replay_the_same_online_fusion() -> None:
+    """GT를 다시 미분하지 않고 생성 당시 IMU만 재입력해 같은 필터 상태를 복원한다."""
+    direct = OnlineEstimator(world_from_base(0.), CALIBRATION, lag_s=.1)
+    replay = OnlineEstimator(world_from_base(0.), CALIBRATION, lag_s=.1)
+    for k in range(1, 121):
+        t = k*.05
+        p, q = gt_pose(t)
+        sample = direct.on_step(t, p, q)
+        assert sample is not None
+        start, end, gyro, force = sample
+        replay.on_imu(end, end-start, gyro, force)
+        if k % 2 == 0:
+            observed = ORB_WORLD @ world_from_base(max(0., t-.1))
+            direct.on_frame(t, 2, '0', observed)
+            replay.on_frame(t, 2, '0', observed)
+        assert direct.pose(t)[0] == pytest.approx(replay.pose(t)[0], abs=1e-12)

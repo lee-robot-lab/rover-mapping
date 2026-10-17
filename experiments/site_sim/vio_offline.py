@@ -4,10 +4,12 @@
 # 사용법:
 #   python -m experiments.site_sim.vio_offline orb STEREO_DIR OUT_DIR
 #   python -m experiments.site_sim.vio_offline fuse STEREO_DIR ORB_DIR OUT_DIR --imu avg50 [--gaps 40 41.5]
+#   python -m experiments.site_sim.vio_offline online RUN_DIR OUT_DIR [--adaptive-visual-noise]
 # ================================================================
 from pathlib import Path
 import argparse
 import csv
+import hashlib
 import json
 import os
 import signal
@@ -199,9 +201,61 @@ def pose_errors(stereo: Path, tum: Path) -> dict:
     return {'rmse_cm': float(np.sqrt((errors**2).mean())), 'last_cm': float(errors[-1]), 'max_cm': float(errors.max())}
 
 
+def replay_online(recording: Path, out: Path, adaptive_visual_noise: bool | None = None) -> dict:
+    """기록 당시 IMU·ORB·pose 조회 순서를 재생한다. GT pose는 오차 평가에만 사용한다."""
+    from experiments.localization.online import OnlineEstimator
+    calibration_path = recording/'estimator_calibration.json'
+    events_path = recording/'estimator_events.jsonl'
+    config = json.loads(calibration_path.read_text())
+    original_adaptive = config.get('adaptive_visual_noise', False)
+    adaptive = original_adaptive if adaptive_visual_noise is None else adaptive_visual_noise
+    estimator = OnlineEstimator(np.asarray(config['start_world_from_base']), config['calibration'],
+                                lag_s=config['render_lag_s'], adaptive_visual_noise=adaptive)
+    out.mkdir(parents=True, exist_ok=False)
+    errors, differences, yaw_errors = [], [], []
+    accepted = 0
+    with events_path.open() as source, (out/'trajectory.csv').open('w', newline='') as target:
+        writer = csv.writer(target)
+        writer.writerow(['stamp_s', 'x', 'y', 'z', 'qx', 'qy', 'qz', 'qw', 'valid', 'quality', 'status'])
+        for line in source:
+            event = json.loads(line)
+            t = event['stamp_s']
+            if event['kind'] == 'imu':
+                estimator.on_imu(t, event['dt_s'], np.asarray(event['gyro']), np.asarray(event['force']))
+            elif event['kind'] == 'frame':
+                info = estimator.on_frame(t, event['orb_state'], event['map_id'], np.asarray(event['world_from_camera']))
+                accepted += bool(info['accepted'])
+            elif event['kind'] == 'pose':
+                pose, valid, quality, status = estimator.pose(t)
+                rotation = Rotation.from_matrix(pose[:3, :3])
+                writer.writerow([t, *pose[:3, 3], *rotation.as_quat(), valid, quality, status])
+                errors.append(pose[:3, 3]-event['position_m'])
+                differences.append(float(np.linalg.norm(pose[:3, 3]-event['estimated_position_m'])))
+                q = event['quaternion_wxyz']
+                yaw = Rotation.from_quat([*q[1:], q[0]]).as_euler('xyz')[2]
+                delta = rotation.as_euler('xyz')[2]-yaw
+                yaw_errors.append(float(np.arctan2(np.sin(delta), np.cos(delta))))
+            else:
+                raise ValueError('unknown estimator event kind: '+str(event['kind']))
+    if not errors:
+        raise ValueError('recording has no estimator pose queries')
+    xyz = np.linalg.norm(errors, axis=1)
+    xy = np.linalg.norm(np.asarray(errors)[:, :2], axis=1)
+    report = {'simulation_only': True, 'poses': len(errors), 'visual_accepted': accepted,
+              'adaptive_visual_noise': bool(adaptive), 'original_adaptive_visual_noise': bool(original_adaptive),
+              'xy_rmse_m': float(np.sqrt(np.mean(xy**2))), 'xy_max_m': float(xy.max()),
+              'xyz_rmse_m': float(np.sqrt(np.mean(xyz**2))), 'xyz_max_m': float(xyz.max()),
+              'yaw_rmse_deg': float(np.rad2deg(np.sqrt(np.mean(np.square(yaw_errors))))),
+              'recorded_estimate_max_diff_m': max(differences), 'last_position_m': pose[:3, 3].tolist(),
+              'input_sha256': {str(p.resolve()): hashlib.sha256(p.read_bytes()).hexdigest()
+                               for p in (calibration_path, events_path)}}
+    (out/'summary.json').write_text(json.dumps(report, indent=2, allow_nan=False)+'\n')
+    return report
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=('orb', 'fuse'))
+    parser.add_argument('action', choices=('orb', 'fuse', 'online'))
     parser.add_argument('stereo', type=Path)
     parser.add_argument('first', type=Path)
     parser.add_argument('second', type=Path, nargs='?')
@@ -210,9 +264,13 @@ def main() -> None:
     parser.add_argument('--delay-s', type=float, default=0.)
     parser.add_argument('--render-lag-s', type=float, default=0.1, help='영상 장면이 붙은 시각보다 늦은 시뮬 렌더 지연(측정값 약 0.10 s)')
     parser.add_argument('--encoder', action='store_true', help='바퀴 엔코더 융합 필터를 함께 계산')
+    parser.add_argument('--adaptive-visual-noise', action='store_true')
     parser.add_argument('--timeout-s', type=float, default=400.)
     parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
+    if args.action == 'online':
+        print(json.dumps(replay_online(args.stereo, args.first, True if args.adaptive_visual_noise else None), indent=2))
+        return
     if args.action == 'orb':
         run_orb(args.stereo, args.first, args.timeout_s)
         return
