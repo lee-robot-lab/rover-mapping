@@ -81,13 +81,15 @@ bash tools/run_site_sim_server.sh start L --gpu 0 --port 8773 --stereo-hz 15 --s
 
 | 담당 | 일 | 건드리는 파일 |
 |---|---|---|
-| **A. Claude Code** | 4.1 닫힌 루프 원인 규명·수정, 전체 임무 재실행(서버), 4.2-4 신뢰도 스케줄 | `experiments/localization/*`, `experiments/site_sim/{run,drive,server,vio_offline,orb_client}.py`, `tests/localization`, 닫힌 루프 문서 |
-| **B. Codex** | 4.2-1 당근 추종기, 4.2-2 슬립 감속, 4.2-3 필터 상태 → 안전 정책 | 새 `experiments/handheld_mapping/carrot_follower.py`, `mission_runtime.py`, `SensorSafety` 관련 파일, 해당 테스트 |
+| **A. Codex** | 4.1 닫힌 루프 원인 규명·수정, 전체 임무 재실행(서버), 4.2-4 신뢰도 스케줄 | `experiments/localization/*`, `experiments/site_sim/{run,drive,server,vio_offline,orb_client}.py`, `tests/localization`, 닫힌 루프 문서 |
+| **B. Claude Code** | 4.2-1 당근 추종기, 4.2-2 슬립 감속, 4.2-3 필터 상태 → 안전 정책 | 새 `experiments/handheld_mapping/carrot_follower.py`, `mission_runtime.py`, `SensorSafety` 관련 파일, 해당 테스트 |
 
-- B는 서버를 쓰지 않고 `tests/handheld_mapping`의 단위 시험과 GT 주행 재생으로 검증한다. 서버 실행은 A가 합친 뒤 한 번에 한다.
+- B(Claude Code)는 서버를 쓰지 않고 `tests/handheld_mapping`의 단위 시험과 GT 주행 재생으로 검증한다. 서버 실행은 A(Codex)가 원인을 고친 뒤 합쳐서 한 번에 한다.
 - B의 인터페이스: 추종기는 현재 추정 pose와 경로를 받아 `(vx, yaw_rate)`를 돌려준다. 필터 상태(`imu_gap`/`recovering`)와 슬립 계수는 `SensorSafety` 입력으로만 받는다. 추정기 내부는 읽지 않는다.
-- 제자리 회전 구간의 `unsafe_observed_motion` 기준(4.1 후보 c)은 A가 결론을 낼 때까지 B가 바꾸지 않는다.
+- 제자리 회전 구간의 `unsafe_observed_motion` 기준(4.1 후보 c)은 A(Codex)가 결론을 낼 때까지 B(Claude Code)가 바꾸지 않는다.
 - 커밋은 각자 파일을 지정해서 한다(`git add -A` 금지). 푸시는 둘의 결과를 합치고 시험이 통과한 뒤 한 번에 한다.
+
+> 2026-10-18 갱신: 사용자가 Codex에 디버깅(A)을 먼저 맡겼으므로 담당을 맞바꿨다. Claude Code가 남긴 단서: `closed1017c` GT 궤적에 IMU만 적용해 재생하면 yaw는 정확하고 위치는 정지 구간부터 약 6 mm/s²로 어긋나 19 s에 107 cm가 된다(중력 상수는 양쪽 9.81로 같다). ORB 상실 중에는 위치가 사실상 IMU만으로 유지되므로, 4.1의 후보 (a)를 먼저 확인할 것. 재생 스크립트는 저장소에 없다(`OnlineEstimator`에 GT 궤적을 `on_step`으로만 먹이고 `on_frame`은 호출하지 않으면 된다).
 
 ## 5. 이번에 얻은 교훈
 
