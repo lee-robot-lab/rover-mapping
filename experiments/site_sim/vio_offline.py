@@ -264,12 +264,13 @@ def main() -> None:
     parser.add_argument('--delay-s', type=float, default=0.)
     parser.add_argument('--render-lag-s', type=float, default=0.1, help='영상 장면이 붙은 시각보다 늦은 시뮬 렌더 지연(측정값 약 0.10 s)')
     parser.add_argument('--encoder', action='store_true', help='바퀴 엔코더 융합 필터를 함께 계산')
-    parser.add_argument('--adaptive-visual-noise', action='store_true')
+    parser.add_argument('--adaptive-visual-noise', action=argparse.BooleanOptionalAction, default=None,
+                        help='online 재생 전용: 기록 설정을 따르거나(미지정) 강제로 켜고 끈다')
     parser.add_argument('--timeout-s', type=float, default=400.)
     parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
     if args.action == 'online':
-        print(json.dumps(replay_online(args.stereo, args.first, True if args.adaptive_visual_noise else None), indent=2))
+        print(json.dumps(replay_online(args.stereo, args.first, args.adaptive_visual_noise), indent=2))
         return
     if args.action == 'orb':
         run_orb(args.stereo, args.first, args.timeout_s)

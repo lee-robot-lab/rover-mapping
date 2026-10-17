@@ -152,3 +152,15 @@ def test_recorded_imu_intervals_replay_the_same_online_fusion() -> None:
             direct.on_frame(t, 2, '0', observed)
             replay.on_frame(t, 2, '0', observed)
         assert direct.pose(t)[0] == pytest.approx(replay.pose(t)[0], abs=1e-12)
+
+
+def test_causal_imu_ignores_repeated_or_reversed_timestamps() -> None:
+    imu = CausalImu()
+    for k in range(5):
+        p, q = gt_pose(k*.05)
+        imu.push(k*.05, p, q)
+    p, q = gt_pose(.2)
+    assert imu.push(.2, p, q) is None and imu.push(.1, p, q) is None
+    p, q = gt_pose(.25)
+    out = imu.push(.25, p, q)
+    assert out is not None and np.isfinite(out[2]).all() and np.isfinite(out[3]).all()

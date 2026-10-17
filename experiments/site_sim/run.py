@@ -16,12 +16,6 @@ import time
 RENDER_LAG_S=0.1
 
 
-def record_estimator_event(output: Path, event: dict) -> None:
-    """추정기에 실제 전달한 입력과 제어 pose 조회 순서를 부분 실패에도 재생 가능하게 기록한다."""
-    with (Path(output)/'estimator_events.jsonl').open('a') as stream:
-        stream.write(json.dumps(event,allow_nan=False)+'\n')
-
-
 def validate_limits(sim_s: float, wall_s: float) -> None:
     """물리와 wall 실행 상한을 유한한 범위로 제한한다."""
     if not math.isfinite(sim_s) or not 0<sim_s<=900 or not math.isfinite(wall_s) or not 0<wall_s<=3600:
@@ -34,12 +28,13 @@ def run(args: argparse.Namespace) -> dict:
     from experiments.handheld_mapping.site_mission import SiteMission
     from experiments.handheld_mapping.storage import atomic_json
     from experiments.site_sim.recording import RunRecorder
+    from experiments.site_sim.estimator_log import EstimatorLog
     mission=SiteMission.load(args.mission,load_mesh=False)
     stereo_hz=float(getattr(args,'stereo_hz',0.))
     if not math.isfinite(stereo_hz) or not 0<=stereo_hz<=30:raise ValueError('stereo_hz must be in [0,30]')
     recorder=RunRecorder(mission,args.output,fault_injection=args.fault_injection,
                          pose_source='orb_eskf_estimate' if getattr(args,'estimator',False) else 'sim_ground_truth')
-    stereo_writer=None;next_stereo=0.;estimator=orb=None;frame_info=None
+    stereo_writer=None;next_stereo=0.;estimator=orb=estimator_log=None;frame_info=None
     if getattr(args,'estimator',False) and stereo_hz<=0:raise ValueError('--estimator needs --stereo-hz')
     app=drive=world=None;status='failed';reason='initialization_failed';cameras={};wall_start=time.monotonic()
     def interrupted(signum,frame):raise KeyboardInterrupt(f'signal {signum}')
@@ -156,7 +151,7 @@ def run(args: argparse.Namespace) -> dict:
                 'calibration':estimator_calibration,'start_world_from_base':start_pose.tolist(),
                 'render_lag_s':RENDER_LAG_S,'adaptive_visual_noise':estimator.adaptive_visual_noise,
                 'simulation_only':True})
-            orb=OrbClient(Path(args.orb_io))
+            orb=OrbClient(Path(args.orb_io));estimator_log=EstimatorLog(Path(args.output))
             print('SITE_SIM_ESTIMATOR ready (control uses ORB+ESKF estimate; GT is logged only)',flush=True)
         drive=SimulationDrive(robot,session,mission,fault_injection=args.fault_injection,hold_s=args.start_hold_s,estimator=estimator)
         t0=float(world.current_time);next_control=0.;next_render=0.;next_front=0.;last_camera_error=None
@@ -169,7 +164,7 @@ def run(args: argparse.Namespace) -> dict:
                 row=drive.step(sim_s);row['wall_s']=wall_s
                 if estimator is not None:row['estimator_frame']=frame_info
                 if estimator is not None:
-                    record_estimator_event(args.output,{'kind':'pose','stamp_s':sim_s,
+                    estimator_log.write({'kind':'pose','stamp_s':sim_s,
                         'position_m':row['position_m'],'quaternion_wxyz':row['quaternion_wxyz'],
                         'estimated_position_m':row['estimated_position_m']})
                 row['mission']['camera_error']=last_camera_error
@@ -189,7 +184,7 @@ def run(args: argparse.Namespace) -> dict:
                 sample=estimator.on_step(float(world.current_time)-t0,gp,gq)
                 if sample is not None:
                     start,end,gyro,force=sample
-                    record_estimator_event(args.output,{'kind':'imu','stamp_s':end,'dt_s':end-start,
+                    estimator_log.write({'kind':'imu','stamp_s':end,'dt_s':end-start,
                         'gyro':gyro.tolist(),'force':force.tolist()})
             if render_due:
                 next_render=time.monotonic()+.2
@@ -232,9 +227,7 @@ def run(args: argparse.Namespace) -> dict:
                                     'velocity_imu_world_m_s':estimator.filter.velocity.tolist(),
                                     'gyro_bias_rad_s':estimator.filter.gyro_bias.tolist(),
                                     'accel_bias_m_s2':estimator.filter.accel_bias.tolist()}
-                        with (Path(args.output)/'estimator_frames.jsonl').open('a') as stream:
-                            stream.write(json.dumps(frame_info,allow_nan=False)+'\n')
-                        record_estimator_event(args.output,{'kind':'frame',**frame_info})
+                        estimator_log.write({'kind':'frame',**frame_info})
                 recorder.publish()
     except KeyboardInterrupt as error:status='interrupted';reason=str(error)
     except Exception as error:
@@ -242,6 +235,7 @@ def run(args: argparse.Namespace) -> dict:
         import traceback
         traceback.print_exc()
     finally:
+        if estimator_log is not None:estimator_log.close()
         if drive is not None:
             try:
                 drive.stop()

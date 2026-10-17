@@ -31,6 +31,8 @@ class CausalImu:
 
     def push(self, t: float, position: np.ndarray, quaternion_wxyz: np.ndarray) -> tuple[float, float, np.ndarray, np.ndarray] | None:
         """(구간 시작, 끝, 자이로, 비력)을 반환하고 표본이 모자라면 None을 반환한다."""
+        if self.history and not t > self.history[-1][0]:
+            return None  # 같은 시각·역전 시각은 dt=0 나눗셈으로 상태를 오염시키므로 무시한다.
         q = np.asarray(quaternion_wxyz, float)
         rotation = Rotation.from_quat([q[1], q[2], q[3], q[0]])
         self.history.append((float(t), np.asarray(position, float), rotation))
