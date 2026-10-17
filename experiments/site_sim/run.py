@@ -26,10 +26,10 @@ def run(args: argparse.Namespace) -> dict:
     from experiments.handheld_mapping.storage import atomic_json
     from experiments.site_sim.recording import RunRecorder
     mission=SiteMission.load(args.mission,load_mesh=False)
-    recorder=RunRecorder(mission,args.output)
+    recorder=RunRecorder(mission,args.output,fault_injection=args.fault_injection)
     app=drive=world=None;status='failed';reason='initialization_failed';cameras={};wall_start=time.monotonic()
     def interrupted(signum,frame):raise KeyboardInterrupt(f'signal {signum}')
-    signal.signal(signal.SIGTERM,interrupted)
+    previous_signal=signal.signal(signal.SIGTERM,interrupted)
     try:
         from isaacsim import SimulationApp
         app=SimulationApp({'headless':True,'renderer':'RaytracedLighting','multi_gpu':False,
@@ -116,8 +116,13 @@ def run(args: argparse.Namespace) -> dict:
                 if world is not None:
                     for _ in range(20):world.step(render=False)
             except Exception as error:status='failed';reason+='; stop failed: '+str(error)
-        summary=recorder.finalize(status,reason)
-        if app is not None:app.close()
+        try:
+            summary=recorder.finalize(status,reason)
+        except Exception as error:
+            raise RuntimeError(f'{reason}; finalization failed: {error}') from error
+        finally:
+            signal.signal(signal.SIGTERM,previous_signal)
+            if app is not None:app.close()
     print('SITE_SIM_FINISHED',json.dumps(summary),flush=True)
     return summary
 
@@ -126,7 +131,12 @@ def main() -> None:
     parser=argparse.ArgumentParser()
     for name in ('mission','urdf','geometry','scene-usd','output'):parser.add_argument('--'+name,type=Path,required=True)
     parser.add_argument('--max-sim-s',type=float,default=900.);parser.add_argument('--max-wall-s',type=float,default=3600.)
-    parser.add_argument('--fault-injection',action='store_true');run(parser.parse_args())
+    parser.add_argument('--fault-injection',action='store_true');args=parser.parse_args();code=1
+    try:
+        summary=run(args);code=0 if summary['status']=='complete' else 2
+    finally:
+        Path(args.output).parent.joinpath('exit.txt').write_text(str(code)+'\n')
+    raise SystemExit(code)
 
 
 if __name__=='__main__':main()

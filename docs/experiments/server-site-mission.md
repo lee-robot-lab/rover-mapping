@@ -8,9 +8,9 @@
 
 서버 경기장과 일치하는 meter 형상에서 검증한 경로를 사용한다. 기존 STL은 원본 좌표에 **0.1**을 곱하며, sand NPZ는 **height[x,y]**다. 팀원 STL 일반 입력의 m/mm와 혼동하지 않는다. 입력 두 파일의 hash와 좌표 변환은 `simulation.json`에 저장한다.
 
-2026-10-17 준비 bundle `outputs/site_sim/20261017b/mission` 기준: 30° 경로 1.66m/최대 32.53°, 15° 4.90m/15.00°, 10° 9.80m/10.38°. 이름과 실제 최대 경사는 다르다. 원형 footprint 0.23m·clearance 0.02m·도착 여유 0.05m를 합한 grid 반경 0.30m와 추가 셀 여유를 사용했다. 이는 현재 asset용 보수 근사이며 실기 한계가 아니다.
+2026-10-17 준비 bundle `outputs/site_sim/20261017c/mission` 기준: 30° 경로 1.66m/최대 32.53°, 15° 4.90m/15.00°, 10° 9.80m/10.38°. 이름과 실제 최대 경사는 다르다. 사용자 요청으로 출발점은 왼쪽 상단 `(2.9,1.2,0 rad)`이며 갈림길 연결·복귀도 재검사했다. 원형 footprint 0.23m·clearance 0.02m·도착 여유 0.05m를 합한 grid 반경 0.30m와 추가 셀 여유를 사용했다. 이는 현재 asset용 보수 근사이며 실기 한계가 아니다.
 
-명시적 top surface 모드의 grid revision 3은 모래 아래에 묻힌 CAD 내부 수직면을 표면 장애물로 투영하지 않는다. 돌출한 벽과 미관측 영역은 계속 차단한다. 이전 bundle은 다시 준비한다.
+명시적 top surface 모드의 grid revision 3은 모래 아래에 묻힌 CAD 내부 수직면을 표면 장애물로 투영하지 않는다. 돌출한 벽과 미관측 영역은 계속 차단한다. grid revision 2 이전 bundle은 다시 준비한다.
 
 ## 노트북에서 준비
 
@@ -29,12 +29,12 @@ PYTHONNOUSERSITE=1 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 \
 
 ## 서버 실행과 실시간 관찰
 
-먼저 서버 GPU 사용량을 확인한다. 기본 구현은 계획에 지정한 GPU 1을 사용하며 다른 작업이 사용 중이면 실행을 거부한다. 기존 작업·TensorBoard·`latest` 링크를 변경하지 않는다.
+먼저 서버 GPU 사용량을 확인한다. 기본은 GPU 1이며 다른 작업이 사용 중이면 실행을 거부한다. 2026-10-17 사용자가 이번 실행을 유휴 GPU 0으로 변경하도록 승인했으므로 아래 명령은 `--gpu 0`을 명시한다. 기존 작업·TensorBoard·`latest` 링크를 변경하지 않는다.
 
 ```bash
 ssh hpi-lab nvidia-smi
 bash tools/run_site_sim_server.sh upload my_smoke outputs/site_sim/my_run/mission
-bash tools/run_site_sim_server.sh start my_smoke --max-sim-s 15 --max-wall-s 300 --port 8765
+bash tools/run_site_sim_server.sh start my_smoke --gpu 0 --max-sim-s 15 --max-wall-s 300 --port 8765
 bash tools/run_site_sim_server.sh tunnel my_smoke 8765
 bash tools/run_site_sim_server.sh status my_smoke
 ```
@@ -47,7 +47,7 @@ bash tools/run_site_sim_server.sh status my_smoke
 
 ```bash
 bash tools/run_site_sim_server.sh upload my_natural outputs/site_sim/my_run/mission
-bash tools/run_site_sim_server.sh start my_natural --port 8767
+bash tools/run_site_sim_server.sh start my_natural --gpu 0 --port 8767
 bash tools/run_site_sim_server.sh tunnel my_natural 8767
 ```
 
@@ -55,7 +55,7 @@ bash tools/run_site_sim_server.sh tunnel my_natural 8767
 
 ```bash
 bash tools/run_site_sim_server.sh upload my_fault outputs/site_sim/my_run/mission
-bash tools/run_site_sim_server.sh start my_fault --fault-injection --port 8768
+bash tools/run_site_sim_server.sh start my_fault --gpu 0 --fault-injection --port 8768
 bash tools/run_site_sim_server.sh tunnel my_fault 8768
 ```
 

@@ -90,5 +90,6 @@ def test_prepare_writes_reloadable_bundle_with_finite_attempt_budget(tmp_path,mo
     output=tmp_path/'prepared';module.prepare(stl,sand,output)
     loaded=SiteMission.load(output,load_mesh=False)
     assert loaded.validate()['accepted']
+    assert np.allclose(loaded.start,[2.9,1.2,0.])
     assert 120<=loaded.settings['max_attempt_s']<900
     assert (output/'preview.png').is_file()

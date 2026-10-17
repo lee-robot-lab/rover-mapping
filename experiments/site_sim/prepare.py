@@ -91,7 +91,7 @@ def prepare(stl: Path, sand: Path, output: Path) -> SiteMission:
     mesh=metric_arena_mesh(stl,sand)
     # 0.1675 m pivot radius + wheel sweep <=0.06 m, 0.02 m clearance + 0.05 m arrival margin.
     site=SiteMap.from_mesh(mesh,units='m',resolution=.025,robot_radius=.30,surface_mode='top')
-    start=[3.7,-.3,math.pi/2];junction=[3.7,.35];summit=[5.35,.4]
+    start=[2.9,1.2,0.];junction=[3.7,.35];summit=[5.35,.4]
     routes={
         '30':route_through(site,[junction,[3.8,.4],[4.5,.4],summit],35),
         '15':route_through(site,[junction,[3.7,1.2],[4.7,1.2],[6.15,1.2],[6.15,.4],summit],20),

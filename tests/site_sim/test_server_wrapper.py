@@ -52,3 +52,14 @@ def test_duplicate_output_does_not_start_new_process(remote):
 
 def test_wrapper_shell_syntax():
     assert subprocess.run(['bash','-n',str(WRAPPER)]).returncode==0
+
+
+def test_explicit_gpu_selection_changes_query_and_docker_device(remote):
+    env,log=remote
+    ssh=Path(env['PATH'].split(':')[0])/'ssh'
+    ssh.write_text(ssh.read_text().replace("printf '1000, 0\\n'","printf '32000, 0\\n'"))
+    result=invoke(['start','gpuzero','--gpu','0'],env)
+    assert result.returncode==0,result.stderr
+    commands=log.read_text()
+    assert 'nounits -i 0' in commands
+    assert '--gpus device=0' in commands

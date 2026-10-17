@@ -24,7 +24,8 @@ def geometry_costs(mission: SiteMission) -> tuple[np.ndarray,np.ndarray]:
     result=[]
     for key in ('normal_slope_deg','trial_slope_deg'):
         limit=mission.settings[key]
-        cost=build_costmap(layers,s.resolution,RoverLimits(max_slope_deg=limit,max_step_m=s.max_step_m,
+        inclusive_limit=min(float(np.nextafter(np.float32(limit+1e-4),np.float32(np.inf))),89.999999)
+        cost=build_costmap(layers,s.resolution,RoverLimits(max_slope_deg=inclusive_limit,max_step_m=s.max_step_m,
                                                        safety_radius_m=0.))
         cost[s.observed&~s.safe_mask(limit)]=254
         result.append(cost)
@@ -34,9 +35,11 @@ def geometry_costs(mission: SiteMission) -> tuple[np.ndarray,np.ndarray]:
 class RunRecorder:
     """주행 시계열과 고정 크기 경험 grid를 새 run에 누적하며 부분 실패를 보존한다."""
 
-    def __init__(self, mission: SiteMission, output: Path, *, max_snapshots: int=1200) -> None:
+    def __init__(self, mission: SiteMission, output: Path, *, max_snapshots: int=1200,
+                 fault_injection: bool=False) -> None:
         if type(max_snapshots) is not int or max_snapshots<2:raise ValueError('at least two snapshots required')
         self.mission=mission;self.output=Path(output);self.output.mkdir(parents=True,exist_ok=False)
+        self.fault_injection=bool(fault_injection);self.fault_occurred=False
         self.live=self.output/'live';self.live.mkdir();(self.output/'snapshots').mkdir()
         self.normal,self.trial=geometry_costs(mission)
         shape=mission.site.observed.shape
@@ -56,8 +59,10 @@ class RunRecorder:
             'frame':'site','site_identity':s.identity,'physics_dt_s':.005,'control_dt_s':.05,
             'geometry_cost_source':'known simulator geometry','experience_source':'actual simulator pose samples',
             'slip':None,'sinkage':None,'hardware_commands_enabled':False,'mission_settings':mission.settings,
+            'fault_injection':self.fault_injection,
             'grid_metadata':s.metadata})
         self.snapshot(0.,'initial')
+        self.publish(status='preparing',reason='simulator startup')
 
     def snapshot(self, stamp_s: float, reason: str) -> Path | None:
         """최종 snapshot 공간을 예약하고 atomic NPZ로 현재 경험 층을 보존한다."""
@@ -87,6 +92,7 @@ class RunRecorder:
                                            row['requested_command']['vx_m_s'],row['applied_command']['vx_m_s']])
         for event in events[self.event_cursor:]:
             self.events.write(json.dumps(event,allow_nan=False)+'\n')
+            if event['type']=='fault_injected':self.fault_occurred=True
             if event['type']=='ascent_failed' and inside:self.stuck[c[1],c[0]]+=1
         self.event_cursor=len(events)
         state=(m['state'],m['route'])
@@ -102,6 +108,7 @@ class RunRecorder:
         yy,xx=np.nonzero(self.visits)
         atomic_json(self.live/'state.json',{'status':status,'reason':reason,'updated_wall_s':time.time(),
             'simulation_only':True,'pose_source':'sim_ground_truth','recording':str(self.output),
+            'fault_injection':self.fault_injection,'fault_occurred':self.fault_occurred,
             'snapshot_count':self.snapshot_count,'last':self.last,'trajectory':self.trajectory[-20000:],
             'experience':np.c_[xx,yy,self.visits[yy,xx],self.stuck[yy,xx]].tolist(),
             'visited_cells':int((self.visits>0).sum()),'stuck_events':int(self.stuck.sum())})
@@ -113,7 +120,8 @@ class RunRecorder:
         self.done=True;self.snapshot(max(0.,self.last_stamp),'final')
         for f in (self.telemetry,self.events,self.csv_file):f.close()
         summary={'status':status,'reason':reason,'simulation_only':True,'pose_source':'sim_ground_truth',
-            'fault_injection':self.last.get('fault_injection',False),'fault_active':self.last.get('fault_active',False),
+            'fault_injection':self.fault_injection,'fault_occurred':self.fault_occurred,
+            'fault_active':self.last.get('fault_active',False),
             'duration_sim_s':max(0.,self.last_stamp),'duration_wall_s':self.last.get('wall_s'),
             'mission':self.last.get('mission'),'snapshots':self.snapshot_count,'telemetry_samples':len(self.trajectory),
             'visited_cells':int((self.visits>0).sum()),'stuck_events':int(self.stuck.sum()),

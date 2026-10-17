@@ -44,7 +44,7 @@ def upload(label: str, mission: Path, assets: Path) -> None:
         if not path.is_relative_to(assets.resolve()) or not path.is_file():raise ValueError('missing/outside URDF mesh')
     hashes={};run=f'{ROOT}/{label}'
     with tempfile.TemporaryFile() as archive:
-        with tarfile.open(fileobj=archive,mode='w') as tar:
+        with tarfile.open(fileobj=archive,mode='w:gz') as tar:
             for package in ('handheld_mapping','site_sim','orbslam3_ros2','orbslam3_offline'):
                 for path in sorted((REPO/'experiments'/package).rglob('*')):
                     if path.suffix not in ('.py','.html') or '__pycache__' in path.parts:continue
@@ -58,36 +58,41 @@ def upload(label: str, mission: Path, assets: Path) -> None:
                 'stl_and_sand_provenance':json.loads((mission/'simulation.json').read_text())}).encode()
             info=tarfile.TarInfo('source_manifest.json');info.size=len(body);tar.addfile(info,io.BytesIO(body))
         archive.seek(0)
-        remote(f'mkdir -p {shlex.quote(ROOT)} && mkdir {shlex.quote(run)} && tar -xf - -C {shlex.quote(run)}',stdin=archive)
+        remote(f'mkdir -p {shlex.quote(ROOT)} && mkdir {shlex.quote(run)} && tar -xzf - -C {shlex.quote(run)}',stdin=archive)
     print('uploaded:',run)
 
 
-def start(label: str, fault: bool, sim: float, wall: float, port: int) -> None:
-    """충분히 빈 GPU1에서만 새 물리 run과 독립 loopback viewer를 시작한다."""
+def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1) -> None:
+    """지정한 유휴 GPU에서만 새 물리 run과 독립 loopback viewer를 시작한다."""
     from experiments.site_sim.run import validate_limits
     validate_limits(sim,wall)
     run=f'{ROOT}/{label}';name='rover-site-'+label
     remote(f'test -d {shlex.quote(run)} && test ! -e {shlex.quote(run+"/output")}')
-    gpu=remote('nvidia-smi --query-gpu=memory.free,utilization.gpu --format=csv,noheader,nounits -i 1',capture=True).stdout.strip()
-    free,util=(int(v.strip()) for v in gpu.split(','))
-    if free<12000 or util>20:raise RuntimeError(f'GPU1 free memory {free}MiB / utilization {util}%: refusing launch')
+    if gpu not in (0,1):raise ValueError('GPU index must be 0 or 1')
+    gpu_before=remote(f'nvidia-smi --query-gpu=memory.free,utilization.gpu --format=csv,noheader,nounits -i {gpu}',capture=True).stdout.strip()
+    free,util=(int(v.strip()) for v in gpu_before.split(','))
+    if free<12000 or util>20:raise RuntimeError(f'GPU{gpu} free memory {free}MiB / utilization {util}%: refusing launch')
     # Fail before starting either process if the requested observer port is unavailable.
     probe=f'import socket; s=socket.socket(); s.bind(("127.0.0.1",{port})); s.close()'
     remote(shlex.join(['python3','-c',probe]))
-    args=['/isaac-sim/python.sh','-m','experiments.site_sim.run','--mission','/workspace/mission',
+    args=['/isaac-sim/kit/python/bin/python3','-m','experiments.site_sim.run','--mission','/workspace/mission',
         '--urdf','/workspace/rover/rover_portable.urdf','--geometry','/workspace/rover/swerve_geometry.json',
         '--scene-usd','/arena/arena.usd','--output','/workspace/output',
         '--max-sim-s',str(sim),'--max-wall-s',str(wall)]
     if fault:args.append('--fault-injection')
-    inside=shlex.join(args)+' > /workspace/run.log 2>&1; result=$?; printf "%s\\n" "$result" > /workspace/exit.txt; exit "$result"'
-    docker=['docker','run','-d','--name',name,'--user','0:0','--gpus','device=1','--shm-size=2g',
+    # Match the installed python.sh environment but exec Python as PID1 for SIGTERM/finally.
+    inside=('export CARB_APP_PATH=/isaac-sim/kit ISAAC_PATH=/isaac-sim EXP_PATH=/isaac-sim/apps\n'
+            'source /isaac-sim/setup_python_env.sh\n'
+            'export LD_PRELOAD=/isaac-sim/kit/libcarb.so${LD_PRELOAD:+:$LD_PRELOAD}\n'
+            'exec '+shlex.join(args)+' > /workspace/run.log 2>&1')
+    docker=['docker','run','-d','--name',name,'--user','0:0','--gpus',f'device={gpu}','--shm-size=2g',
         '-e','ACCEPT_EULA=Y','-e','PRIVACY_CONSENT=Y','-e','OMNI_KIT_ALLOW_ROOT=1',
         '-e','PYTHONPATH=/workspace','-e','PYTHONNOUSERSITE=1','-e','OMP_NUM_THREADS=4',
         '-e','OPENBLAS_NUM_THREADS=1','-e','MPLCONFIGDIR=/workspace/.mpl',
         '-v',run+':/workspace','-v',run+'/rover:/workspace/rover:ro','-v',ARENA+':/arena/arena.usd:ro',
         '-w','/workspace','--entrypoint','bash',IMAGE,'-lc',inside]
-    launch={'container':name,'gpu':1,'observer_port':port,'fault_injection':fault,
-            'max_sim_s':sim,'max_wall_s':wall,'gpu_before':gpu,'argv':docker}
+    launch={'container':name,'gpu':gpu,'observer_port':port,'fault_injection':fault,
+            'max_sim_s':sim,'max_wall_s':wall,'gpu_before':gpu_before,'argv':docker}
     write='from pathlib import Path; Path('+repr(run+'/launch.json')+').write_text('+repr(json.dumps(launch,indent=2))+')'
     remote(shlex.join(['python3','-c',write]))
     remote(f'docker image inspect {shlex.quote(IMAGE)} --format "{{{{.Id}}}}" > {run}/image_id.txt')
@@ -111,14 +116,24 @@ def tunnel(label: str, local_port: int) -> None:
     directory=Path.home()/'.cache/rover-site-sim';directory.mkdir(parents=True,exist_ok=True)
     pidfile=directory/f'{label}.pid'
     if pidfile.exists():
-        try:os.kill(int(pidfile.read_text()),0);raise RuntimeError('tunnel already running')
-        except ProcessLookupError:pass
+        try:record=json.loads(pidfile.read_text())
+        except ValueError:record=None
+        if isinstance(record,dict) and process_identity(record['pid'])==record:raise RuntimeError('tunnel already running')
     log=(directory/f'{label}.log').open('ab')
     command=['ssh','-o','BatchMode=yes','-o','ExitOnForwardFailure=yes','-o','ServerAliveInterval=15','-N',
         '-L',f'127.0.0.1:{local_port}:127.0.0.1:{int(launch["observer_port"])}','hpi-lab']
     process=subprocess.Popen(command,stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
-    pidfile.write_text(str(process.pid));log.close()
+    pidfile.write_text(json.dumps(process_identity(process.pid)));log.close()
     print(f'http://127.0.0.1:{local_port} (tunnel pid {process.pid})')
+
+
+def process_identity(pid: int) -> dict | None:
+    """PID 재사용을 구분하는 시작 tick과 정확한 argv를 함께 읽는다."""
+    try:
+        root=Path(f'/proc/{pid}')
+        return {'pid':pid,'start_ticks':int((root/'stat').read_text().rsplit(')',1)[1].split()[19]),
+                'argv':(root/'cmdline').read_bytes().decode().split('\0')}
+    except (OSError,ValueError,IndexError):return None
 
 
 def stop(label: str) -> None:
@@ -139,11 +154,11 @@ if pidfile.is_file():
     remote(shlex.join(['python3','-c',terminate]))
     pidfile=Path.home()/'.cache/rover-site-sim'/f'{label}.pid'
     if pidfile.is_file():
-        pid=int(pidfile.read_text())
         try:
-            argv=Path(f'/proc/{pid}/cmdline').read_bytes()
-            if b'ssh' in argv and b'hpi-lab' in argv:os.kill(pid,signal.SIGTERM)
-        except (ProcessLookupError,FileNotFoundError):pass
+            record=json.loads(pidfile.read_text())
+            if isinstance(record,dict) and process_identity(record['pid'])==record:
+                os.kill(record['pid'],signal.SIGTERM)
+        except (ProcessLookupError,FileNotFoundError,ValueError,KeyError):pass
         pidfile.unlink()
 
 
@@ -152,6 +167,7 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('label');parser.add_argument('path',nargs='?');parser.add_argument('--fault-injection',action='store_true')
     parser.add_argument('--max-sim-s',type=float,default=900.);parser.add_argument('--max-wall-s',type=float,default=3600.)
     parser.add_argument('--port',type=int,default=8765)
+    parser.add_argument('--gpu',type=int,choices=(0,1),default=1)
     parser.add_argument('--assets',type=Path,default=Path('/home/su/rover/ros2_ws/src/rover_description'))
     args=parser.parse_args(argv)
     try:
@@ -160,7 +176,7 @@ def main(argv: list[str] | None=None) -> int:
         if args.action=='upload':
             if not args.path:raise ValueError('mission folder required')
             upload(args.label,Path(args.path).resolve(),args.assets)
-        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port)
+        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu)
         elif args.action=='status':status(args.label)
         elif args.action=='tunnel':tunnel(args.label,int(args.path or args.port))
         else:stop(args.label)
