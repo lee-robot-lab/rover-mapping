@@ -178,6 +178,13 @@ def run(args: argparse.Namespace) -> dict:
                     mid=np.round((np.array(box.GetMin())+np.array(box.GetMax()))/2,2).tolist() if not box.IsEmpty() else None
                     print('SITE_SIM_PRIM_AFTER_SETTLE',path,mid,flush=True)
         except Exception as error:print('SITE_SIM_PRIM_AFTER_SETTLE scan failed',error,flush=True)
+        try:   # 경기장 USD 안에 로버·바퀴 이름을 가진 prim이 있는지(복사본 후보) 진단한다.
+            keywords=('rover','wheel','chassis','base_link','robot','rocker')
+            for prim in Usd.PrimRange(stage.GetPrimAtPath('/World/SandScene'),Usd.TraverseInstanceProxies()):
+                if any(k in prim.GetName().lower() for k in keywords):
+                    print('SITE_SIM_ARENA_NAME',prim.GetPath(),prim.GetTypeName(),flush=True)
+            print('SITE_SIM_ARENA_PRIM_COUNT',sum(1 for _ in Usd.PrimRange(stage.GetPrimAtPath('/World/SandScene'),Usd.TraverseInstanceProxies())),flush=True)
+        except Exception as error:print('SITE_SIM_ARENA_NAME scan failed',error,flush=True)
         atomic_json(Path(args.output)/'ready.json',{'position_m':p.tolist(),'wall_s':time.monotonic()-wall_start})
         while app.is_running():
             sim_s=float(world.current_time)-t0;wall_s=time.monotonic()-wall_start
