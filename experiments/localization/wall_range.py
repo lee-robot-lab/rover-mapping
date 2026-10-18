@@ -98,8 +98,15 @@ def raycast(origin: np.ndarray, directions: np.ndarray, triangles: np.ndarray) -
 class Scene:
     """STL 지도와 카메라 모델로 추정 pose에서 벽이 보일 깊이를 예측한다."""
 
-    def __init__(self, camera: Camera, triangles: np.ndarray | None = None) -> None:
+    def __init__(self, camera: Camera, triangles: np.ndarray | None = None, mesh: object | None = None) -> None:
         self.triangles, self.planes, self.corners = load_scene(triangles)
+        self._caster = None
+        if mesh is not None:   # 경기장 전체 메쉬(내부 경사로 벽 포함)는 Open3D 가속 구조로 쏜다
+            import open3d as o3d
+            self._caster = o3d.t.geometry.RaycastingScene()
+            self._caster.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(mesh))
+            mesh_triangles = np.asarray(mesh.vertices)[np.asarray(mesh.triangles)]
+            self.triangles = mesh_triangles
         cross = np.cross(self.triangles[:, 1]-self.triangles[:, 0], self.triangles[:, 2]-self.triangles[:, 0])
         self.vertical = abs(cross[:, 2])/np.maximum(np.linalg.norm(cross, axis=1), 1e-12) < .2
         self.camera = camera
@@ -119,7 +126,15 @@ class Scene:
     def depth(self, base_pose: np.ndarray, rays: np.ndarray, walls_only: bool) -> np.ndarray:
         """base pose에서 본 광축 깊이(가림·범위 밖은 nan). walls_only면 수직 벽면에 맞은 ray만 남긴다."""
         camera = base_pose @ self.left
-        z, index = raycast(camera[:3, 3], rays @ camera[:3, :3].T, self.triangles)
+        directions = rays @ camera[:3, :3].T
+        if self._caster is not None:
+            import open3d as o3d
+            query = np.concatenate([np.broadcast_to(camera[:3, 3], directions.shape), directions], axis=1).astype(np.float32)
+            hit = self._caster.cast_rays(o3d.core.Tensor(query))
+            z, index = hit['t_hit'].numpy().astype(float), hit['primitive_ids'].numpy().astype(np.int64)
+            index = np.where(index < len(self.vertical), index, 0)
+        else:
+            z, index = raycast(camera[:3, 3], directions, self.triangles)
         keep = (z >= DEPTH_RANGE[0]) & (z <= DEPTH_RANGE[1])
         if walls_only:
             keep &= self.vertical[index]
@@ -362,6 +377,14 @@ def wall_top_residual(measured: np.ndarray, predicted: np.ndarray, limit_px: flo
     return delta[keep], keep
 
 
+def wall_top_agrees(measured: np.ndarray, predicted: np.ndarray, tolerance_px: float = 4., min_fraction: float = .6) -> bool:
+    """검출과 예측이 둘 다 있는 열 중 tolerance_px 이내인 비율이 min_fraction 이상일 때만 그 프레임의 윗선을 믿는다(지도에 없는 구조물 거부)."""
+    both = np.isfinite(measured) & np.isfinite(predicted)
+    if both.sum() < 4:
+        return False
+    return float(np.mean(abs(measured[both]-predicted[both]) <= tolerance_px)) >= min_fraction
+
+
 def predicted_wall_top(scene: Scene, base_pose: np.ndarray, columns: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """추정 pose에서 STL 벽이 처음 보이는 행(윗선)과 그 광축 거리를 열마다 구한다(성기게 찾고 4행 안에서 0.25픽셀 단위로 다듬는다)."""
     c = scene.camera
@@ -384,12 +407,14 @@ def predicted_wall_top(scene: Scene, base_pose: np.ndarray, columns: np.ndarray)
 
 
 def wall_top_update(filter_: InertialFilter, scene: Scene, imu_from_base: np.ndarray, measured: np.ndarray, columns: np.ndarray,
-                    min_columns: int = 8, limit_px: float = 15., sigma_px: float = 3.) -> dict:
+                    min_columns: int = 8, limit_px: float = 15., sigma_px: float = 3., agree_px: float = 8.) -> dict:
     """검출한 벽 윗선 행을 예측과 비교해 x,y,yaw를 보정한다. 거리 제한 단계가 넓을수록 잡음을 키운다."""
     base, _ = base_state(filter_, imu_from_base)
     predicted, distance = predicted_wall_top(scene, base, columns)
     usable = np.isfinite(predicted) & (predicted > 6) & np.isfinite(measured)
     gate, limit = gate_wall_top(np.where(usable, distance, np.nan), min_columns)
+    if not wall_top_agrees(np.where(gate, measured, np.nan), predicted, agree_px):
+        return {'accepted': False, 'reason': 'map_mismatch', 'n': 0, 'limit_m': limit}
     residual, close = wall_top_residual(np.where(gate, measured, np.nan), predicted, limit_px)
     if close.sum() < 4:
         return {'accepted': False, 'reason': 'few_columns', 'n': int(close.sum()), 'limit_m': limit}

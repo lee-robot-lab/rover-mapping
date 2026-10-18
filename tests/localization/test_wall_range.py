@@ -126,3 +126,49 @@ def test_wall_top_update_pulls_a_wrong_position_toward_the_measured_wall_top() -
     after = np.linalg.norm(filt.pose[:2, 3]-true_pose[:2, 3])
     assert info['accepted'] and info['n'] >= 4
     assert after < before*.7
+
+
+def _room_mesh():
+    """바닥 없이 4 m x 3 m 방의 벽과 가운데 낮은 칸막이를 가진 삼각형 메쉬."""
+    import open3d as o3d
+    def wall(a, b, height):
+        (x0, y0), (x1, y1) = a, b
+        return [[x0, y0, 0.], [x1, y1, 0.], [x1, y1, height], [x0, y0, height]]
+    quads = [wall((0, 0), (4, 0), .7), wall((4, 0), (4, 3), .7), wall((4, 3), (0, 3), .7), wall((0, 3), (0, 0), .7), wall((0.5, 1), (3.5, 1), .6)]
+    vertices, faces = [], []
+    for quad in quads:
+        base = len(vertices)
+        vertices += quad
+        faces += [[base, base+1, base+2], [base, base+2, base+3]]
+    mesh = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(vertices), o3d.utility.Vector3iVector(faces))
+    return mesh, np.asarray(vertices)[np.asarray(faces)]
+
+
+def test_mesh_raycasting_matches_the_brute_force_triangle_casting() -> None:
+    mesh, triangles = _room_mesh()
+    brute, fast = Scene(camera(), triangles=triangles), Scene(camera(), mesh=mesh)
+    pose = base_pose(1., 2., .4)
+    rays = brute.grid
+    a, b = brute.depth(pose, rays, False), fast.depth(pose, rays, False)
+    assert np.array_equal(np.isfinite(a), np.isfinite(b)) and np.nanmax(abs(a-b)) < 1e-3
+    wa, wb = brute.depth(pose, rays, True), fast.depth(pose, rays, True)
+    assert np.array_equal(np.isfinite(wa), np.isfinite(wb))
+
+
+def test_interior_partition_is_part_of_the_predicted_wall_top() -> None:
+    from experiments.localization.wall_range import predicted_wall_top
+    mesh, triangles = _room_mesh()
+    scene = Scene(camera(), mesh=mesh)
+    pose = base_pose(2., .3, np.pi/2)                         # 칸막이(y=1, 높이 0.6 m)를 정면으로 바라본다
+    rows, dist = predicted_wall_top(scene, pose, np.array([320.]))
+    assert np.isfinite(rows).all() and dist[0] < 1.0          # 먼 외벽(약 2.7 m)이 아니라 가까운 칸막이가 윗선
+
+
+def test_wall_top_frame_is_used_only_when_enough_columns_agree_with_the_map() -> None:
+    from experiments.localization.wall_range import wall_top_agrees
+    predicted = np.full(40, 100.)
+    good = predicted+np.random.default_rng(0).normal(0, 1.2, 40)
+    assert wall_top_agrees(good, predicted, tolerance_px=4., min_fraction=.6)
+    mixed = good.copy();mixed[:20] += 30                        # 절반이 지도에 없는 구조물에 걸림
+    assert not wall_top_agrees(mixed, predicted, tolerance_px=4., min_fraction=.6)
+    assert not wall_top_agrees(np.full(40, np.nan), predicted)  # 검출이 없으면 쓰지 않는다
