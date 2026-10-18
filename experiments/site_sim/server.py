@@ -106,7 +106,8 @@ def fetch(label: str, destination: Path) -> None:
     print(f'fetched: {destination}\nview: python3 -m experiments.site_sim.viewer --output {destination} --port 8790')
 
 
-def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1, save_front_s: float=0., stereo_hz: float=0., start_hold_s: float=0., estimator: bool=False, adaptive_visual_noise: bool=False, save_overview_s: float=0.) -> None:
+def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1, save_front_s: float=0., stereo_hz: float=0., start_hold_s: float=0., estimator: bool=False, adaptive_visual_noise: bool=False, save_overview_s: float=0.,
+          wheel_gain_left: float=1., wheel_gain_right: float=1., slip_start_s: float=0., slip_end_s: float | None=None) -> None:
     """지정한 유휴 GPU에서만 새 물리 run과 독립 loopback viewer를 시작한다."""
     from experiments.site_sim.run import validate_limits
     validate_limits(sim,wall)
@@ -127,6 +128,9 @@ def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=
     if fault:args.append('--fault-injection')
     if save_front_s>0:args+=['--save-front-s',str(save_front_s)]
     if save_overview_s>0:args+=['--save-overview-s',str(save_overview_s)]
+    if wheel_gain_left!=1. or wheel_gain_right!=1.:
+        args+=['--wheel-gain-left',str(wheel_gain_left),'--wheel-gain-right',str(wheel_gain_right),'--slip-start-s',str(slip_start_s)]
+        if slip_end_s is not None:args+=['--slip-end-s',str(slip_end_s)]
     if stereo_hz>0:args+=['--stereo-hz',str(stereo_hz)]
     if start_hold_s>0:args+=['--start-hold-s',str(start_hold_s)]
     if estimator:
@@ -236,6 +240,9 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--assets',type=Path,default=REPO/'outputs/site_sim/rover_assets_new')
     parser.add_argument('--texture',type=Path,default=None)
     parser.add_argument('--save-front-s',type=float,default=0.)
+    parser.add_argument('--wheel-gain-left',type=float,default=1.,help='왼쪽 바퀴 속도 배율(슬립 주입, 0~2)')
+    parser.add_argument('--wheel-gain-right',type=float,default=1.)
+    parser.add_argument('--slip-start-s',type=float,default=0.);parser.add_argument('--slip-end-s',type=float,default=None)
     parser.add_argument('--save-overview-s',type=float,default=.25,help='위에서 내려다본 관찰 화면을 이 간격(sim s)으로 저장한다')
     parser.add_argument('--stereo-hz',type=float,default=0.)
     parser.add_argument('--start-hold-s',type=float,default=0.)
@@ -248,7 +255,7 @@ def main(argv: list[str] | None=None) -> int:
         if args.action=='upload':
             if not args.path:raise ValueError('mission folder required')
             upload(args.label,Path(args.path).resolve(),args.assets,args.texture)
-        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu,args.save_front_s,args.stereo_hz,args.start_hold_s,args.estimator,args.adaptive_visual_noise,args.save_overview_s)
+        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu,args.save_front_s,args.stereo_hz,args.start_hold_s,args.estimator,args.adaptive_visual_noise,args.save_overview_s,args.wheel_gain_left,args.wheel_gain_right,args.slip_start_s,args.slip_end_s)
         elif args.action=='status':status(args.label)
         elif args.action=='fetch':fetch(args.label,Path(args.path) if args.path else REPO/'outputs/site_sim'/args.label)
         elif args.action=='tunnel':tunnel(args.label,int(args.path or args.port))

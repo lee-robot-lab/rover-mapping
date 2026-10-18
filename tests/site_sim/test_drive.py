@@ -155,3 +155,29 @@ def test_filter_status_reaches_sensor_safety_even_when_pose_is_valid(mission) ->
     gap=drive.step(.7)
     assert gap['mission']['sensor_safety']['mode']=='stop'
     assert gap['applied_command']=={'vx_m_s':0.,'yaw_rate_rad_s':0.}
+
+
+def test_wheel_slip_scales_only_the_chosen_side_inside_its_time_window(mission) -> None:
+    from experiments.site_sim.drive import SimulationDrive, SlipInjection
+    base=SimulationDrive(Robot(),Session(),mission,hold_s=0.);base.step(.05)
+    reference=base.session.wheels.copy()
+    drive=SimulationDrive(Robot(),Session(),mission,slip=SlipInjection(left=.5,right=1.,start_s=1.,end_s=2.))
+    before=drive.step(.05);assert before['wheel_gain']==[1.,1.,1.,1.]
+    inside=drive.step(1.5)
+    assert inside['wheel_gain']==[.5,1.,.5,1.]                       # y>0 쪽(왼쪽) 모듈만
+    after=drive.step(2.5);assert after['wheel_gain']==[1.,1.,1.,1.]
+    # 같은 지령에서 왼쪽 바퀴 목표가 절반이 된다
+    fresh=SimulationDrive(Robot(),Session(),mission,slip=SlipInjection(left=.5,right=1.,start_s=0.,end_s=9.));fresh.step(.05)
+    assert fresh.session.wheels[[0,2]]==pytest.approx(reference[[0,2]]*.5) and fresh.session.wheels[[1,3]]==pytest.approx(reference[[1,3]])
+
+
+def test_no_slip_injection_keeps_unit_gains_in_the_log(mission) -> None:
+    from experiments.site_sim.drive import SimulationDrive
+    row=SimulationDrive(Robot(),Session(),mission).step(.05)
+    assert row['wheel_gain']==[1.,1.,1.,1.]
+
+
+def test_invalid_slip_gains_are_rejected() -> None:
+    from experiments.site_sim.drive import SlipInjection
+    for bad in (-.1,float('nan'),2.5):
+        with pytest.raises(ValueError):SlipInjection(left=bad)

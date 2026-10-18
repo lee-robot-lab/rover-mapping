@@ -165,7 +165,10 @@ def run(args: argparse.Namespace) -> dict:
                 'simulation_only':True})
             orb=OrbClient(Path(args.orb_io));estimator_log=EstimatorLog(Path(args.output))
             print('SITE_SIM_ESTIMATOR ready (control uses ORB+ESKF estimate; GT is logged only)',flush=True)
-        drive=SimulationDrive(robot,session,mission,fault_injection=args.fault_injection,hold_s=args.start_hold_s,estimator=estimator)
+        from experiments.site_sim.drive import SlipInjection
+        slip=SlipInjection(getattr(args,'wheel_gain_left',1.),getattr(args,'wheel_gain_right',1.),getattr(args,'slip_start_s',0.),
+                           math.inf if getattr(args,'slip_end_s',None) is None else args.slip_end_s)
+        drive=SimulationDrive(robot,session,mission,fault_injection=args.fault_injection,hold_s=args.start_hold_s,estimator=estimator,slip=slip)
         t0=float(world.current_time);next_control=0.;next_render=0.;next_front=0.;next_overview=0.;last_camera_error=None
         print('SITE_SIM_READY',json.dumps({'pose':p.tolist(),'output':str(args.output)}),flush=True)
         try:   # 안정 뒤 로버 시각 형상(ObserverVisual)과 로버·경기장 밖 최상위 prim의 월드 위치를 기록한다(진단).
@@ -298,6 +301,8 @@ def main() -> None:
     parser.add_argument('--sand-texture',type=Path,default=None)
     parser.add_argument('--save-front-s',type=float,default=0.)
     parser.add_argument('--save-overview-s',type=float,default=0.)
+    parser.add_argument('--wheel-gain-left',type=float,default=1.);parser.add_argument('--wheel-gain-right',type=float,default=1.)
+    parser.add_argument('--slip-start-s',type=float,default=0.);parser.add_argument('--slip-end-s',type=float,default=None)
     parser.add_argument('--stereo-hz',type=float,default=0.)
     parser.add_argument('--start-hold-s',type=float,default=0.)
     parser.add_argument('--estimator',action='store_true')

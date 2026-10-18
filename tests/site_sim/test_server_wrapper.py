@@ -109,3 +109,14 @@ def test_fetch_command_thins_stereo_frames_and_targets_the_run_output(tmp_path):
     assert 'site_mission/demo/output/' in text and '--exclude' in text and 'stereo' in text
     listed=[c for c in commands if any(a.startswith('--files-from') for a in c)]
     assert listed and (tmp_path/'.stereo_files.txt').read_text().split()==['mav0/cam0/data/10.png','mav0/cam1/data/10.png','mav0/cam0/data/30.png','mav0/cam1/data/30.png']
+
+
+def test_wheel_slip_options_reach_the_docker_command(remote):
+    env,log=remote
+    ssh=Path(env['PATH'].split(':')[0])/'ssh'
+    ssh.write_text(ssh.read_text().replace("printf '1000, 0\\n'","printf '32000, 0\\n'"))
+    result=invoke(['start','slipopts','--gpu','0','--wheel-gain-left','0.7','--wheel-gain-right','1.0','--slip-start-s','20','--slip-end-s','60'],env)
+    assert result.returncode==0,result.stderr
+    text=log.read_text()
+    for token in ('--wheel-gain-left 0.7','--wheel-gain-right 1.0','--slip-start-s 20.0','--slip-end-s 60.0'):assert token in text
+    log.write_text('');assert invoke(['start','noslip','--gpu','0'],env).returncode==0 and '--wheel-gain' not in log.read_text()

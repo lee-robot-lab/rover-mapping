@@ -5,7 +5,9 @@
 # ================================================================
 from __future__ import annotations
 
+import math
 import time
+from dataclasses import dataclass
 from typing import Any
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -16,12 +18,30 @@ from experiments.orbslam3_ros2.drive_runtime import yaw_from_wxyz
 from experiments.orbslam3_ros2.swerve import body_twist_to_modules
 
 
+@dataclass(frozen=True)
+class SlipInjection:
+    """지정한 시간 구간에 왼쪽(y>0)·오른쪽 바퀴 속도 목표에 배율을 곱해 슬립이나 좌우 속도 차를 흉내낸다."""
+    left: float = 1.
+    right: float = 1.
+    start_s: float = 0.
+    end_s: float = math.inf
+
+    def __post_init__(self) -> None:
+        for gain in (self.left,self.right):
+            if not math.isfinite(gain) or not 0<=gain<=2:raise ValueError('wheel gain must be in [0, 2]')
+
+    def gains(self, geometry: Any, sim_s: float) -> np.ndarray:
+        """geometry 모듈 순서대로의 배율(구간 밖이면 모두 1)."""
+        if not self.start_s<=sim_s<self.end_s:return np.ones(len(geometry.modules))
+        return np.array([self.left if module.y_m>0 else self.right for module in geometry.modules],float)
+
+
 class SimulationDrive:
     """물리 pose feedback만으로 임무를 진행하고 실제 적용 명령을 따로 보존한다."""
 
     def __init__(self, robot: Any, session: Any, mission: SiteMission, *, fault_injection: bool=False, hold_s: float=0.,
-                 estimator: Any=None) -> None:
-        self.robot,self.session=robot,session;self.hold_s=float(hold_s);self.estimator=estimator
+                 estimator: Any=None, slip: SlipInjection | None=None) -> None:
+        self.slip=slip;self.robot,self.session=robot,session;self.hold_s=float(hold_s);self.estimator=estimator
         self.runtime=MissionRuntime(mission,safety=SensorSafety() if estimator is not None else None)
         self.fault_injection=fault_injection
         self.fault_started=False;self.wall_start=time.monotonic()
@@ -62,7 +82,8 @@ class SimulationDrive:
             modules=body_twist_to_modules(s.geometry,vx=applied['vx_m_s'],vy=0.,yaw_rate=applied['yaw_rate_rad_s'])
             s.controller.apply_action(s._action_type(joint_positions=np.array([m.steering_angle_rad for m in modules]),
                                                     joint_indices=s.steering_indices))
-            s.controller.apply_action(s._action_type(joint_velocities=np.array([m.wheel_angular_velocity_rad_s for m in modules]),
+            gain=np.ones(len(modules)) if self.slip is None else self.slip.gains(s.geometry,sim_s)
+            s.controller.apply_action(s._action_type(joint_velocities=np.array([m.wheel_angular_velocity_rad_s for m in modules])*gain,
                                                     joint_indices=s.wheel_indices))
             return {'stamp_s':float(sim_s),'wall_s':time.monotonic()-self.wall_start,
                     'position_m':position.tolist(),'quaternion_wxyz':quaternion.tolist(),
@@ -70,7 +91,7 @@ class SimulationDrive:
                     'joint_velocities':np.asarray(self.robot.get_joint_velocities(),float).tolist(),
                     'requested_command':requested,'applied_command':applied,'mission':result,
                     'pose_source':'orb_eskf_estimate' if estimate else 'sim_ground_truth',
-                    'fault_injection':self.fault_injection,'fault_active':bool(fault),**(estimate or {})}
+                    'fault_injection':self.fault_injection,'fault_active':bool(fault),'wheel_gain':gain.tolist(),**(estimate or {})}
         except BaseException:
             try:self.stop()
             except Exception:pass
