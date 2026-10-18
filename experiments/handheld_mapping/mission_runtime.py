@@ -15,7 +15,7 @@ import numpy as np
 from experiments.handheld_mapping.site_mission import SiteMission, dense_path
 from experiments.handheld_mapping.storage import atomic_json
 from experiments.handheld_mapping.sensor_safety import SensorSafety
-from experiments.handheld_mapping.carrot_follower import CarrotPath
+from experiments.handheld_mapping.carrot_follower import CarrotPath, stanley_heading
 
 
 def angle_wrap(value: float) -> float:
@@ -163,7 +163,11 @@ class MissionRuntime:
         for end in (target,carrot):   # 바로 앞 점과 실제 조향 목표인 당근 점까지 모두 안전해야 한다.
             if not self.mission.site.validate_path([position,end],limit,self.settings['arrival_tolerance_m'])['accepted']:
                 return self._pause('unsafe_local_segment')
-        heading=math.atan2(carrot[1]-position[1],carrot[0]-position[0])+(math.pi if reverse else 0.)
+        heading=math.atan2(carrot[1]-position[1],carrot[0]-position[0])
+        if self.settings['stanley_gain']>0 and not reverse:   # Stanley식: 경로 접선 + 횡방향 오차 보정
+            offset,tangent=self.carrot.cross_track(self.index,position)
+            heading=stanley_heading(tangent,offset,self.settings['max_speed_m_s'],self.settings['stanley_gain'])
+        heading+=math.pi if reverse else 0.
         error=angle_wrap(heading-yaw)
         yaw_rate=float(np.clip(error*2.,-self.settings['max_yaw_rate_rad_s'],self.settings['max_yaw_rate_rad_s']))
         speed=self.settings['max_speed_m_s']*max(0.,math.cos(error)) if abs(error)<1. else 0.

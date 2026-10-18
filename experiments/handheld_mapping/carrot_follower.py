@@ -8,6 +8,11 @@ from __future__ import annotations
 import numpy as np
 
 
+def stanley_heading(tangent: float, cross_track: float, speed: float, gain: float, softening: float=.05) -> float:
+    """Stanley식 목표 방향: 경로 접선 방향에서 횡방향 오차를 줄이는 쪽으로 atan(gain·오차/(속도+softening))만큼 꺾는다(왼쪽 오차면 오른쪽)."""
+    return float(tangent-np.arctan2(gain*cross_track,abs(speed)+softening))
+
+
 class CarrotPath:
     """경로 점열에서 진행 위치 앞의 당근 점과 꼭짓점 감속 배율을 계산한다."""
 
@@ -49,3 +54,12 @@ class CarrotPath:
         arc=self.arcs[min(index,len(self.points)-1)]
         remaining=self._next_stop_arc(arc)-arc
         return float(np.clip(floor+(1.-floor)*remaining/brake_m,floor,1.))
+
+    def cross_track(self, index: int, position: np.ndarray) -> tuple[float, float]:
+        """index 앞쪽 구간에 대한 (횡방향 오차 m, 접선 방향 rad). 오차는 진행 방향 왼쪽이 양수다."""
+        last = len(self.points)-1
+        j = min(max(index, 1), last)
+        a, b = self.points[j-1], self.points[j]
+        tangent = np.arctan2(b[1]-a[1], b[0]-a[0])
+        offset = np.asarray(position, float)-a
+        return float(-np.sin(tangent)*offset[0]+np.cos(tangent)*offset[1]), float(tangent)

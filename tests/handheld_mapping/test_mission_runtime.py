@@ -209,3 +209,15 @@ def test_steering_segment_to_the_carrot_is_safety_checked(monkeypatch):
     monkeypatch.setattr(mission.site,'validate_path',lambda points,limit,slack=0.:{'accepted':np.linalg.norm(np.asarray(points[-1])-np.asarray(points[0]))<.12})
     second.update(sample(mission,0.),0.)
     assert second.update(sample(mission,.1),.1)['reason']=='unsafe_local_segment'
+
+
+def test_stanley_gain_is_a_validated_setting_and_steers_back_toward_the_path() -> None:
+    from experiments.handheld_mapping.mission_runtime import MissionRuntime
+    from experiments.handheld_mapping.site_mission import DEFAULT_SETTINGS
+    assert DEFAULT_SETTINGS['stanley_gain']==0.        # 기본은 꺼 둔다(기존 동작 유지)
+    results={}
+    for gain in (0.,3.):
+        mission=mission_fixture();mission.settings['stanley_gain']=gain;run=MissionRuntime(mission)
+        out=run.update(sample(mission,0.,xy=mission.start[:2]+np.array([.06,0.]),yaw_rad=np.pi/2),0.)    # 경로(x=.5)에서 오른쪽 6 cm, 정면을 향함
+        results[gain]=out['command']['yaw_rate_rad_s']
+    assert results[3.]>results[0.]-1e-9 and results[3.]!=results[0.]   # 횡오차 항이 명령을 바꾼다(왼쪽으로 더 틀어 경로로 복귀)
