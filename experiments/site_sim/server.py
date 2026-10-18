@@ -85,7 +85,7 @@ def upload(label: str, mission: Path, assets: Path, texture: Path | None=None) -
     print('uploaded:',run)
 
 
-def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1, save_front_s: float=0., stereo_hz: float=0., start_hold_s: float=0., estimator: bool=False, adaptive_visual_noise: bool=False) -> None:
+def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1, save_front_s: float=0., stereo_hz: float=0., start_hold_s: float=0., estimator: bool=False, adaptive_visual_noise: bool=False, save_overview_s: float=0.) -> None:
     """지정한 유휴 GPU에서만 새 물리 run과 독립 loopback viewer를 시작한다."""
     from experiments.site_sim.run import validate_limits
     validate_limits(sim,wall)
@@ -105,6 +105,7 @@ def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=
         '--max-sim-s',str(sim),'--max-wall-s',str(wall)]
     if fault:args.append('--fault-injection')
     if save_front_s>0:args+=['--save-front-s',str(save_front_s)]
+    if save_overview_s>0:args+=['--save-overview-s',str(save_overview_s)]
     if stereo_hz>0:args+=['--stereo-hz',str(stereo_hz)]
     if start_hold_s>0:args+=['--start-hold-s',str(start_hold_s)]
     if estimator:
@@ -214,6 +215,7 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--assets',type=Path,default=REPO/'outputs/site_sim/rover_assets_new')
     parser.add_argument('--texture',type=Path,default=None)
     parser.add_argument('--save-front-s',type=float,default=0.)
+    parser.add_argument('--save-overview-s',type=float,default=0.,help='위에서 내려다본 관찰 화면을 이 간격(sim s)으로 저장한다')
     parser.add_argument('--stereo-hz',type=float,default=0.)
     parser.add_argument('--start-hold-s',type=float,default=0.)
     parser.add_argument('--estimator',action='store_true',help='GT 대신 ORB+ESKF 추정 위치로 주행')
@@ -225,7 +227,7 @@ def main(argv: list[str] | None=None) -> int:
         if args.action=='upload':
             if not args.path:raise ValueError('mission folder required')
             upload(args.label,Path(args.path).resolve(),args.assets,args.texture)
-        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu,args.save_front_s,args.stereo_hz,args.start_hold_s,args.estimator,args.adaptive_visual_noise)
+        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu,args.save_front_s,args.stereo_hz,args.start_hold_s,args.estimator,args.adaptive_visual_noise,args.save_overview_s)
         elif args.action=='status':status(args.label)
         elif args.action=='tunnel':tunnel(args.label,int(args.path or args.port))
         else:stop(args.label)

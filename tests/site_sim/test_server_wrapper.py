@@ -80,3 +80,12 @@ def test_restarting_observer_port_allows_previous_connection_time_wait(tmp_path,
         return SimpleNamespace(stdout='32000, 0' if 'nvidia-smi' in command else '')
     monkeypatch.setattr(server,'remote',remote)
     server.start('restart_port',False,10.,30.,port)
+
+
+def test_overview_frame_saving_option_reaches_the_docker_command(remote):
+    env,log=remote
+    ssh=Path(env['PATH'].split(':')[0])/'ssh'
+    ssh.write_text(ssh.read_text().replace("printf '1000, 0\\n'","printf '32000, 0\\n'"))
+    result=invoke(['start','overviewsave','--gpu','0','--save-overview-s','0.25'],env)
+    assert result.returncode==0,result.stderr
+    assert '--save-overview-s 0.25' in log.read_text()

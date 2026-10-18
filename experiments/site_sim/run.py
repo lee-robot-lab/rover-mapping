@@ -154,7 +154,7 @@ def run(args: argparse.Namespace) -> dict:
             orb=OrbClient(Path(args.orb_io));estimator_log=EstimatorLog(Path(args.output))
             print('SITE_SIM_ESTIMATOR ready (control uses ORB+ESKF estimate; GT is logged only)',flush=True)
         drive=SimulationDrive(robot,session,mission,fault_injection=args.fault_injection,hold_s=args.start_hold_s,estimator=estimator)
-        t0=float(world.current_time);next_control=0.;next_render=0.;next_front=0.;last_camera_error=None
+        t0=float(world.current_time);next_control=0.;next_render=0.;next_front=0.;next_overview=0.;last_camera_error=None
         print('SITE_SIM_READY',json.dumps({'pose':p.tolist(),'output':str(args.output)}),flush=True)
         atomic_json(Path(args.output)/'ready.json',{'position_m':p.tolist(),'wall_s':time.monotonic()-wall_start})
         while app.is_running():
@@ -198,6 +198,14 @@ def run(args: argparse.Namespace) -> dict:
                         if rgba.ndim!=3 or rgba.shape[2]<3:continue
                         path=recorder.live/f'{key}.jpg';tmp=path.with_suffix('.tmp')
                         Image.fromarray(rgba[:,:,:3]).save(tmp,format='JPEG',quality=82);tmp.replace(path)
+                    except Exception as error:last_camera_error=str(error)
+                if getattr(args,'save_overview_s',0.)>0 and sim_s>=next_overview:
+                    next_overview=sim_s+args.save_overview_s
+                    try:
+                        rgba=np.asarray(cameras['overview'][1].get_data())
+                        if rgba.ndim==3 and rgba.shape[2]>=3:
+                            (Path(args.output)/'overview_frames').mkdir(exist_ok=True)
+                            Image.fromarray(rgba[:,:,:3]).save(Path(args.output)/'overview_frames'/f'{sim_s:07.2f}.jpg',format='JPEG',quality=88)
                     except Exception as error:last_camera_error=str(error)
                 if args.save_front_s>0 and sim_s>=next_front:
                     next_front=sim_s+args.save_front_s
@@ -260,6 +268,7 @@ def main() -> None:
     parser.add_argument('--max-sim-s',type=float,default=900.);parser.add_argument('--max-wall-s',type=float,default=3600.)
     parser.add_argument('--sand-texture',type=Path,default=None)
     parser.add_argument('--save-front-s',type=float,default=0.)
+    parser.add_argument('--save-overview-s',type=float,default=0.)
     parser.add_argument('--stereo-hz',type=float,default=0.)
     parser.add_argument('--start-hold-s',type=float,default=0.)
     parser.add_argument('--estimator',action='store_true')
