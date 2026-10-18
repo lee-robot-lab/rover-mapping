@@ -168,6 +168,16 @@ def run(args: argparse.Namespace) -> dict:
         drive=SimulationDrive(robot,session,mission,fault_injection=args.fault_injection,hold_s=args.start_hold_s,estimator=estimator)
         t0=float(world.current_time);next_control=0.;next_render=0.;next_front=0.;next_overview=0.;last_camera_error=None
         print('SITE_SIM_READY',json.dumps({'pose':p.tolist(),'output':str(args.output)}),flush=True)
+        try:   # 안정 뒤 로버 시각 형상(ObserverVisual)과 로버·경기장 밖 최상위 prim의 월드 위치를 기록한다(진단).
+            from pxr import Usd
+            cache=UsdGeom.BBoxCache(Usd.TimeCode.Default(),[UsdGeom.Tokens.default_,UsdGeom.Tokens.render])
+            for prim in Usd.PrimRange(stage.GetPseudoRoot(),Usd.TraverseInstanceProxies()):
+                path=str(prim.GetPath());top=path.split('/')[1:3]
+                if 'ObserverVisual' in path or (len(top)==2 and path.count('/')==2 and top[0]=='World' and top[1] not in ('SandScene',)):
+                    box=cache.ComputeWorldBound(prim).ComputeAlignedRange()
+                    mid=np.round((np.array(box.GetMin())+np.array(box.GetMax()))/2,2).tolist() if not box.IsEmpty() else None
+                    print('SITE_SIM_PRIM_AFTER_SETTLE',path,mid,flush=True)
+        except Exception as error:print('SITE_SIM_PRIM_AFTER_SETTLE scan failed',error,flush=True)
         atomic_json(Path(args.output)/'ready.json',{'position_m':p.tolist(),'wall_s':time.monotonic()-wall_start})
         while app.is_running():
             sim_s=float(world.current_time)-t0;wall_s=time.monotonic()-wall_start
