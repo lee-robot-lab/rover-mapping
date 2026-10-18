@@ -119,3 +119,21 @@ def test_clearance_map_and_evaluation(tmp_path, mission):
     assert result['min_clearance_m'] == 0.0 and result['contact_samples'] >= 1          # 지도 밖 표본은 충돌로 센다
     (folder/'summary.json').write_text(json.dumps({'status': 'complete', 'reason': 'x', 'mission': {'state': 'failed'}}))
     assert evaluate(folder, mission_folder)['completed'] is False                       # 임무 상태가 complete가 아니면 완주 아님
+
+
+def test_server_forwards_estimator_experiment_flags(monkeypatch):
+    """--visual-turn-scale·--filter-acc-noise가 서버 start에서 run.py 인자로 그대로 넘어간다."""
+    from experiments.site_sim import server
+    seen = {}
+    monkeypatch.setattr(server, 'start', lambda *args, **kwargs: seen.update(extra=kwargs['extra_args']))
+    assert server.main(['start', 'lbl', '--visual-turn-scale', '1', '--filter-acc-noise', '0.025']) == 0
+    assert seen['extra'] == ['--visual-turn-scale', '1.0', '--filter-acc-noise', '0.025']
+
+
+def test_server_forwards_the_velocity_direction_sigma(monkeypatch):
+    """--velocity-direction-sigma가 서버 start에서 run.py 인자로 그대로 넘어간다."""
+    from experiments.site_sim import server
+    seen = {}
+    monkeypatch.setattr(server, 'start', lambda *args, **kwargs: seen.update(extra=kwargs['extra_args']))
+    assert server.main(['start', 'lbl', '--velocity-direction-sigma', '0.02']) == 0
+    assert seen['extra'] == ['--velocity-direction-sigma', '0.02']

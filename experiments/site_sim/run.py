@@ -133,7 +133,8 @@ def run(args: argparse.Namespace) -> dict:
             imu_world=_column_world_matrix(stage.GetPrimAtPath(h.frame_paths['imu_sensor_frame']))
             base_from_imu=np.linalg.inv(base)@imu_world;base_from_cam=np.linalg.inv(base)@left
             estimator_calibration={'ROS.T_c1_base':np.linalg.inv(base_from_cam).tolist(),
-                                   'IMU.T_b_c1':(np.linalg.inv(base_from_imu)@base_from_cam).tolist(),**DEFAULT_NOISE}
+                                   'IMU.T_b_c1':(np.linalg.inv(base_from_imu)@base_from_cam).tolist(),**DEFAULT_NOISE,
+                                   **({'IMU.NoiseAcc':float(args.filter_acc_noise)} if getattr(args,'filter_acc_noise',None) is not None else {})}
         from experiments.site_sim.visuals import install_rover_visuals
         install_rover_visuals(stage,args.urdf)
         try:   # 경기장(x 2.4~6.6, y ±1.7) 밖에 놓인 물체가 있는지 진단용으로 한 번 기록한다.
@@ -177,7 +178,8 @@ def run(args: argparse.Namespace) -> dict:
             from experiments.localization.imu_realism import ImuRealism
             imu_realism=ImuRealism(seed=getattr(args,'imu_seed',0),vibration_scale=getattr(args,'imu_vibration_scale',1.),drop_probability=float(getattr(args,'imu_drop_prob',0.))) if getattr(args,'imu_realism',False) else None
             estimator=OnlineEstimator(start_pose,estimator_calibration,lag_s=RENDER_LAG_S,
-                                     adaptive_visual_noise=getattr(args,'adaptive_visual_noise',False),imu_realism=imu_realism)
+                                     adaptive_visual_noise=getattr(args,'adaptive_visual_noise',False),imu_realism=imu_realism,direction_sigma=getattr(args,'velocity_direction_sigma',None),
+                                     visual_schedule=None if getattr(args,'visual_turn_scale',None) is None else {'turn_rotation_scale':float(args.visual_turn_scale),'turn_position_scale':float(args.visual_turn_scale)})
             atomic_json(Path(args.output)/'estimator_calibration.json',{
                 'calibration':estimator_calibration,'start_world_from_base':start_pose.tolist(),
                 'render_lag_s':RENDER_LAG_S,'adaptive_visual_noise':estimator.adaptive_visual_noise,
@@ -357,6 +359,9 @@ def main() -> None:
     parser.add_argument('--imu-realism',action='store_true',help='실기(모래 15° 램프 student v3 로그)에서 잰 IMU 바이어스·잡음·이동 진동을 더함(기본 OFF)')
     parser.add_argument('--imu-seed',type=int,default=0)
     parser.add_argument('--imu-vibration-scale',type=float,default=1.,help='이동 진동 배율')
+    parser.add_argument('--visual-turn-scale',type=float,default=None,help='회전 중 영상 관측 σ 배율(기본 4, --adaptive-visual-noise 필요)')
+    parser.add_argument('--filter-acc-noise',type=float,default=None,help='필터가 가정하는 IMU 가속도 잡음 IMU.NoiseAcc [m/s²/√Hz] (기본 0.002)')
+    parser.add_argument('--velocity-direction-sigma',type=float,default=None,help='조향·바퀴 측정 이동 방향(크기는 안 씀)을 속도 방향 관측으로 쓰는 σ [m/s] (기본 꺼짐)')
     parser.add_argument('--orb-io',type=Path,default=Path('/workspace/orbio'))
     parser.add_argument('--fault-injection',action='store_true');args=parser.parse_args();code=1
     try:

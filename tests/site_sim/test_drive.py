@@ -181,3 +181,39 @@ def test_invalid_slip_gains_are_rejected() -> None:
     from experiments.site_sim.drive import SlipInjection
     for bad in (-.1,float('nan'),2.5):
         with pytest.raises(ValueError):SlipInjection(left=bad)
+
+
+class RecordingEstimator(FakeEstimator):
+    """on_motion 호출을 기록하는 추정기 대역."""
+    def __init__(self):
+        super().__init__();self.motions=[]
+    def on_motion(self, stamp_s, vx, vy):
+        self.motions.append((stamp_s,vx,vy))
+
+
+class MovingRobot(Robot):
+    """조향·바퀴 조인트 측정값을 지정한 body 속도에 맞춰 돌려주는 로봇(조인트 8개: 조향 4, 바퀴 4)."""
+    def __init__(self, twist, geometry):
+        super().__init__()
+        from experiments.orbslam3_ros2.swerve import body_twist_to_modules
+        commands=body_twist_to_modules(geometry,vx=twist[0],vy=twist[1],yaw_rate=twist[2])
+        self.q=np.array([c.steering_angle_rad for c in commands]+[0.]*4)
+        self.dq=np.array([0.]*4+[c.wheel_angular_velocity_rad_s for c in commands])
+    def get_joint_positions(self):return self.q
+    def get_joint_velocities(self):return self.dq
+
+
+def test_measured_joints_reach_the_estimator_as_a_body_velocity(mission) -> None:
+    from experiments.site_sim.drive import SimulationDrive
+    session=Session();estimator=RecordingEstimator()
+    drive=SimulationDrive(MovingRobot((.06,.05,0.),session.geometry),session,mission,estimator=estimator)
+    drive.step(.05)
+    assert len(estimator.motions)==1
+    stamp,vx,vy=estimator.motions[0]
+    assert stamp==pytest.approx(.05) and (vx,vy)==pytest.approx((.06,.05),abs=1e-6)
+
+
+def test_estimators_without_on_motion_are_left_alone(mission) -> None:
+    from experiments.site_sim.drive import SimulationDrive
+    drive=SimulationDrive(Robot(),Session(),mission,estimator=FakeEstimator())   # on_motion이 없어도 기존처럼 동작해야 한다
+    assert drive.step(.05)['estimator_status']=='ok'

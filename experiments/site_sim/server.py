@@ -276,6 +276,9 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--imu-realism',action='store_true',help='start: 실기에서 잰 IMU 바이어스·잡음·진동을 더함')
     parser.add_argument('--imu-seed',type=int,default=0)
     parser.add_argument('--imu-vibration-scale',type=float,default=None,help='start: 이동 진동 배율')
+    parser.add_argument('--visual-turn-scale',type=float,default=None,help='start: 회전 중 영상 관측 σ 배율')
+    parser.add_argument('--filter-acc-noise',type=float,default=None,help='start: 필터 IMU 가속도 잡음 가정')
+    parser.add_argument('--velocity-direction-sigma',type=float,default=None,help='start: 조향·바퀴 측정 이동 방향을 속도 방향 관측으로 쓰는 σ [m/s]')
     parser.add_argument('--control-dt',type=float,default=None,help='start: 제어·IMU 구간 주기 [s] (기본 0.05; RL은 0.02 필요)')
     parser.add_argument('--mu',type=float,default=None,help='start: 지면·바퀴 마찰계수')
     parser.add_argument('--wheel-effort',type=float,default=None,help='start: 바퀴 최대 토크 [N m]')
@@ -286,7 +289,7 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--start-seed',type=int,default=None)
     args=parser.parse_args(argv)
     extra=[]
-    for flag in ('mu','wheel_effort','delay_seed','imu_drop_prob','imu_vibration_scale','start_noise_xy_m','start_noise_yaw_deg','start_seed'):
+    for flag in ('mu','wheel_effort','delay_seed','imu_drop_prob','imu_vibration_scale','visual_turn_scale','filter_acc_noise','velocity_direction_sigma','start_noise_xy_m','start_noise_yaw_deg','start_seed'):
         if getattr(args,flag) is not None:extra+=['--'+flag.replace('_','-'),str(getattr(args,flag))]
     if args.command_delay_ms is not None:extra+=['--command-delay-ms',str(args.command_delay_ms[0]),str(args.command_delay_ms[1])]
     try:

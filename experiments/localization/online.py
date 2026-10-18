@@ -63,7 +63,7 @@ class OnlineEstimator:
 
     def __init__(self, start_world_from_base: np.ndarray, calibration: dict, lag_s: float = .1,
                  good_s: float = 1., invalid_s: float = 4., adaptive_visual_noise: bool = False,
-                 visual_schedule: dict | None = None, imu_realism: object | None = None) -> None:
+                 visual_schedule: dict | None = None, imu_realism: object | None = None, direction_sigma: float | None = None) -> None:
         self.lag_s, self.good_s, self.invalid_s = lag_s, good_s, invalid_s
         self.imu_realism = imu_realism                       # ImuRealism이면 GT에서 만든 IMU에 실기 특성을 더한다(기본 None)
         self._held_imu = None                                # 누락된 IMU 구간(시작, 끝, gyro, force)
@@ -81,6 +81,9 @@ class OnlineEstimator:
         start_q = Rotation.from_matrix(start_imu[:3, :3]).as_quat()
         self.imu.push(0., start_imu[:3, 3], np.r_[start_q[3], start_q[:3]])
         self.pending = deque()                                # (t_end, dt, gyro, force) 아직 필터에 넣지 않은 표본
+        self.direction_sigma = direction_sigma                # 속도 방향 관측 σ [m/s]. None이면 꺼짐
+        self.motions = deque()                                # (stamp_s, base 축 단위 이동 방향) 아직 필터 시각에 닿지 않은 측정
+        self.direction_updates = self.direction_rejected = 0
         self.filter_time = 0.
         self.reference = None
         self.previous_ok, self.map_id, self.last_accept = True, None, 0.
@@ -126,6 +129,28 @@ class OnlineEstimator:
             self.filter.propagate(gyro, force, dt)
             self.filter_gyro = gyro
             self.filter_time = end
+            self._apply_motion(end)
+
+    def on_motion(self, stamp_s: float, vx: float, vy: float, min_speed: float = .03) -> None:
+        """base 축 평면 속도 측정(조향·바퀴 조인트)의 방향을 보관한다. 느린 속도는 방향이 불안정해 버리고, 크기는 쓰지 않는다."""
+        speed = float(np.hypot(vx, vy))
+        if self.direction_sigma is None or not np.isfinite(speed) or speed < min_speed:
+            return
+        self.motions.append((float(stamp_s), np.array([vx, vy])/speed))
+
+    def _apply_motion(self, filter_end_s: float) -> None:
+        """필터 시각까지 도착한 측정 중 가장 최근 것으로 속도 방향 관측을 적용한다."""
+        latest = None
+        while self.motions and self.motions[0][0] <= filter_end_s+1e-9:
+            latest = self.motions.popleft()
+        if latest is None:
+            return
+        direction = (self.imu_from_base[:3, :3] @ np.r_[latest[1], 0.])[:2]   # base 축 방향 → IMU 축
+        if float(np.linalg.norm(direction)) < 1e-6:
+            return
+        info = self.filter.direction_update(direction, self.direction_sigma)
+        self.direction_updates += 1
+        self.direction_rejected += 0 if info['accepted'] else 1
 
     def on_frame(self, stamp_s: float, state: int, map_id: str, world_from_camera: np.ndarray) -> dict:
         """stereo 프레임의 ORB 결과를 상대 관측으로 융합한다(필터 시각은 stamp - lag)."""

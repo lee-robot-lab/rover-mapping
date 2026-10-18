@@ -15,7 +15,7 @@ from experiments.handheld_mapping.mission_runtime import MissionRuntime
 from experiments.handheld_mapping.sensor_safety import SensorSafety
 from experiments.handheld_mapping.site_mission import SiteMission
 from experiments.orbslam3_ros2.drive_runtime import yaw_from_wxyz
-from experiments.orbslam3_ros2.swerve import body_twist_to_modules
+from experiments.orbslam3_ros2.swerve import body_twist_from_modules,body_twist_to_modules
 from experiments.site_sim.joint_convention import from_joint,to_joint
 
 
@@ -103,6 +103,10 @@ class SimulationDrive:
                     'tracking_valid':True}
             estimate=None
             if self.estimator is not None:
+                if hasattr(self.estimator,'on_motion'):   # 측정한 조향·바퀴 조인트의 이동 방향을 추정기에 알린다(옵션이 꺼져 있으면 추정기가 버린다)
+                    s=self.session;joints=np.asarray(self.robot.get_joint_positions(),float);rates=np.asarray(self.robot.get_joint_velocities(),float)
+                    vx,vy,_,_=body_twist_from_modules(s.geometry,joints[s.steering_indices].tolist(),rates[s.wheel_indices].tolist())
+                    self.estimator.on_motion(sim_s,vx,vy)
                 # 임무 판단은 추정 위치만 본다. GT(position, quaternion)는 기록과 비교용이다.
                 pose,valid,quality,status=self.estimator.pose(sim_s)
                 q=Rotation.from_matrix(pose[:3,:3]).as_quat()

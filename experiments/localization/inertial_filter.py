@@ -170,6 +170,25 @@ class InertialFilter:
             jac[:, 6+axis] = -(residual(perturb(self.pose, np.r_[np.zeros(3), step]), self.velocity)-value)/1e-6
         return self.update(value, jac, np.eye(2)*sigma**2, gate)
 
+    def direction_update(self, direction_xy: np.ndarray, sigma: float, gate: float = 6.635) -> dict:
+        """IMU 축 평면 속도의 방향만 관측한다(크기는 믿지 않는다). 관측 방향에 수직인 속도 성분이 0이어야 한다는 스칼라 관측이며
+        gate 기본값은 chi-square(1) 99%다. direction_xy는 IMU 축에서 본 이동 방향이다."""
+        direction = np.asarray(direction_xy, float).reshape(-1)
+        norm = float(np.linalg.norm(direction)) if direction.shape == (2,) and np.isfinite(direction).all() else 0.
+        if norm < 1e-9:
+            raise ValueError('direction must be a finite non-zero 2D vector')
+        normal = np.array([-direction[1], direction[0], 0.])/norm
+
+        def residual(pose: np.ndarray, velocity: np.ndarray) -> np.ndarray:
+            return np.array([-normal @ (pose[:3, :3].T @ velocity)])
+        value = residual(self.pose, self.velocity)
+        jac = np.zeros((1, 21))
+        for axis in range(3):
+            step = np.eye(3)[axis]*1e-6
+            jac[:, 3+axis] = -(residual(self.pose, self.velocity+step)-value)/1e-6
+            jac[:, 6+axis] = -(residual(perturb(self.pose, np.r_[np.zeros(3), step]), self.velocity)-value)/1e-6
+        return self.update(value, jac, np.array([[sigma**2]]), gate)
+
     def relative_update(self, observed: np.ndarray, position_scale: float = 1., rotation_scale: float = 1.) -> dict:
         """ORB 상대 IMU pose를 융합한다. 절대 SLAM pose를 독립 절대 관측으로 반복 사용하지 않는다.
 
