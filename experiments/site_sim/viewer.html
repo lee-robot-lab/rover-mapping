@@ -74,6 +74,28 @@ for(const key of ['overview','front']){const age=state.image_age_s?.[key];text(k
 async function request(path){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),2500);try{const r=await fetch(path,{cache:'no-store',signal:controller.signal});if(!r.ok)throw Error('장면·기록 준비 중');return await r.json()}finally{clearTimeout(timer)}}
 function checkFreshness(){if(!state||!receivedAt)return;const silence=Math.max(0,(Date.now()-receivedAt)/1000);const age=serverAge+silence;if(state.status==='running'&&age>3){text('connection','상태 수신 지연');document.getElementById('connection').style.background='#833f32';text('stateAge',age.toFixed(1)+' s');for(const key of ['overview','front']){const a=state.image_age_s?.[key];if(a!=null)text(key+'Age','('+(a+silence).toFixed(1)+'초 전)')}}}
 setInterval(checkFreshness,500);
-async function poll(){try{if(!mapData)mapData=await request('/map');state=await request('/state');receivedAt=Date.now();serverAge=state.age_s;update()}catch(e){text('connection',e.name==='AbortError'?'상태 수신 시간 초과':e.message);document.getElementById('connection').style.background='#7a4936'}finally{setTimeout(poll,400)}}
-document.getElementById('layer').addEventListener('change',draw);poll();
+async function poll(){try{if(!mapData)mapData=await request('/map');const fresh=await request('/state');liveState=fresh;receivedAt=Date.now();serverAge=fresh.age_s;if(!replay.active){state=fresh;update()}if(fresh.status!=='running')ensureReplay()}catch(e){text('connection',e.name==='AbortError'?'상태 수신 시간 초과':e.message);document.getElementById('connection').style.background='#7a4936'}finally{setTimeout(poll,400)}}
+document.getElementById('layer').addEventListener('change',draw);
+// ---- 기록 재생: 끝난 run의 telemetry를 시간 슬라이더로 다시 본다(실제=분홍, 추정=주황, 위치 오차 표시).
+let liveState=null;const replay={data:null,active:false,t:0,playing:false,speed:5,tick:0};
+const rp=id=>document.getElementById(id);
+async function ensureReplay(){if(replay.data!==null)return;replay.data=false;try{const r=await fetch('/replay',{cache:'no-store'});if(!r.ok)return;replay.data=await r.json();buildReplayBar()}catch(e){}}
+function buildReplayBar(){const d=replay.data,bar=document.createElement('div');bar.id='replayBar';bar.style.cssText='display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:10px 0;padding:10px 14px;background:#142038;border-radius:10px';
+bar.innerHTML='<button id="rpPlay">▶ 재생</button><input id="rpSlider" type="range" min="0" max="'+d.t[d.t.length-1]+'" step="0.05" value="0" style="flex:1;min-width:220px"><select id="rpSpeed"><option>1</option><option>2</option><option selected>5</option><option>10</option><option>20</option><option>40</option></select><span>배속</span><strong id="rpLabel"></strong><button id="rpLive">끝 상태</button>';
+document.querySelector('.grid').before(bar);
+rp('rpPlay').onclick=()=>{replay.playing=!replay.playing;if(replay.playing&&replay.t>=d.t[d.t.length-1]-.05)replay.t=0;replay.active=true;rp('rpPlay').textContent=replay.playing?'⏸ 일시정지':'▶ 재생';showReplay()};
+rp('rpSlider').oninput=e=>{replay.active=true;replay.t=+e.target.value;showReplay()};
+rp('rpSpeed').onchange=e=>{replay.speed=+e.target.value};
+rp('rpLive').onclick=()=>{replay.active=false;replay.playing=false;rp('rpPlay').textContent='▶ 재생';if(liveState){state=liveState;update()}};
+replay.tick=performance.now();setInterval(()=>{const now=performance.now(),dt=(now-replay.tick)/1000;replay.tick=now;if(!replay.playing)return;replay.t=Math.min(d.t[d.t.length-1],replay.t+dt*replay.speed);if(replay.t>=d.t[d.t.length-1]){replay.playing=false;rp('rpPlay').textContent='▶ 재생'}showReplay()},50)}
+function replayIndex(t){const a=replay.data.t;let lo=0,hi=a.length-1;while(lo<hi){const m=(lo+hi+1)>>1;if(a[m]<=t)lo=m;else hi=m-1}return lo}
+function showReplay(){const d=replay.data,i=replayIndex(replay.t),r=mapData.resolution,[ox,oy]=mapData.origin,cells=new Map();
+for(let k=0;k<=i;k++){const key=Math.floor((d.gt[k][0]-ox)/r)+','+Math.floor((d.gt[k][1]-oy)/r);cells.set(key,(cells.get(key)||0)+1)}
+const experience=[...cells].map(([k,n])=>{const [x,y]=k.split(',').map(Number);return [x,y,n,0]});
+const yaw=d.yaw[i],live=liveState||{};
+state={...live,status:'재생 중',stale:false,age_s:0,reason:`위치 오차 ${d.err_cm[i].toFixed(1)} cm`,trajectory:d.gt.slice(0,i+1),estimated_trajectory:d.est.slice(0,i+1),experience,visited_cells:cells.size,
+last:{stamp_s:d.t[i],wall_s:0,position_m:[d.gt[i][0],d.gt[i][1],0],quaternion_wxyz:[Math.cos(yaw/2),0,0,Math.sin(yaw/2)],mission:{state:d.state[i],route:d.route[i],direction:'',visits:{}}}};
+update();rp('rpSlider').value=replay.t;rp('rpLabel').textContent=`${d.t[i].toFixed(1)} s · 오차 ${d.err_cm[i].toFixed(1)} cm`;
+if(d.frames&&d.frames.length){rp('overview').src='/replay_frame?t='+d.t[i].toFixed(2);text('overviewAge','(재생 화면)')}}
+poll();
 </script></html>
