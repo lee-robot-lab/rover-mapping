@@ -16,6 +16,7 @@ from experiments.handheld_mapping.sensor_safety import SensorSafety
 from experiments.handheld_mapping.site_mission import SiteMission
 from experiments.orbslam3_ros2.drive_runtime import yaw_from_wxyz
 from experiments.orbslam3_ros2.swerve import body_twist_to_modules
+from experiments.site_sim.joint_convention import from_joint,to_joint
 
 
 @dataclass(frozen=True)
@@ -80,9 +81,12 @@ class SimulationDrive:
         previous=self._rl_previous;self._rl_previous=(sim_s,velocity)
         acceleration=np.zeros(3) if previous is None or sim_s<=previous[0] else (velocity-previous[1])/(sim_s-previous[0])
         joints=np.asarray(self.robot.get_joint_positions(),float);rates=np.asarray(self.robot.get_joint_velocities(),float)
+        steer_q,steer_dq,wheel_w=joints[s.steering_indices],rates[s.steering_indices],rates[s.wheel_indices]
+        converted=[from_joint(m,float(q),float(w)) for m,q,w in zip(s.geometry.modules,steer_q,wheel_w)]   # 조인트 → 펌웨어 규약
         return {'speed':float(np.linalg.norm(velocity)),'gyro_body':r.inv().apply(np.asarray(self.robot.get_angular_velocity(),float)),
                 'force_body':r.inv().apply(acceleration+np.array([0.,0.,9.81])),
-                'steer_pos':joints[s.steering_indices],'steer_vel':rates[s.steering_indices],'wheel_vel':rates[s.wheel_indices]}
+                'steer_pos':np.array([c[0] for c in converted]),'steer_vel':np.array([m.steering_sign*dq for m,dq in zip(s.geometry.modules,steer_dq)]),
+                'wheel_vel':np.array([c[1] for c in converted])}
 
     def stop(self) -> None:
         """네 wheel velocity target을 즉시 0으로 만든다."""
@@ -124,7 +128,9 @@ class SimulationDrive:
                 steer=np.array([m.steering_angle_rad for m in modules]);wheel=np.array([m.wheel_angular_velocity_rad_s for m in modules])
             else:
                 rl_out=self.rl.step((applied['vx_m_s'],0.,applied['yaw_rate_rad_s']),self._rl_state(sim_s,quaternion),sim_s)
-                steer=rl_out['steer_goal'];wheel=rl_out['wheel_mps']/s.geometry.wheel_radius_m
+                pairs=[to_joint(m,float(g),float(v),s.geometry.wheel_radius_m)   # 펌웨어 규약 목표 → 시뮬 조인트 규약(steering_sign, rolling_heading)
+                       for m,g,v in zip(s.geometry.modules,rl_out['steer_goal'],rl_out['wheel_mps'])]
+                steer=np.array([p[0] for p in pairs]);wheel=np.array([p[1] for p in pairs])
             if self.delay is not None:   # 목표는 지금 계산하되 지연 뒤에 조인트에 닿는다
                 self.delay.push(sim_s,steer,wheel);released=self.delay.pop(sim_s)
                 if released is not None:self._applied=released
@@ -139,7 +145,8 @@ class SimulationDrive:
                     'requested_command':requested,'applied_command':applied,'mission':result,
                     'pose_source':'orb_eskf_estimate' if estimate else 'sim_ground_truth',
                     'fault_injection':self.fault_injection,'fault_active':bool(fault),'wheel_gain':gain.tolist(),**(estimate or {}),
-                    **({} if rl_out is None else {'rl_d_steer_rad':rl_out['d_steer'].tolist(),'rl_wheel_gain':rl_out['wheel_gain'].tolist()})}
+                    **({} if rl_out is None else {'rl_d_steer_rad':rl_out['d_steer'].tolist(),'rl_wheel_gain':rl_out['wheel_gain'].tolist(),
+                                   'rl_action':np.round(rl_out['action'],4).tolist(),'rl_obs':np.round(rl_out['obs_frame'],5).tolist()})}
         except BaseException:
             try:self.stop()
             except Exception:pass

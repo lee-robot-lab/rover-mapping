@@ -135,7 +135,9 @@ class RlResidual:
                'steer_meas_rad': np.asarray(state['steer_pos'], float),
                'steer_speed': np.asarray(state['steer_vel'], float)/rt.STEER_STEP_RAD,   # frame()이 다시 곱한다
                'wheel_mps': np.asarray(state['wheel_vel'], float)*rt.WHEEL_RADIUS_M}
-        obs = self.obs.push(self.obs.frame((vx, vy, w), tlm, self.bias, self.applied))
+        frame = self.obs.frame((vx, vy, w), tlm, self.bias, self.applied)
+        obs = self.obs.push(frame)
+        obs_frame = np.concatenate([np.asarray(frame[name], float) for name, _ in self.obs.layout])   # 이번 주기 관측(항목 순서, 이력 제외)
         action = np.asarray(self.policy(obs), np.float32).reshape(-1)
         if abs(vx) < STAND_V and abs(vy) < STAND_V and abs(w) < STAND_W:
             action = np.zeros_like(action)
@@ -148,4 +150,4 @@ class RlResidual:
         goal, speed = self.ik.step(vx, vy, w, d_steer, gain)
         self.applied = rt.applied_for_obs(goal, speed, None)
         return {'steer_goal': goal.astype(float), 'wheel_mps': speed.astype(float),
-                'd_steer': np.asarray(d_steer, float), 'wheel_gain': np.asarray(gain, float), 'action': action.astype(float)}
+                'd_steer': np.asarray(d_steer, float), 'wheel_gain': np.asarray(gain, float), 'action': action.astype(float), 'obs_frame': obs_frame}
