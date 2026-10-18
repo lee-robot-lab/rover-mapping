@@ -321,3 +321,89 @@ def corner_update(filter_: InertialFilter, scene: Scene, imu_from_base: np.ndarr
     if not rows:
         return {'accepted': False, 'reason': 'no_match', 'n': 0}
     return {**planar_update(filter_, np.array(rows), np.array(jacs), np.eye(len(rows))*.05**2), 'n': len(rows)//2}
+
+
+# ---------------------------------------------------------------- 벽 윗선(허공-벽 경계) 거리 관측
+VOID_GRAY = 75        # 이보다 어두우면 벽 너머 허공으로 본다(시뮬 배경 약 50)
+GATE_LIMITS = (1., 1.5, 2., 3.)
+
+
+def detect_wall_top(gray: np.ndarray, columns: np.ndarray) -> np.ndarray:
+    """열마다 위쪽 허공이 끝나고 벽이 시작하는 행(윗선)을 찾는다. 맨 위가 허공이 아닌 열은 nan이다."""
+    import cv2
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    out = np.full(len(columns), np.nan)
+    for j, column in enumerate(np.asarray(columns, int)):
+        values = blurred[:, column]
+        if not (values[:6] < VOID_GRAY).all():
+            continue
+        below = np.flatnonzero(values >= VOID_GRAY)
+        if len(below):
+            out[j] = below[0]
+    return out
+
+
+def gate_wall_top(distance: np.ndarray, min_columns: int = 8) -> tuple[np.ndarray, float]:
+    """예측 거리 1 m 이내 열만 쓰고, 열이 min_columns보다 적으면 1.5·2·3 m로 단계적으로 넓힌다. 뒤쪽 먼 벽은 기본에서 빠진다."""
+    distance = np.asarray(distance, float)
+    keep = np.zeros(len(distance), bool)
+    limit = GATE_LIMITS[-1]
+    for limit in GATE_LIMITS:
+        keep = np.isfinite(distance) & (distance <= limit)
+        if keep.sum() >= min_columns:
+            break
+    return keep, limit
+
+
+def wall_top_residual(measured: np.ndarray, predicted: np.ndarray, limit_px: float = 15.) -> tuple[np.ndarray, np.ndarray]:
+    """(측정-예측) 픽셀 잔차 중 한계 안인 열의 잔차와 그 마스크를 돌려준다. 윗선이 아닌 것에 걸린 열은 버린다."""
+    delta = np.asarray(measured, float)-np.asarray(predicted, float)
+    keep = np.isfinite(delta) & (abs(delta) <= limit_px)
+    return delta[keep], keep
+
+
+def predicted_wall_top(scene: Scene, base_pose: np.ndarray, columns: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """추정 pose에서 STL 벽이 처음 보이는 행(윗선)과 그 광축 거리를 열마다 구한다(성기게 찾고 4행 안에서 0.25픽셀 단위로 다듬는다)."""
+    c = scene.camera
+    columns = np.asarray(columns, float)
+    coarse = np.arange(0, 480, 4.)
+    z = scene.depth(base_pose, scene._rays(columns, coarse), False).reshape(len(coarse), len(columns))
+    rows, dist = np.full(len(columns), np.nan), np.full(len(columns), np.nan)
+    for j in range(len(columns)):
+        hit = np.flatnonzero(np.isfinite(z[:, j]))
+        if not len(hit):
+            continue
+        k = hit[0]
+        candidates = np.arange(max(0., coarse[k]-3.), coarse[k]+.001, .25)
+        rays = np.stack([np.full(len(candidates), (columns[j]-c.cx)/c.fx), (candidates-c.cy)/c.fy, np.ones(len(candidates))], axis=1)
+        fine = scene.depth(base_pose, rays, False)
+        found = np.flatnonzero(np.isfinite(fine))
+        if len(found):
+            rows[j], dist[j] = candidates[found[0]], fine[found[0]]
+    return rows, dist
+
+
+def wall_top_update(filter_: InertialFilter, scene: Scene, imu_from_base: np.ndarray, measured: np.ndarray, columns: np.ndarray,
+                    min_columns: int = 8, limit_px: float = 15., sigma_px: float = 3.) -> dict:
+    """검출한 벽 윗선 행을 예측과 비교해 x,y,yaw를 보정한다. 거리 제한 단계가 넓을수록 잡음을 키운다."""
+    base, _ = base_state(filter_, imu_from_base)
+    predicted, distance = predicted_wall_top(scene, base, columns)
+    usable = np.isfinite(predicted) & (predicted > 6) & np.isfinite(measured)
+    gate, limit = gate_wall_top(np.where(usable, distance, np.nan), min_columns)
+    residual, close = wall_top_residual(np.where(gate, measured, np.nan), predicted, limit_px)
+    if close.sum() < 4:
+        return {'accepted': False, 'reason': 'few_columns', 'n': int(close.sum()), 'limit_m': limit}
+
+    def at(dx: float, dy: float, dyaw: float) -> np.ndarray:
+        moved = base.copy()
+        moved[:3, :3] = Rotation.from_euler('z', dyaw).as_matrix() @ base[:3, :3]
+        moved[:2, 3] += (dx, dy)
+        return predicted_wall_top(scene, moved, np.asarray(columns)[close])[0]
+
+    eps = .01   # 예측 행이 0.25픽셀 단위라 미분 간격을 1 cm·0.01 rad로 둔다
+    jac3 = np.stack([(at(*(np.eye(3)[i]*eps))-at(*(-np.eye(3)[i]*eps)))/(2*eps) for i in range(3)], axis=1)
+    ok = np.isfinite(jac3).all(axis=1)
+    if ok.sum() < 4:
+        return {'accepted': False, 'reason': 'no_jacobian', 'n': int(ok.sum()), 'limit_m': limit}
+    noise = np.eye(int(ok.sum()))*(sigma_px*limit)**2
+    return {**planar_update(filter_, residual[ok], jac3[ok], noise), 'n': int(ok.sum()), 'limit_m': limit}

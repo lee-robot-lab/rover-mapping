@@ -84,3 +84,45 @@ def test_added_depth_noise_has_the_requested_size_dropout_and_outliers() -> None
     assert core.std() == pytest.approx(.01*2.+.005, rel=.2)            # σ = 1%·z + 5 mm
     assert (abs(valid-2.) > .1).mean() == pytest.approx(.03, abs=.015)   # 이상치는 ±0.3 m 안에서 퍼진다
     assert np.array_equal(add_depth_noise(z, np.random.default_rng(1), scale=0., dropout=0., outlier=0.), z)
+
+
+def test_wall_top_detector_finds_the_void_to_wall_boundary_per_column() -> None:
+    from experiments.localization.wall_range import detect_wall_top
+    image = np.full((120, 160), 50, np.uint8)
+    image[60:, :] = 140                       # 위쪽 허공(어두움), 아래 벽·모래(밝음)
+    image[:, :20] = 140                       # 맨 위가 허공이 아닌 열은 검출하지 않는다
+    top = detect_wall_top(image, np.arange(4, 160, 8))
+    assert np.isnan(top[:2]).all() and np.nanmedian(top) == pytest.approx(60, abs=1.5)
+
+
+def test_wall_top_gate_keeps_close_walls_and_widens_only_when_too_few() -> None:
+    from experiments.localization.wall_range import gate_wall_top
+    distance = np.array([.5, .6, .7, 1.4, 1.8, 2.5])
+    keep, limit = gate_wall_top(distance, min_columns=3)
+    assert limit == 1. and keep.tolist() == [True, True, True, False, False, False]
+    keep, limit = gate_wall_top(distance, min_columns=5)
+    assert limit == 2. and keep.sum() == 5                                  # 1.5 m도 모자라 2 m까지 넓힌다
+    keep, limit = gate_wall_top(np.array([2.5, 2.8]), min_columns=3)
+    assert limit == 3. and keep.sum() == 2                                  # 끝까지 모자라면 가진 만큼만
+
+
+def test_wall_top_residual_rejects_columns_that_are_far_from_the_prediction() -> None:
+    from experiments.localization.wall_range import wall_top_residual
+    predicted = np.array([100., 100., 100., 100.])
+    measured = np.array([103., 98., 140., np.nan])
+    rows, keep = wall_top_residual(measured, predicted, limit_px=15.)
+    assert keep.tolist() == [True, True, False, False] and rows.tolist() == pytest.approx([3., -2.], abs=1e-9)
+
+
+def test_wall_top_update_pulls_a_wrong_position_toward_the_measured_wall_top() -> None:
+    from experiments.localization.wall_range import predicted_wall_top, wall_top_update
+    scene = Scene(camera())
+    columns = np.arange(8, 640, 8.)
+    true_pose = base_pose(3.2, -.6)                                   # 윗선이 화면 중간(행≈62, 약 1.5 m)
+    measured, _ = predicted_wall_top(scene, true_pose, columns)       # 정답 pose에서 보일 윗선(진단용 합성)
+    filt = InertialFilter(base_pose(3.2+.05, -.6), DEFAULT_NOISE)      # 벽 정면(x) 방향 오차: 윗선 높이가 거리에 민감하다
+    before = np.linalg.norm(filt.pose[:2, 3]-true_pose[:2, 3])
+    info = wall_top_update(filt, scene, np.eye(4), measured, columns)
+    after = np.linalg.norm(filt.pose[:2, 3]-true_pose[:2, 3])
+    assert info['accepted'] and info['n'] >= 4
+    assert after < before*.7
