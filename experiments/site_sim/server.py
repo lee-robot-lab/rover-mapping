@@ -47,7 +47,7 @@ def sim_orb_yaml(text: str) -> str:
     return '\n'.join(lines)+'\n'
 
 
-def upload(label: str, mission: Path, assets: Path, texture: Path | None=None) -> None:
+def upload(label: str, mission: Path, assets: Path, texture: Path | None=None, ksrc: Path | None=None) -> None:
     """필요한 소스와 asset만 새 run에 기록하고 hash manifest를 동봉한다."""
     if not (mission/'mission.json').is_file():raise ValueError('valid mission bundle required')
     from experiments.handheld_mapping.site_mission import SiteMission
@@ -76,12 +76,21 @@ def upload(label: str, mission: Path, assets: Path, texture: Path | None=None) -
                 if not texture.is_file():raise ValueError('sand texture file not found')
                 tar.add(texture,arcname='rover/sand_texture.jpg');hashes['rover/sand_texture.jpg']=hashlib.sha256(texture.read_bytes()).hexdigest()
             for name in sorted(referenced):tar.add(assets/name,arcname='rover/'+name)
+            if ksrc is not None:
+                ksrc=Path(ksrc).resolve()
+                for pattern in ('sim/ksrc_common.py','sim/build.sh','pi/common/*.py','pi/policy/student_runtime.py','pi/policy/res8_*','firmware/common/*.c','firmware/common/*.h',
+                                'sim/isaac/ksrc_rover/source/ksrc_rover/utils/contract.py'):
+                    for path in sorted(ksrc.glob(pattern)):
+                        if path.is_file():
+                            relative='ksrc/'+str(path.relative_to(ksrc));tar.add(path,arcname=relative);hashes[relative]=hashlib.sha256(path.read_bytes()).hexdigest()
             commit=subprocess.run(['git','rev-parse','HEAD'],cwd=REPO,text=True,capture_output=True,check=True).stdout.strip()
             body=json.dumps({'code_commit':commit,'source_sha256':hashes,'source_assets':str(assets.resolve()),
                 'stl_and_sand_provenance':json.loads((mission/'simulation.json').read_text())}).encode()
             info=tarfile.TarInfo('source_manifest.json');info.size=len(body);tar.addfile(info,io.BytesIO(body))
         archive.seek(0)
         remote(f'mkdir -p {shlex.quote(ROOT)} && mkdir {shlex.quote(run)} && tar -xzf - -C {shlex.quote(run)}',stdin=archive)
+    if ksrc is not None:   # 서버 호스트의 gcc로 펌웨어 C 기구학 라이브러리를 만든다(컨테이너는 같은 폴더를 마운트한다)
+        remote(f'cd {shlex.quote(run)}/ksrc/sim && bash build.sh')
     print('uploaded:',run)
 
 
@@ -100,6 +109,7 @@ def fetch(label: str, destination: Path) -> None:
     """서버 기록을 받아 `viewer`로 바로 열 수 있게 한다(stereo는 3장마다 1쌍)."""
     destination=Path(destination);first,second=fetch_commands(label,destination,[],1)
     subprocess.run(first,check=True)
+    subprocess.run(['rsync','-a','-e','ssh -o ConnectTimeout=15',f'hpi-lab:/home/sumee/gyusa/runs/site_mission/{label}/mission/',str(destination/'mission_bundle')+'/'],check=False)   # 벽 거리 재생용
     listing=subprocess.run([*SSH,f'ls /home/sumee/gyusa/runs/site_mission/{label}/output/stereo/mav0/cam0/data'],capture_output=True,text=True)
     if listing.returncode==0 and listing.stdout.split():
         _,second=fetch_commands(label,destination,listing.stdout.split(),3);subprocess.run(second,check=True)
@@ -107,7 +117,8 @@ def fetch(label: str, destination: Path) -> None:
 
 
 def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1, save_front_s: float=0., stereo_hz: float=0., start_hold_s: float=0., estimator: bool=False, adaptive_visual_noise: bool=False, save_overview_s: float=0.,
-          wheel_gain_left: float=1., wheel_gain_right: float=1., slip_start_s: float=0., slip_end_s: float | None=None, stanley_gain: float=0.) -> None:
+          wheel_gain_left: float=1., wheel_gain_right: float=1., slip_start_s: float=0., slip_end_s: float | None=None, stanley_gain: float=0.,
+          rl_policy: str | None=None, imu_realism: bool=False, imu_seed: int=0, control_dt: float | None=None, extra_args: list[str] | None=None) -> None:
     """지정한 유휴 GPU에서만 새 물리 run과 독립 loopback viewer를 시작한다."""
     from experiments.site_sim.run import validate_limits
     validate_limits(sim,wall)
@@ -140,6 +151,16 @@ def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=
     if adaptive_visual_noise:
         if not estimator:raise ValueError('adaptive visual noise needs --estimator')
         args+=['--adaptive-visual-noise']
+    if imu_realism:
+        if not estimator:raise ValueError('imu realism needs --estimator')
+        args+=['--imu-realism','--imu-seed',str(imu_seed)]
+    if rl_policy:
+        if remote(f'test -f {shlex.quote(run+"/ksrc/sim/libksrc_common.so")} && echo yes || echo no',capture=True).stdout.strip()!='yes':
+            raise ValueError('--rl-policy needs an upload with --ksrc (built libksrc_common.so)')
+        if control_dt is None or abs(control_dt-.02)>1e-9:raise ValueError('--rl-policy needs --control-dt 0.02 (policy trained at 50 Hz)')
+        args+=['--rl-policy','/workspace/ksrc/pi/policy/'+rl_policy,'--ksrc-root','/workspace/ksrc']
+    if control_dt is not None:args+=['--control-dt',str(control_dt)]
+    args+=list(extra_args or [])
     if remote(f'test -f {shlex.quote(run+"/rover/sand_texture.jpg")} && echo yes || echo no',capture=True).stdout.strip()=='yes':
         args+=['--sand-texture','/workspace/rover/sand_texture.jpg']
     # Match the installed python.sh environment but exec Python as PID1 for SIGTERM/finally.
@@ -250,14 +271,31 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--start-hold-s',type=float,default=0.)
     parser.add_argument('--estimator',action='store_true',help='GT 대신 ORB+ESKF 추정 위치로 주행')
     parser.add_argument('--adaptive-visual-noise',action='store_true')
+    parser.add_argument('--ksrc',type=Path,default=None,help='upload: ksrc 체크아웃(RL 정책·펌웨어 C 소스)을 같이 올리고 서버에서 .so를 빌드한다')
+    parser.add_argument('--rl-policy',default=None,help='start: 업로드된 정책 이름(확장자 없이, 예: res8_mlp_v1_rc4000)')
+    parser.add_argument('--imu-realism',action='store_true',help='start: 실기에서 잰 IMU 바이어스·잡음·진동을 더함')
+    parser.add_argument('--imu-seed',type=int,default=0)
+    parser.add_argument('--imu-vibration-scale',type=float,default=None,help='start: 이동 진동 배율')
+    parser.add_argument('--control-dt',type=float,default=None,help='start: 제어·IMU 구간 주기 [s] (기본 0.05; RL은 0.02 필요)')
+    parser.add_argument('--mu',type=float,default=None,help='start: 지면·바퀴 마찰계수')
+    parser.add_argument('--wheel-effort',type=float,default=None,help='start: 바퀴 최대 토크 [N m]')
+    parser.add_argument('--command-delay-ms',type=float,nargs=2,default=None,metavar=('LO','HI'),help='start: 명령→조인트 지연 범위 [ms]')
+    parser.add_argument('--delay-seed',type=int,default=None)
+    parser.add_argument('--imu-drop-prob',type=float,default=None,help='start: IMU 패킷 누락 확률(--imu-realism 필요)')
+    parser.add_argument('--start-noise-xy-m',type=float,default=None);parser.add_argument('--start-noise-yaw-deg',type=float,default=None)
+    parser.add_argument('--start-seed',type=int,default=None)
     args=parser.parse_args(argv)
+    extra=[]
+    for flag in ('mu','wheel_effort','delay_seed','imu_drop_prob','imu_vibration_scale','start_noise_xy_m','start_noise_yaw_deg','start_seed'):
+        if getattr(args,flag) is not None:extra+=['--'+flag.replace('_','-'),str(getattr(args,flag))]
+    if args.command_delay_ms is not None:extra+=['--command-delay-ms',str(args.command_delay_ms[0]),str(args.command_delay_ms[1])]
     try:
         if not re.fullmatch('[A-Za-z0-9_-]+',args.label):raise ValueError('invalid label')
         if not 1024<=args.port<=65535:raise ValueError('invalid observer port')
         if args.action=='upload':
             if not args.path:raise ValueError('mission folder required')
-            upload(args.label,Path(args.path).resolve(),args.assets,args.texture)
-        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu,args.save_front_s,args.stereo_hz,args.start_hold_s,args.estimator,args.adaptive_visual_noise,args.save_overview_s,args.wheel_gain_left,args.wheel_gain_right,args.slip_start_s,args.slip_end_s,args.stanley_gain)
+            upload(args.label,Path(args.path).resolve(),args.assets,args.texture,args.ksrc)
+        elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu,args.save_front_s,args.stereo_hz,args.start_hold_s,args.estimator,args.adaptive_visual_noise,args.save_overview_s,args.wheel_gain_left,args.wheel_gain_right,args.slip_start_s,args.slip_end_s,args.stanley_gain,rl_policy=args.rl_policy,imu_realism=args.imu_realism,imu_seed=args.imu_seed,control_dt=args.control_dt,extra_args=extra)
         elif args.action=='status':status(args.label)
         elif args.action=='fetch':fetch(args.label,Path(args.path) if args.path else REPO/'outputs/site_sim'/args.label)
         elif args.action=='tunnel':tunnel(args.label,int(args.path or args.port))

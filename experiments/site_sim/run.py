@@ -33,9 +33,15 @@ def run(args: argparse.Namespace) -> dict:
     if getattr(args,'stanley_gain',0.)>0:mission.settings['stanley_gain']=float(args.stanley_gain)
     stereo_hz=float(getattr(args,'stereo_hz',0.))
     if not math.isfinite(stereo_hz) or not 0<=stereo_hz<=30:raise ValueError('stereo_hz must be in [0,30]')
-    recorder=RunRecorder(mission,args.output,fault_injection=args.fault_injection,
+    control_dt=float(getattr(args,'control_dt',.05))
+    if not math.isfinite(control_dt) or abs(control_dt/.005-round(control_dt/.005))>1e-6 or not .005<=control_dt<=.05:
+        raise ValueError('control_dt must be a multiple of the 5 ms physics step within [0.005, 0.05]')
+    if getattr(args,'rl_policy',None) and abs(control_dt-.02)>1e-9:raise ValueError('--rl-policy needs --control-dt 0.02 (policy trained at 50 Hz)')
+    if getattr(args,'rl_policy',None) and not getattr(args,'ksrc_root',None):raise ValueError('--rl-policy needs --ksrc-root')
+    recorder=RunRecorder(mission,args.output,fault_injection=args.fault_injection,control_dt=control_dt,
                          pose_source='orb_eskf_estimate' if getattr(args,'estimator',False) else 'sim_ground_truth')
     stereo_writer=None;next_stereo=0.;estimator=orb=estimator_log=None;frame_info=None
+    atomic_json(Path(args.output)/'run_options.json',{k:(str(v) if isinstance(v,Path) else v) for k,v in vars(args).items()})   # 재생 화면에 어떤 설정이었는지 보이게
     if getattr(args,'estimator',False) and stereo_hz<=0:raise ValueError('--estimator needs --stereo-hz')
     app=drive=world=None;status='failed';reason='initialization_failed';cameras={};wall_start=time.monotonic()
     def interrupted(signum,frame):raise KeyboardInterrupt(f'signal {signum}')
@@ -58,6 +64,9 @@ def run(args: argparse.Namespace) -> dict:
             start_position=(*mission.start[:2],ground+.23))
         for _ in range(5):app.update()
         stage=omni.usd.get_context().get_stage()
+        if getattr(args,'mu',None) is not None:
+            from experiments.site_sim.friction import bind_friction
+            grounds,wheels=bind_friction(stage,float(args.mu));print('SITE_SIM_FRICTION',args.mu,'ground meshes',grounds,'wheel colliders',wheels,flush=True)
         # Baked arena already has sunlight and ambient light; lower the combined exposure.
         for prim in stage.Traverse():
             if prim.HasAPI(UsdLux.LightAPI):
@@ -140,11 +149,18 @@ def run(args: argparse.Namespace) -> dict:
                           'visible' if UsdGeom.Imageable(prim).ComputeVisibility()!='invisible' else 'hidden',flush=True)
         except Exception as error:print('SITE_SIM_ORIGIN_PRIM scan failed',error,flush=True)
         robot=world.scene.add(Robot(prim_path=h.frame_paths['base_link'],name='rover'))
-        world.set_simulation_dt(physics_dt=.005,rendering_dt=.05)
+        world.set_simulation_dt(physics_dt=.005,rendering_dt=control_dt)
         print('SITE_SIM_STAGE physics_initialization',flush=True)
         world.initialize_physics();robot.initialize()
-        yaw=float(mission.start[2]);robot.set_world_pose(orientation=np.array([math.cos(yaw/2),0,0,math.sin(yaw/2)]))
+        from experiments.site_sim.start_noise import start_offset
+        offset_x,offset_y,offset_yaw=start_offset(int(getattr(args,'start_seed',0)),float(getattr(args,'start_noise_xy_m',0.)),float(getattr(args,'start_noise_yaw_deg',0.)))
+        yaw=float(mission.start[2])+offset_yaw;position0,_=robot.get_world_pose()
+        robot.set_world_pose(position=np.asarray(position0,float)+np.array([offset_x,offset_y,0.]),orientation=np.array([math.cos(yaw/2),0,0,math.sin(yaw/2)]))
+        atomic_json(Path(args.output)/'start_perturbation.json',{'dx_m':offset_x,'dy_m':offset_y,'dyaw_rad':offset_yaw,'seed':int(getattr(args,'start_seed',0)),
+            'note':'로버만 이만큼 틀어 놓고 추정기는 이상적인 시작 자세를 믿는다'})
         session=DriveSession(robot,args.geometry);world.play()
+        if getattr(args,'wheel_effort',None) is not None:
+            session.controller.set_max_efforts(np.full(4,float(args.wheel_effort),dtype=float),session.wheel_indices)
         print('SITE_SIM_STAGE settling',flush=True)
         for i in range(400):
             if time.monotonic()-wall_start>args.max_wall_s:raise TimeoutError('startup wall timeout')
@@ -156,20 +172,38 @@ def run(args: argparse.Namespace) -> dict:
             from experiments.localization.online import OnlineEstimator
             from experiments.site_sim.orb_client import OrbClient
             from scipy.spatial.transform import Rotation
-            start_rotation=Rotation.from_quat([q[1],q[2],q[3],q[0]]).as_matrix()
-            start_pose=np.eye(4);start_pose[:3,:3]=start_rotation;start_pose[:3,3]=p
+            start_rotation=Rotation.from_euler('z',-offset_yaw).as_matrix()@Rotation.from_quat([q[1],q[2],q[3],q[0]]).as_matrix()   # 틀기 전(이상적) 자세
+            start_pose=np.eye(4);start_pose[:3,:3]=start_rotation;start_pose[:3,3]=np.asarray(p,float)-np.array([offset_x,offset_y,0.])
+            from experiments.localization.imu_realism import ImuRealism
+            imu_realism=ImuRealism(seed=getattr(args,'imu_seed',0),vibration_scale=getattr(args,'imu_vibration_scale',1.),drop_probability=float(getattr(args,'imu_drop_prob',0.))) if getattr(args,'imu_realism',False) else None
             estimator=OnlineEstimator(start_pose,estimator_calibration,lag_s=RENDER_LAG_S,
-                                     adaptive_visual_noise=getattr(args,'adaptive_visual_noise',False))
+                                     adaptive_visual_noise=getattr(args,'adaptive_visual_noise',False),imu_realism=imu_realism)
             atomic_json(Path(args.output)/'estimator_calibration.json',{
                 'calibration':estimator_calibration,'start_world_from_base':start_pose.tolist(),
                 'render_lag_s':RENDER_LAG_S,'adaptive_visual_noise':estimator.adaptive_visual_noise,
+                'imu_realism':None if imu_realism is None else imu_realism.parameters(),
                 'simulation_only':True})
             orb=OrbClient(Path(args.orb_io));estimator_log=EstimatorLog(Path(args.output))
             print('SITE_SIM_ESTIMATOR ready (control uses ORB+ESKF estimate; GT is logged only)',flush=True)
         from experiments.site_sim.drive import SlipInjection
         slip=SlipInjection(getattr(args,'wheel_gain_left',1.),getattr(args,'wheel_gain_right',1.),getattr(args,'slip_start_s',0.),
                            math.inf if getattr(args,'slip_end_s',None) is None else args.slip_end_s)
-        drive=SimulationDrive(robot,session,mission,fault_injection=args.fault_injection,hold_s=args.start_hold_s,estimator=estimator,slip=slip)
+        rl=None
+        if getattr(args,'rl_policy',None):
+            from experiments.site_sim.rl_residual import RlResidual
+            from experiments.localization.imu_realism import ImuRealism as _Imu
+            if args.start_hold_s<2.:raise ValueError('RL boot bias needs --start-hold-s >= 2')
+            rl=RlResidual(Path(args.ksrc_root),args.rl_policy,dt=control_dt,bias_s=2.,
+                          imu_realism=_Imu(seed=int(getattr(args,'imu_seed',0))+1,vibration_scale=getattr(args,'imu_vibration_scale',1.)) if getattr(args,'imu_realism',False) else None)
+            atomic_json(Path(args.output)/'rl_residual.json',{'policy':args.rl_policy,'ksrc_root':str(args.ksrc_root),'control_dt_s':control_dt,
+                'meta':{k:rl.meta.get(k) for k in ('task','checkpoint','obs_dim','student_history','control_dt_s','res8_steer_scale_rad','res8_wheel_scale','res8_rate_limit')},
+                'simulation_only':True,'imu_for_policy':'physics state, no noise or bias'})
+            print('SITE_SIM_RL residual policy loaded:',args.rl_policy,flush=True)
+        delay=None
+        if getattr(args,'command_delay_ms',None):
+            from experiments.site_sim.drive import ActuationDelay
+            delay=ActuationDelay(args.command_delay_ms[0]/1000,args.command_delay_ms[1]/1000,int(getattr(args,'delay_seed',0)))
+        drive=SimulationDrive(robot,session,mission,fault_injection=args.fault_injection,hold_s=args.start_hold_s,estimator=estimator,slip=slip,rl=rl,delay=delay)
         t0=float(world.current_time);next_control=0.;next_render=0.;next_front=0.;next_overview=0.;last_camera_error=None
         print('SITE_SIM_READY',json.dumps({'pose':p.tolist(),'output':str(args.output)}),flush=True)
         try:   # 안정 뒤 로버 시각 형상(ObserverVisual)과 로버·경기장 밖 최상위 prim의 월드 위치를 기록한다(진단).
@@ -201,7 +235,7 @@ def run(args: argparse.Namespace) -> dict:
                         'position_m':row['position_m'],'quaternion_wxyz':row['quaternion_wxyz'],
                         'estimated_position_m':row['estimated_position_m']})
                 row['mission']['camera_error']=last_camera_error
-                recorder.observe(row,drive.runtime.events);next_control+=.05
+                recorder.observe(row,drive.runtime.events);next_control+=control_dt
                 if sim_s>=5 and row['mission']['reason'] in ('invalid_pose','pose_jump','unsafe_observed_motion','unsafe_local_segment'):
                     status='failed';reason=row['mission']['reason'];break
                 if row['mission']['state'] in ('complete','failed'):
@@ -309,6 +343,20 @@ def main() -> None:
     parser.add_argument('--start-hold-s',type=float,default=0.)
     parser.add_argument('--estimator',action='store_true')
     parser.add_argument('--adaptive-visual-noise',action='store_true',help='실험적 경사·회전별 영상 noise 배율(기본 OFF)')
+    parser.add_argument('--mu',type=float,default=None,help='지면·바퀴 마찰계수(정지=동). 없으면 기본 재질')
+    parser.add_argument('--wheel-effort',type=float,default=None,help='바퀴 최대 토크 [N m] (기본 DriveSession 1.0, 실기 데이터시트 정지 토크 약 1.96)')
+    parser.add_argument('--command-delay-ms',type=float,nargs=2,default=None,metavar=('LO','HI'),help='명령→조인트 적용 지연 범위 [ms] (실기 17.6~46.5)')
+    parser.add_argument('--delay-seed',type=int,default=0)
+    parser.add_argument('--imu-drop-prob',type=float,default=0.,help='IMU 패킷 누락 확률(--imu-realism 필요, 실측 0.8%%)')
+    parser.add_argument('--start-noise-xy-m',type=float,default=0.,help='로버 시작 위치 오차 σ [m] (추정기는 이상적 시작을 믿음)')
+    parser.add_argument('--start-noise-yaw-deg',type=float,default=0.)
+    parser.add_argument('--start-seed',type=int,default=0)
+    parser.add_argument('--control-dt',type=float,default=.05,help='제어·IMU 구간 주기 [s] (기본 0.05, RL은 0.02)')
+    parser.add_argument('--rl-policy',default=None,help='KSRC Res8 정책 경로(확장자 없이). 있으면 swerve 목표 아래에 잔차를 얹는다(기본 OFF)')
+    parser.add_argument('--ksrc-root',default=None,help='ksrc 체크아웃 경로(pi/policy/student_runtime.py, sim/libksrc_common.so 필요)')
+    parser.add_argument('--imu-realism',action='store_true',help='실기(모래 15° 램프 student v3 로그)에서 잰 IMU 바이어스·잡음·이동 진동을 더함(기본 OFF)')
+    parser.add_argument('--imu-seed',type=int,default=0)
+    parser.add_argument('--imu-vibration-scale',type=float,default=1.,help='이동 진동 배율')
     parser.add_argument('--orb-io',type=Path,default=Path('/workspace/orbio'))
     parser.add_argument('--fault-injection',action='store_true');args=parser.parse_args();code=1
     try:

@@ -36,19 +36,58 @@ class SlipInjection:
         return np.array([self.left if module.y_m>0 else self.right for module in geometry.modules],float)
 
 
+class ActuationDelay:
+    """목표를 [lo_s, hi_s] 균등 난수 지연 뒤에 적용한다(순서 보존). 실기 명령→적용 지연 17.6~46.5 ms(bringup 실측)를 흉내 낸다."""
+
+    def __init__(self, lo_s: float, hi_s: float, seed: int=0) -> None:
+        if not 0<=lo_s<=hi_s<=.5:raise ValueError('delay range must satisfy 0 <= lo <= hi <= 0.5 s')
+        self.lo_s,self.hi_s,self.rng=float(lo_s),float(hi_s),np.random.default_rng(seed)
+        self.queue=[];self.last_release=-math.inf
+
+    def push(self, sim_s: float, steer: np.ndarray, wheel: np.ndarray) -> None:
+        """이번 제어 주기의 (조향 목표, 바퀴 목표)를 지연 큐에 넣는다."""
+        release=max(sim_s+self.rng.uniform(self.lo_s,self.hi_s),self.last_release)
+        self.last_release=release;self.queue.append((release,np.array(steer,float),np.array(wheel,float)))
+
+    def pop(self, sim_s: float) -> tuple | None:
+        """sim_s까지 풀린 가장 최근 (조향, 바퀴)를 돌려주고 큐에서 뺀다. 없으면 None."""
+        out=None
+        while self.queue and self.queue[0][0]<=sim_s+1e-9:
+            _,steer,wheel=self.queue.pop(0);out=(steer,wheel)
+        return out
+
+    def clear(self) -> None:
+        """대기 중인 목표를 모두 버린다(정지 시)."""
+        self.queue.clear()
+
+
 class SimulationDrive:
     """물리 pose feedback만으로 임무를 진행하고 실제 적용 명령을 따로 보존한다."""
 
     def __init__(self, robot: Any, session: Any, mission: SiteMission, *, fault_injection: bool=False, hold_s: float=0.,
-                 estimator: Any=None, slip: SlipInjection | None=None) -> None:
+                 estimator: Any=None, slip: SlipInjection | None=None, rl: Any=None, delay: ActuationDelay | None=None) -> None:
         self.slip=slip;self.robot,self.session=robot,session;self.hold_s=float(hold_s);self.estimator=estimator
+        self.delay=delay;self._applied=(np.zeros(4),np.zeros(4))
+        self.rl=rl;self._rl_previous=None   # RlResidual이면 swerve 목표 아래에 KSRC 정책 잔차를 얹는다(기본 None)
         self.runtime=MissionRuntime(mission,safety=SensorSafety() if estimator is not None else None)
         self.fault_injection=fault_injection
         self.fault_started=False;self.wall_start=time.monotonic()
 
+    def _rl_state(self, sim_s: float, quaternion: np.ndarray) -> dict:
+        """정책 관측용 body 축 gyro·비력과 FL,FR,RL,RR 조인트 값을 로봇 물리 상태에서 만든다(비력은 속도 차분)."""
+        s=self.session;r=Rotation.from_quat([quaternion[1],quaternion[2],quaternion[3],quaternion[0]])
+        velocity=np.asarray(self.robot.get_linear_velocity(),float)
+        previous=self._rl_previous;self._rl_previous=(sim_s,velocity)
+        acceleration=np.zeros(3) if previous is None or sim_s<=previous[0] else (velocity-previous[1])/(sim_s-previous[0])
+        joints=np.asarray(self.robot.get_joint_positions(),float);rates=np.asarray(self.robot.get_joint_velocities(),float)
+        return {'speed':float(np.linalg.norm(velocity)),'gyro_body':r.inv().apply(np.asarray(self.robot.get_angular_velocity(),float)),
+                'force_body':r.inv().apply(acceleration+np.array([0.,0.,9.81])),
+                'steer_pos':joints[s.steering_indices],'steer_vel':rates[s.steering_indices],'wheel_vel':rates[s.wheel_indices]}
+
     def stop(self) -> None:
         """네 wheel velocity target을 즉시 0으로 만든다."""
         s=self.session
+        if self.delay is not None:self.delay.clear();self._applied=(np.zeros(4),np.zeros(4))
         s.controller.apply_action(s._action_type(joint_velocities=np.zeros(4),joint_indices=s.wheel_indices))
 
     def step(self, sim_s: float) -> dict:
@@ -79,19 +118,28 @@ class SimulationDrive:
                     self.runtime._event('fault_injected',sim_s,fault_type='zero_wheel_targets',position_m=position.tolist())
                     self.fault_started=True
             s=self.session
-            modules=body_twist_to_modules(s.geometry,vx=applied['vx_m_s'],vy=0.,yaw_rate=applied['yaw_rate_rad_s'])
-            s.controller.apply_action(s._action_type(joint_positions=np.array([m.steering_angle_rad for m in modules]),
-                                                    joint_indices=s.steering_indices))
-            gain=np.ones(len(modules)) if self.slip is None else self.slip.gains(s.geometry,sim_s)
-            s.controller.apply_action(s._action_type(joint_velocities=np.array([m.wheel_angular_velocity_rad_s for m in modules])*gain,
-                                                    joint_indices=s.wheel_indices))
+            rl_out=None
+            if self.rl is None:
+                modules=body_twist_to_modules(s.geometry,vx=applied['vx_m_s'],vy=0.,yaw_rate=applied['yaw_rate_rad_s'])
+                steer=np.array([m.steering_angle_rad for m in modules]);wheel=np.array([m.wheel_angular_velocity_rad_s for m in modules])
+            else:
+                rl_out=self.rl.step((applied['vx_m_s'],0.,applied['yaw_rate_rad_s']),self._rl_state(sim_s,quaternion),sim_s)
+                steer=rl_out['steer_goal'];wheel=rl_out['wheel_mps']/s.geometry.wheel_radius_m
+            if self.delay is not None:   # 목표는 지금 계산하되 지연 뒤에 조인트에 닿는다
+                self.delay.push(sim_s,steer,wheel);released=self.delay.pop(sim_s)
+                if released is not None:self._applied=released
+                steer,wheel=self._applied
+            s.controller.apply_action(s._action_type(joint_positions=steer,joint_indices=s.steering_indices))
+            gain=np.ones(len(steer)) if self.slip is None else self.slip.gains(s.geometry,sim_s)
+            s.controller.apply_action(s._action_type(joint_velocities=wheel*gain,joint_indices=s.wheel_indices))
             return {'stamp_s':float(sim_s),'wall_s':time.monotonic()-self.wall_start,
                     'position_m':position.tolist(),'quaternion_wxyz':quaternion.tolist(),
                     'joint_positions':np.asarray(self.robot.get_joint_positions(),float).tolist(),
                     'joint_velocities':np.asarray(self.robot.get_joint_velocities(),float).tolist(),
                     'requested_command':requested,'applied_command':applied,'mission':result,
                     'pose_source':'orb_eskf_estimate' if estimate else 'sim_ground_truth',
-                    'fault_injection':self.fault_injection,'fault_active':bool(fault),'wheel_gain':gain.tolist(),**(estimate or {})}
+                    'fault_injection':self.fault_injection,'fault_active':bool(fault),'wheel_gain':gain.tolist(),**(estimate or {}),
+                    **({} if rl_out is None else {'rl_d_steer_rad':rl_out['d_steer'].tolist(),'rl_wheel_gain':rl_out['wheel_gain'].tolist()})}
         except BaseException:
             try:self.stop()
             except Exception:pass

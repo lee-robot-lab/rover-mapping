@@ -36,7 +36,7 @@ class RunRecorder:
     """주행 시계열과 고정 크기 경험 grid를 새 run에 누적하며 부분 실패를 보존한다."""
 
     def __init__(self, mission: SiteMission, output: Path, *, max_snapshots: int=1200,
-                 fault_injection: bool=False, pose_source: str='sim_ground_truth') -> None:
+                 fault_injection: bool=False, pose_source: str='sim_ground_truth', control_dt: float=.05) -> None:
         if type(max_snapshots) is not int or max_snapshots<2:raise ValueError('at least two snapshots required')
         self.mission=mission;self.output=Path(output);self.output.mkdir(parents=True,exist_ok=False)
         self.fault_injection=bool(fault_injection);self.fault_occurred=False
@@ -60,7 +60,7 @@ class RunRecorder:
             'routes':{k:v.tolist() for k,v in mission.routes.items()},'start':mission.start.tolist(),
             'junction':mission.junction.tolist(),'summit':mission.summit.tolist()})
         atomic_json(self.output/'manifest.json',{'simulation_only':True,'pose_source':self.pose_source,
-            'frame':'site','site_identity':s.identity,'physics_dt_s':.005,'control_dt_s':.05,
+            'frame':'site','site_identity':s.identity,'physics_dt_s':.005,'control_dt_s':float(control_dt),
             'geometry_cost_source':'known simulator geometry','experience_source':'actual simulator pose samples',
             'slip':None,'sinkage':None,'hardware_commands_enabled':False,'mission_settings':mission.settings,
             'fault_injection':self.fault_injection,

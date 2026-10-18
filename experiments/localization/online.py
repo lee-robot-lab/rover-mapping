@@ -63,8 +63,10 @@ class OnlineEstimator:
 
     def __init__(self, start_world_from_base: np.ndarray, calibration: dict, lag_s: float = .1,
                  good_s: float = 1., invalid_s: float = 4., adaptive_visual_noise: bool = False,
-                 visual_schedule: dict | None = None) -> None:
+                 visual_schedule: dict | None = None, imu_realism: object | None = None) -> None:
         self.lag_s, self.good_s, self.invalid_s = lag_s, good_s, invalid_s
+        self.imu_realism = imu_realism                       # ImuRealism이면 GT에서 만든 IMU에 실기 특성을 더한다(기본 None)
+        self._held_imu = None                                # 누락된 IMU 구간(시작, 끝, gyro, force)
         self.adaptive_visual_noise = adaptive_visual_noise
         self.visual_schedule = {**VISUAL_SCHEDULE, **(visual_schedule or {})}
         self.filter_gyro = np.zeros(3)
@@ -97,6 +99,22 @@ class OnlineEstimator:
         sample = self.imu.push(t, imu_position, np.r_[imu_q[3], imu_q[:3]])
         if sample is not None:
             start, end, gyro, force = sample
+            if self.imu_realism is not None:
+                gyro, force = self.imu_realism.apply(end-start, float(np.linalg.norm(self.imu.velocity)),
+                                                     self.base_from_imu, gyro, force)
+                held = self._held_imu
+                if self.imu_realism.should_drop(0. if held is None else held[1]-held[0], end-start):
+                    # 패킷 누락: 구간을 잡아 두었다가 다음 패킷에 합친다(구간 평균이라 시간 가중 평균).
+                    self._held_imu = (start, end, gyro, force) if held is None else (
+                        held[0], end, (held[2]*(held[1]-held[0])+gyro*(end-start))/(end-held[0]),
+                        (held[3]*(held[1]-held[0])+force*(end-start))/(end-held[0]))
+                    return None
+                if held is not None:
+                    total = end-held[0]
+                    gyro = (held[2]*(held[1]-held[0])+gyro*(end-start))/total
+                    force = (held[3]*(held[1]-held[0])+force*(end-start))/total
+                    start, self._held_imu = held[0], None
+                sample = (start, end, gyro, force)
             self.on_imu(end, end-start, gyro, force)
         return sample
 
