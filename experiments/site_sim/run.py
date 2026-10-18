@@ -175,10 +175,11 @@ def run(args: argparse.Namespace) -> dict:
             from scipy.spatial.transform import Rotation
             start_rotation=Rotation.from_euler('z',-offset_yaw).as_matrix()@Rotation.from_quat([q[1],q[2],q[3],q[0]]).as_matrix()   # 틀기 전(이상적) 자세
             start_pose=np.eye(4);start_pose[:3,:3]=start_rotation;start_pose[:3,3]=np.asarray(p,float)-np.array([offset_x,offset_y,0.])
+            actual_start_pose=np.eye(4);actual_start_pose[:3,:3]=Rotation.from_quat([q[1],q[2],q[3],q[0]]).as_matrix();actual_start_pose[:3,3]=np.asarray(p,float)   # 로버의 실제 시작 자세(센서 이력용)
             from experiments.localization.imu_realism import ImuRealism
             imu_realism=ImuRealism(seed=getattr(args,'imu_seed',0),vibration_scale=getattr(args,'imu_vibration_scale',1.),drop_probability=float(getattr(args,'imu_drop_prob',0.))) if getattr(args,'imu_realism',False) else None
             estimator=OnlineEstimator(start_pose,estimator_calibration,lag_s=RENDER_LAG_S,
-                                     adaptive_visual_noise=getattr(args,'adaptive_visual_noise',False),imu_realism=imu_realism,direction_sigma=getattr(args,'velocity_direction_sigma',None),
+                                     adaptive_visual_noise=getattr(args,'adaptive_visual_noise',False),imu_realism=imu_realism,direction_sigma=getattr(args,'velocity_direction_sigma',None),sensor_start_world_from_base=actual_start_pose,
                                      visual_schedule=None if getattr(args,'visual_turn_scale',None) is None else {'turn_rotation_scale':float(args.visual_turn_scale),'turn_position_scale':float(args.visual_turn_scale)})
             atomic_json(Path(args.output)/'estimator_calibration.json',{
                 'calibration':estimator_calibration,'start_world_from_base':start_pose.tolist(),

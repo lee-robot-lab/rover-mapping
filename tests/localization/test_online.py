@@ -164,3 +164,53 @@ def test_causal_imu_ignores_repeated_or_reversed_timestamps() -> None:
     p, q = gt_pose(.25)
     out = imu.push(.25, p, q)
     assert out is not None and np.isfinite(out[2]).all() and np.isfinite(out[3]).all()
+
+
+def start_noise_estimator(**kwargs) -> tuple[OnlineEstimator, np.ndarray]:
+    """추정기 prior는 원점이고 실제 로버는 (0.69 cm, 1.64 cm, 0.66°) 틀어져 정지해 있는 상황."""
+    prior = np.eye(4)
+    actual = np.eye(4)
+    actual[:3, :3] = Rotation.from_euler('z', .66, degrees=True).as_matrix()
+    actual[:3, 3] = [.00691, .01643, 0.]
+    return OnlineEstimator(prior, CALIBRATION, **kwargs), actual
+
+
+def still_samples(estimator: OnlineEstimator, actual: np.ndarray, steps: int = 8) -> list[tuple]:
+    q = Rotation.from_matrix(actual[:3, :3]).as_quat()
+    out = []
+    for k in range(1, steps+1):
+        sample = estimator.on_step(.02*k, actual[:3, 3], np.array([q[3], q[0], q[1], q[2]]))
+        if sample is not None:
+            out.append(sample)
+    return out
+
+
+def test_start_noise_does_not_create_a_startup_acceleration_spike_when_sensor_start_is_given() -> None:
+    estimator, actual = start_noise_estimator(sensor_start_world_from_base=None)
+    spiky = still_samples(estimator, actual)
+    assert np.linalg.norm(spiky[0][3]) > 20.                    # 기존 방식: prior에서 GT로 점프를 미분해 가짜 가속도가 생긴다(재현)
+    estimator, actual = start_noise_estimator()
+    estimator, _ = OnlineEstimator(np.eye(4), CALIBRATION, sensor_start_world_from_base=actual), None
+    fixed = still_samples(estimator, actual)
+    for _, _, gyro, force in fixed:
+        assert np.linalg.norm(force) == pytest.approx(9.81, abs=.1)
+        assert np.linalg.norm(gyro) < .01
+
+
+def test_sensor_start_pose_does_not_change_the_filter_prior() -> None:
+    actual = np.eye(4)
+    actual[:3, 3] = [.00691, .01643, 0.]
+    estimator = OnlineEstimator(np.eye(4), CALIBRATION, sensor_start_world_from_base=actual)
+    np.testing.assert_allclose(estimator.filter.pose[:3, 3], 0., atol=1e-12)   # 추정기는 여전히 이상적인 시작을 믿는다
+    assert estimator.imu.velocity.shape == (3,)
+
+
+def test_default_without_start_noise_is_unchanged() -> None:
+    estimator, actual = start_noise_estimator()
+    actual_same = np.eye(4)
+    est_a = OnlineEstimator(np.eye(4), CALIBRATION)
+    est_b = OnlineEstimator(np.eye(4), CALIBRATION, sensor_start_world_from_base=np.eye(4))
+    for est in (est_a, est_b):
+        samples = still_samples(est, actual_same)
+        for _, _, _, force in samples:
+            assert np.linalg.norm(force) == pytest.approx(9.81, abs=.01)

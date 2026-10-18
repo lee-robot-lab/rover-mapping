@@ -63,7 +63,8 @@ class OnlineEstimator:
 
     def __init__(self, start_world_from_base: np.ndarray, calibration: dict, lag_s: float = .1,
                  good_s: float = 1., invalid_s: float = 4., adaptive_visual_noise: bool = False,
-                 visual_schedule: dict | None = None, imu_realism: object | None = None, direction_sigma: float | None = None) -> None:
+                 visual_schedule: dict | None = None, imu_realism: object | None = None, direction_sigma: float | None = None,
+                 sensor_start_world_from_base: np.ndarray | None = None) -> None:
         self.lag_s, self.good_s, self.invalid_s = lag_s, good_s, invalid_s
         self.imu_realism = imu_realism                       # ImuRealism이면 GT에서 만든 IMU에 실기 특성을 더한다(기본 None)
         self._held_imu = None                                # 누락된 IMU 구간(시작, 끝, gyro, force)
@@ -77,7 +78,10 @@ class OnlineEstimator:
         sigma = np.array([.03]*3+[.1]*3+[.01]*3+[.005]*3+[.05]*3)
         self.filter = InertialFilter(start_world_from_base @ self.base_from_imu, calibration, np.diag(sigma**2))
         self.imu = CausalImu()
-        start_imu = start_world_from_base @ self.base_from_imu
+        # 필터 prior는 추정기가 믿는 시작 자세, 센서(IMU) 이력은 로버의 실제 시작 자세에서 시작한다(없으면 둘이 같다).
+        # 시작 노이즈가 있을 때 prior에서 GT로의 점프를 미분하면 첫 구간에 가짜 가속도(수십 m/s²)가 생긴다.
+        sensor_start = start_world_from_base if sensor_start_world_from_base is None else np.asarray(sensor_start_world_from_base, float)
+        start_imu = sensor_start @ self.base_from_imu
         start_q = Rotation.from_matrix(start_imu[:3, :3]).as_quat()
         self.imu.push(0., start_imu[:3, 3], np.r_[start_q[3], start_q[:3]])
         self.pending = deque()                                # (t_end, dt, gyro, force) 아직 필터에 넣지 않은 표본
