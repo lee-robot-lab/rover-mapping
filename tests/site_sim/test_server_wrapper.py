@@ -120,3 +120,12 @@ def test_wheel_slip_options_reach_the_docker_command(remote):
     text=log.read_text()
     for token in ('--wheel-gain-left 0.7','--wheel-gain-right 1.0','--slip-start-s 20.0','--slip-end-s 60.0'):assert token in text
     log.write_text('');assert invoke(['start','noslip','--gpu','0'],env).returncode==0 and '--wheel-gain' not in log.read_text()
+
+
+def test_stanley_gain_option_reaches_the_docker_command(remote):
+    env,log=remote
+    ssh=Path(env['PATH'].split(':')[0])/'ssh'
+    ssh.write_text(ssh.read_text().replace("printf '1000, 0\\n'","printf '32000, 0\\n'"))
+    assert invoke(['start','stanleyopt','--gpu','0','--stanley-gain','1.0'],env).returncode==0
+    assert '--stanley-gain 1.0' in log.read_text()
+    log.write_text('');assert invoke(['start','nostanley','--gpu','0'],env).returncode==0 and '--stanley-gain' not in log.read_text()

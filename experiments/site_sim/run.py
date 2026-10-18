@@ -30,6 +30,7 @@ def run(args: argparse.Namespace) -> dict:
     from experiments.site_sim.recording import RunRecorder
     from experiments.site_sim.estimator_log import EstimatorLog
     mission=SiteMission.load(args.mission,load_mesh=False)
+    if getattr(args,'stanley_gain',0.)>0:mission.settings['stanley_gain']=float(args.stanley_gain)
     stereo_hz=float(getattr(args,'stereo_hz',0.))
     if not math.isfinite(stereo_hz) or not 0<=stereo_hz<=30:raise ValueError('stereo_hz must be in [0,30]')
     recorder=RunRecorder(mission,args.output,fault_injection=args.fault_injection,
@@ -301,6 +302,7 @@ def main() -> None:
     parser.add_argument('--sand-texture',type=Path,default=None)
     parser.add_argument('--save-front-s',type=float,default=0.)
     parser.add_argument('--save-overview-s',type=float,default=0.)
+    parser.add_argument('--stanley-gain',type=float,default=0.)
     parser.add_argument('--wheel-gain-left',type=float,default=1.);parser.add_argument('--wheel-gain-right',type=float,default=1.)
     parser.add_argument('--slip-start-s',type=float,default=0.);parser.add_argument('--slip-end-s',type=float,default=None)
     parser.add_argument('--stereo-hz',type=float,default=0.)
