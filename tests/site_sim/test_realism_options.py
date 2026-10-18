@@ -147,3 +147,18 @@ def test_server_forwards_the_imu_profile(monkeypatch):
     assert server.main(['start', 'lbl', '--imu-profile', 'stress']) == 0
     assert seen['extra'] == ['--imu-profile', 'stress']
 
+
+
+def test_build_estimator_wires_imu_profile_into_a_real_estimator():
+    """run()의 추정기 생성 줄을 실제로 실행한다(c98862f에서 imu_realism 대입 누락 → NameError였다)."""
+    from types import SimpleNamespace
+    from experiments.site_sim.run import build_estimator
+    pose = np.eye(4)
+    common = dict(imu_realism=True, imu_seed=1, imu_drop_prob=.008, adaptive_visual_noise=True, velocity_direction_sigma=None, visual_turn_scale=None)
+    nominal = build_estimator(SimpleNamespace(imu_profile='nominal', **common), pose, pose, CALIBRATION)
+    stress = build_estimator(SimpleNamespace(imu_profile='stress', **common), pose, pose, CALIBRATION)
+    assert nominal.imu_realism.gyro_density == pytest.approx(7.2e-5)
+    assert stress.imu_realism.gyro_density == pytest.approx(1.1e-4)
+    assert nominal.imu_realism.drop_probability == pytest.approx(.008)
+    off = build_estimator(SimpleNamespace(**{**common, 'imu_realism': False}, imu_profile='nominal'), pose, pose, CALIBRATION)
+    assert off.imu_realism is None
