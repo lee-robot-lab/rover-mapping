@@ -58,6 +58,27 @@ def zero_pose_kinematics(root: ET.Element) -> tuple[dict, dict]:
     return links,frames
 
 
+def apply_ksrc_signs(root: ET.Element) -> list[str]:
+    """KSRC 규약으로 joint axis의 부호만 뒤집는다: 조향축은 base +z, 바퀴축은 base +y(+속도로 +x 구름). 위치·이름·mesh·한계(대칭으로 뒤집음)는 그대로이며 뒤집은 joint 이름을 돌려준다."""
+    _,frames=zero_pose_kinematics(root)
+    flipped=[]
+    for joint in root.findall('joint'):
+        name=joint.get('name');kind=joint.get('type');axis=joint.find('axis')
+        if axis is None:continue
+        direction=frames[name][:3,:3]@_vec(axis.get('xyz'))
+        if kind=='revolute' and 'steering' in name:wrong=direction[2]<0
+        elif kind=='continuous' and 'wheel' in name:wrong=direction[1]<0
+        else:continue
+        if not wrong:continue
+        axis.set('xyz',' '.join(f'{-v:g}' for v in _vec(axis.get('xyz'))))
+        limit=joint.find('limit')
+        if kind=='revolute' and limit is not None and limit.get('lower') is not None:
+            lower,upper=float(limit.get('lower')),float(limit.get('upper'))
+            limit.set('lower',f'{-upper:.12g}');limit.set('upper',f'{-lower:.12g}')
+        flipped.append(name)
+    return flipped
+
+
 def swerve_geometry(root: ET.Element, wheel_radius: float) -> dict:
     """steering joint의 child link에 붙은 wheel joint를 짝지어 위치·부호·기준 방향을 계산한다."""
     links,frames=zero_pose_kinematics(root)
@@ -125,9 +146,10 @@ def wheel_radius(output: Path, root: ET.Element) -> float:
     return float(np.sort(ext)[-1]/2)
 
 
-def build(output: Path, source: Path=SOURCE_URDF, mesh_dir: Path=MESH_DIR) -> dict:
+def build(output: Path, source: Path=SOURCE_URDF, mesh_dir: Path=MESH_DIR, ksrc_signs: bool=False) -> dict:
     output=Path(output).resolve()
     root=ET.parse(source).getroot()
+    if ksrc_signs:apply_ksrc_signs(root)   # RL·펌웨어와 같은 부호 규약(steering_sign +1, rolling_heading 0)
     portable=make_portable_urdf(root,output,mesh_dir)
     ET.indent(portable);ET.ElementTree(portable).write(output/'rover_portable.urdf',encoding='utf-8',xml_declaration=True)
     geometry=swerve_geometry(root,wheel_radius(output,root))
@@ -138,7 +160,8 @@ def build(output: Path, source: Path=SOURCE_URDF, mesh_dir: Path=MESH_DIR) -> di
 
 def main() -> None:
     parser=argparse.ArgumentParser();parser.add_argument('--output',type=Path,required=True)
-    g=build(parser.parse_args().output)
+    parser.add_argument('--ksrc-signs',action='store_true',help='joint axis 부호만 KSRC 규약으로 뒤집는다(조향 +z, 바퀴 +y)')
+    args=parser.parse_args();g=build(args.output,ksrc_signs=args.ksrc_signs)
     for m in g['modules']:print(m['name'],m['steering_joint'],m['wheel_joint'],np.round(m['steering_pivot_base_link_m'],4),
                                 m['steering_sign'],round(math.degrees(m['rolling_heading_at_zero_rad']),1))
     print('wheel_radius_m',g['wheel_radius_m'])

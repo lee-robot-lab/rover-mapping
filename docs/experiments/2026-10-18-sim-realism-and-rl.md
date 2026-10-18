@@ -75,6 +75,17 @@ PYTHONNOUSERSITE=1 .venv-mapping/bin/python -m experiments.site_sim.viewer --out
 KSRC 정책과 펌웨어 IK는 **펌웨어 규약**(조향각 θ는 바퀴가 향하는 방향, 속도 부호는 그 방향 기준)으로 말하고, 시뮬 조인트는 URDF 규약(`steering_sign` −1, 왼쪽 바퀴는 `rolling_heading` π, 조향 조인트 이름이 앞·뒤 오른쪽에서 서로 바뀜)으로 움직인다. 처음에는 펌웨어 목표를 조인트에 그대로 줘서 회전 명령 −0.6 rad/s가 후진(vx −0.079, ω 0)으로, 직진 0.08 m/s가 회전(ω 0.378)으로 나왔고, RL 잔차가 한계에 포화했다. `experiments/site_sim/joint_convention.py`의 `to_joint`(목표)와 `from_joint`(관측)가 같은 물리 속도 벡터로 바꿔 준다. 회귀 테스트는 `tests/site_sim/test_joint_convention.py`.
 RL을 켠 실행은 텔레메트리에 `rl_obs`(정책에 준 관측 29개), `rl_action`(정책 출력 8개), `rl_d_steer_rad`, `rl_wheel_gain`을 남긴다. 수정 후 14초 스모크에서 RL만 켠 경우와 RL+현실 옵션 전부 켠 경우 모두 회전 방향이 맞고 경로를 따라갔다(이동 64 cm, 52 cm). RL `|action|` 평균은 0.34~0.45, 최대 1.7~2.0으로 실기 로그(평균 0.2, 최대 1.3)보다 아직 조금 크다.
 
+### 부호만 KSRC 규약으로 바꾼 자산 (`--ksrc-signs`)
+
+ksrc URDF(`rover_rev5_isaac.urdf`, `urdf/rover.urdf`)는 조향축 +z, 바퀴축 +y, 이름과 위치가 일치해서 펌웨어·RL 규약과 변환 없이 맞는다. 서버 시뮬이 쓰던 URDF는 조향축 −z, 왼쪽 바퀴축 −y, 오른쪽 앞뒤 조향 조인트 이름이 뒤바뀌어 있었다. 위치·이름·mesh·카메라(20°)는 그대로 두고 **joint axis의 부호만** ksrc 규약으로 뒤집은 자산을 만든다.
+```bash
+PYTHONNOUSERSITE=1 PYTHONPATH=. .venv-mapping/bin/python -m experiments.site_sim.rover_assets --output outputs/site_sim/rover_assets_ksrcsign --ksrc-signs
+cp outputs/site_sim/rover_assets_new/orb_stereo.yaml outputs/site_sim/rover_assets_ksrcsign/
+# 업로드할 때: ... upload LABEL <임무> --assets outputs/site_sim/rover_assets_ksrcsign ...
+```
+뒤집힌 joint는 조향 4개와 왼쪽 바퀴 2개이고, 생성된 기하는 `steering_sign` +1, `rolling_heading` 0이다. 서버 14초 실행에서 IK는 그대로 정상이고, RL+현실 옵션은 변환 레이어(원본 URDF)와 같은 거동(첫 회전 −92°~−95°)을 보였다. 규약 변환(`joint_convention.py`)은 이 자산에서도 항등에 가깝게 동작하므로 그대로 두어도 된다.
+**남은 관찰:** RL+현실 옵션을 같이 켜면 첫 제자리 회전에서 yaw가 −92°~−95°까지 돌았다가 돌아온다(IK+같은 옵션은 −38°, RL만은 −36°). 추정이 늦거나 RL의 바퀴 배율(최대 1.6)로 더 빨리 도는 것이 원인 후보이며 아직 가리지 못했다. 같은 구성의 두 실행(변환 레이어 쪽 정상 종료, KSRC 부호 쪽 6.5초에 `unsafe_observed_motion`)이 갈려서 시드를 바꾼 반복 실행이 필요하다.
+
 ## 주의
 
 - GPU 한 장당 실행 하나(VRAM 약 13 GB, 사용률 약 98%: 10-17 실행 기록). 서버 래퍼는 여유 12 GB 미만이거나 사용률 20% 초과면 시작을 거부한다. 20 ms 제어에서의 값은 아직 재지 못했다.
