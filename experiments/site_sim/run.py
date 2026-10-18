@@ -126,7 +126,7 @@ def run(args: argparse.Namespace) -> dict:
                                    'IMU.T_b_c1':(np.linalg.inv(base_from_imu)@base_from_cam).tolist(),**DEFAULT_NOISE}
         from experiments.site_sim.visuals import install_rover_visuals
         install_rover_visuals(stage,args.urdf)
-        try:   # 경기장 밖 원점 근처에 남은 물체가 있는지 진단용으로 한 번 기록한다.
+        try:   # 경기장(x 2.4~6.6, y ±1.7) 밖에 놓인 물체가 있는지 진단용으로 한 번 기록한다.
             from pxr import Usd
             cache=UsdGeom.BBoxCache(Usd.TimeCode.Default(),[UsdGeom.Tokens.default_,UsdGeom.Tokens.render])
             for prim in Usd.PrimRange(stage.GetPseudoRoot(),Usd.TraverseInstanceProxies()):
@@ -134,8 +134,8 @@ def run(args: argparse.Namespace) -> dict:
                 box=cache.ComputeWorldBound(prim).ComputeAlignedRange()
                 if box.IsEmpty():continue
                 lo,hi=np.array(box.GetMin()),np.array(box.GetMax());mid=(lo+hi)/2
-                if abs(mid[0])<1.2 and abs(mid[1])<1.2:
-                    print('SITE_SIM_ORIGIN_PRIM',prim.GetPath(),np.round(mid,2).tolist(),np.round(hi-lo,2).tolist(),
+                if not (2.4<mid[0]<6.6 and -1.7<mid[1]<1.7):   # 경기장 밖에 놓인 물체
+                    print('SITE_SIM_OUTSIDE_PRIM',prim.GetPath(),np.round(mid,2).tolist(),np.round(hi-lo,2).tolist(),
                           'visible' if UsdGeom.Imageable(prim).ComputeVisibility()!='invisible' else 'hidden',flush=True)
         except Exception as error:print('SITE_SIM_ORIGIN_PRIM scan failed',error,flush=True)
         robot=world.scene.add(Robot(prim_path=h.frame_paths['base_link'],name='rover'))
