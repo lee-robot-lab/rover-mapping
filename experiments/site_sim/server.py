@@ -85,6 +85,27 @@ def upload(label: str, mission: Path, assets: Path, texture: Path | None=None) -
     print('uploaded:',run)
 
 
+def fetch_commands(label: str, destination: Path, stereo_names: list[str], every: int=3) -> list[list[str]]:
+    """기록을 받는 rsync 명령들: 무거운 stereo 폴더는 빼고 `every`장마다 한 쌍만 따로 받아 뷰어 재생에 쓴다."""
+    destination=Path(destination);destination.mkdir(parents=True,exist_ok=True)
+    source=f'hpi-lab:/home/sumee/gyusa/runs/site_mission/{label}/output/'
+    options=['rsync','-a','--partial','-e','ssh -o ConnectTimeout=15']
+    listing=destination/'.stereo_files.txt'
+    listing.write_text(''.join(f'mav0/cam0/data/{n}\nmav0/cam1/data/{n}\n' for n in stereo_names[::every]))
+    return [[*options,'--exclude','stereo','--exclude','front_frames','--exclude','snapshots',source,str(destination)+'/'],
+            [*options,f'--files-from={listing}',source+'stereo/',str(destination/'stereo')+'/']]
+
+
+def fetch(label: str, destination: Path) -> None:
+    """서버 기록을 받아 `viewer`로 바로 열 수 있게 한다(stereo는 3장마다 1쌍)."""
+    destination=Path(destination);first,second=fetch_commands(label,destination,[],1)
+    subprocess.run(first,check=True)
+    listing=subprocess.run([*SSH,f'ls /home/sumee/gyusa/runs/site_mission/{label}/output/stereo/mav0/cam0/data'],capture_output=True,text=True)
+    if listing.returncode==0 and listing.stdout.split():
+        _,second=fetch_commands(label,destination,listing.stdout.split(),3);subprocess.run(second,check=True)
+    print(f'fetched: {destination}\nview: python3 -m experiments.site_sim.viewer --output {destination} --port 8790')
+
+
 def start(label: str, fault: bool, sim: float, wall: float, port: int, gpu: int=1, save_front_s: float=0., stereo_hz: float=0., start_hold_s: float=0., estimator: bool=False, adaptive_visual_noise: bool=False, save_overview_s: float=0.) -> None:
     """지정한 유휴 GPU에서만 새 물리 run과 독립 loopback viewer를 시작한다."""
     from experiments.site_sim.run import validate_limits
@@ -207,7 +228,7 @@ if pidfile.is_file():
 
 
 def main(argv: list[str] | None=None) -> int:
-    parser=argparse.ArgumentParser();parser.add_argument('action',choices=('upload','start','status','tunnel','stop'))
+    parser=argparse.ArgumentParser();parser.add_argument('action',choices=('upload','start','status','tunnel','stop','fetch'))
     parser.add_argument('label');parser.add_argument('path',nargs='?');parser.add_argument('--fault-injection',action='store_true')
     parser.add_argument('--max-sim-s',type=float,default=900.);parser.add_argument('--max-wall-s',type=float,default=3600.)
     parser.add_argument('--port',type=int,default=8765)
@@ -215,7 +236,7 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--assets',type=Path,default=REPO/'outputs/site_sim/rover_assets_new')
     parser.add_argument('--texture',type=Path,default=None)
     parser.add_argument('--save-front-s',type=float,default=0.)
-    parser.add_argument('--save-overview-s',type=float,default=0.,help='위에서 내려다본 관찰 화면을 이 간격(sim s)으로 저장한다')
+    parser.add_argument('--save-overview-s',type=float,default=.25,help='위에서 내려다본 관찰 화면을 이 간격(sim s)으로 저장한다')
     parser.add_argument('--stereo-hz',type=float,default=0.)
     parser.add_argument('--start-hold-s',type=float,default=0.)
     parser.add_argument('--estimator',action='store_true',help='GT 대신 ORB+ESKF 추정 위치로 주행')
@@ -229,6 +250,7 @@ def main(argv: list[str] | None=None) -> int:
             upload(args.label,Path(args.path).resolve(),args.assets,args.texture)
         elif args.action=='start':start(args.label,args.fault_injection,args.max_sim_s,args.max_wall_s,args.port,args.gpu,args.save_front_s,args.stereo_hz,args.start_hold_s,args.estimator,args.adaptive_visual_noise,args.save_overview_s)
         elif args.action=='status':status(args.label)
+        elif args.action=='fetch':fetch(args.label,Path(args.path) if args.path else REPO/'outputs/site_sim'/args.label)
         elif args.action=='tunnel':tunnel(args.label,int(args.path or args.port))
         else:stop(args.label)
     except ValueError as error:print(error,file=sys.stderr);return 2

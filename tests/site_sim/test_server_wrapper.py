@@ -89,3 +89,23 @@ def test_overview_frame_saving_option_reaches_the_docker_command(remote):
     result=invoke(['start','overviewsave','--gpu','0','--save-overview-s','0.25'],env)
     assert result.returncode==0,result.stderr
     assert '--save-overview-s 0.25' in log.read_text()
+
+
+def test_overview_frames_are_saved_by_default(remote):
+    env,log=remote
+    ssh=Path(env['PATH'].split(':')[0])/'ssh'
+    ssh.write_text(ssh.read_text().replace("printf '1000, 0\\n'","printf '32000, 0\\n'"))
+    result=invoke(['start','defaultsave','--gpu','0'],env)
+    assert result.returncode==0,result.stderr
+    assert '--save-overview-s 0.25' in log.read_text()
+    log.write_text('');result=invoke(['start','nosave','--gpu','0','--save-overview-s','0'],env)
+    assert result.returncode==0 and '--save-overview-s' not in log.read_text()
+
+
+def test_fetch_command_thins_stereo_frames_and_targets_the_run_output(tmp_path):
+    from experiments.site_sim.server import fetch_commands
+    commands=fetch_commands('demo',tmp_path,stereo_names=['10.png','20.png','30.png','40.png'],every=2)
+    text=' '.join(' '.join(c) for c in commands)
+    assert 'site_mission/demo/output/' in text and '--exclude' in text and 'stereo' in text
+    listed=[c for c in commands if any(a.startswith('--files-from') for a in c)]
+    assert listed and (tmp_path/'.stereo_files.txt').read_text().split()==['mav0/cam0/data/10.png','mav0/cam1/data/10.png','mav0/cam0/data/30.png','mav0/cam1/data/30.png']
