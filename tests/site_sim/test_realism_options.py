@@ -137,3 +137,13 @@ def test_server_forwards_the_velocity_direction_sigma(monkeypatch):
     monkeypatch.setattr(server, 'start', lambda *args, **kwargs: seen.update(extra=kwargs['extra_args']))
     assert server.main(['start', 'lbl', '--velocity-direction-sigma', '0.02']) == 0
     assert seen['extra'] == ['--velocity-direction-sigma', '0.02']
+
+
+def test_server_forwards_the_imu_profile(monkeypatch):
+    """--imu-profile이 서버 start에서 run.py 인자로 그대로 넘어간다."""
+    from experiments.site_sim import server
+    seen = {}
+    monkeypatch.setattr(server, 'start', lambda *args, **kwargs: seen.update(extra=kwargs['extra_args']))
+    assert server.main(['start', 'lbl', '--imu-profile', 'stress']) == 0
+    assert seen['extra'] == ['--imu-profile', 'stress']
+

@@ -1,6 +1,6 @@
 # ================================================================
 # imu_realism.py
-# 설명: 시뮬의 이상적 IMU 구간 평균에 실기(모래 15° 램프, student v3, 2026-10-18 12:04~12:08 Pi 로그)에서 잰 자이로 바이어스·정지 잡음·이동 중 진동을 더한다. 기본은 꺼짐이다.
+# 설명: 시뮬의 이상적 IMU 구간 평균에 실기에서 잰 자이로 바이어스·정지 잡음(nominal: 맑은 정지 30 s, stress: 이전 모래 구간 값)·이동 중 진동(모래 15° 램프 student v3 12:04~12:08)을 더한다. 기본은 꺼짐이다.
 # 사용법:
 #   from experiments.localization.imu_realism import ImuRealism
 #   OnlineEstimator(..., imu_realism=ImuRealism(seed=1))   # run.py는 --imu-realism
@@ -16,9 +16,9 @@ G = 9.81
 class ImuRealism:
     """IMU 구간 (gyro, 비력)에 body 축 바이어스·백색 잡음·이동 진동을 더하고 IMU 축으로 되돌린다."""
 
-    gyro_bias_dps: tuple = (-0.630, 0.485, 0.488)     # 정지 구간 평균. 10-17 밤과 10-18 낮 로그 세 개가 같은 값
-    gyro_density: float = 1.1e-4                       # rad/s/√Hz, 정지 구간(σ = 밀도/√dt)
-    acc_density: float = 0.025                         # m/s²/√Hz, 정지 구간 y·z 평균 (x는 흔들려서 제외)
+    gyro_bias_dps: tuple = (-0.637, 0.485, 0.486)     # 맑은 정지 30 s(10-18 밤, 타일, 바퀴 정지 확인) 평균. 이전 로그 세 개와 소수점 둘째 자리까지 같음
+    gyro_density: float = 7.2e-5                       # rad/s/√Hz, nominal = 같은 정지 30 s 실측 6.3~8.1e-5의 평균(σ = 밀도/√dt)
+    acc_density: float = 6e-4                          # m/s²/√Hz, nominal = 같은 정지 30 s 실측 0.0005~0.0007의 평균
     gyro_vibration_dps: tuple = (1.44, 2.51, 2.87)     # 전진(오르기) 중 1 Hz 고역통과 표준편차, body 축
     acc_vibration_g: tuple = (0.034, 0.022, 0.026)
     motion_speed_m_s: float = 0.08                     # 이 속도 이상이면 이동 진동 100% (제 가정)
@@ -30,6 +30,11 @@ class ImuRealism:
 
     def __post_init__(self) -> None:
         self.rng = np.random.default_rng(self.seed)
+
+    @classmethod
+    def stress(cls, **kwargs) -> "ImuRealism":
+        """stress 프로필: 정지 백색 잡음을 모래 구간에서 뽑았던 이전 값(자이로 1.1e-4, 가속도 0.025)으로 둔다. nominal보다 가속도 약 40배 크다."""
+        return cls(**{'gyro_density': 1.1e-4, 'acc_density': 0.025, **kwargs})
 
     def parameters(self) -> dict:
         """기록용 파라미터(난수 상태 제외)."""

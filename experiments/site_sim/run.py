@@ -177,7 +177,7 @@ def run(args: argparse.Namespace) -> dict:
             start_pose=np.eye(4);start_pose[:3,:3]=start_rotation;start_pose[:3,3]=np.asarray(p,float)-np.array([offset_x,offset_y,0.])
             actual_start_pose=np.eye(4);actual_start_pose[:3,:3]=Rotation.from_quat([q[1],q[2],q[3],q[0]]).as_matrix();actual_start_pose[:3,3]=np.asarray(p,float)   # 로버의 실제 시작 자세(센서 이력용)
             from experiments.localization.imu_realism import ImuRealism
-            imu_realism=ImuRealism(seed=getattr(args,'imu_seed',0),vibration_scale=getattr(args,'imu_vibration_scale',1.),drop_probability=float(getattr(args,'imu_drop_prob',0.))) if getattr(args,'imu_realism',False) else None
+            (ImuRealism.stress if getattr(args,'imu_profile','nominal')=='stress' else ImuRealism)(seed=getattr(args,'imu_seed',0),vibration_scale=getattr(args,'imu_vibration_scale',1.),drop_probability=float(getattr(args,'imu_drop_prob',0.))) if getattr(args,'imu_realism',False) else None
             estimator=OnlineEstimator(start_pose,estimator_calibration,lag_s=RENDER_LAG_S,
                                      adaptive_visual_noise=getattr(args,'adaptive_visual_noise',False),imu_realism=imu_realism,direction_sigma=getattr(args,'velocity_direction_sigma',None),sensor_start_world_from_base=actual_start_pose,
                                      visual_schedule=None if getattr(args,'visual_turn_scale',None) is None else {'turn_rotation_scale':float(args.visual_turn_scale),'turn_position_scale':float(args.visual_turn_scale)})
@@ -197,7 +197,7 @@ def run(args: argparse.Namespace) -> dict:
             from experiments.localization.imu_realism import ImuRealism as _Imu
             if args.start_hold_s<2.:raise ValueError('RL boot bias needs --start-hold-s >= 2')
             rl=RlResidual(Path(args.ksrc_root),args.rl_policy,dt=control_dt,bias_s=2.,
-                          imu_realism=_Imu(seed=int(getattr(args,'imu_seed',0))+1,vibration_scale=getattr(args,'imu_vibration_scale',1.)) if getattr(args,'imu_realism',False) else None)
+                          imu_realism=(_Imu.stress if getattr(args,'imu_profile','nominal')=='stress' else _Imu)(seed=int(getattr(args,'imu_seed',0))+1,vibration_scale=getattr(args,'imu_vibration_scale',1.)) if getattr(args,'imu_realism',False) else None)
             atomic_json(Path(args.output)/'rl_residual.json',{'policy':args.rl_policy,'ksrc_root':str(args.ksrc_root),'control_dt_s':control_dt,
                 'meta':{k:rl.meta.get(k) for k in ('task','checkpoint','obs_dim','student_history','control_dt_s','res8_steer_scale_rad','res8_wheel_scale','res8_rate_limit')},
                 'simulation_only':True,'imu_for_policy':'physics state, no noise or bias'})
@@ -359,6 +359,7 @@ def main() -> None:
     parser.add_argument('--ksrc-root',default=None,help='ksrc 체크아웃 경로(pi/policy/student_runtime.py, sim/libksrc_common.so 필요)')
     parser.add_argument('--imu-realism',action='store_true',help='실기(모래 15° 램프 student v3 로그)에서 잰 IMU 바이어스·잡음·이동 진동을 더함(기본 OFF)')
     parser.add_argument('--imu-seed',type=int,default=0)
+    parser.add_argument('--imu-profile',choices=('nominal','stress'),default='nominal',help='--imu-realism의 정지 백색 잡음: nominal=맑은 정지 실측, stress=이전 모래 구간 값(가속도 약 40배)')
     parser.add_argument('--imu-vibration-scale',type=float,default=1.,help='이동 진동 배율')
     parser.add_argument('--visual-turn-scale',type=float,default=None,help='회전 중 영상 관측 σ 배율(기본 4, --adaptive-visual-noise 필요)')
     parser.add_argument('--filter-acc-noise',type=float,default=None,help='필터가 가정하는 IMU 가속도 잡음 IMU.NoiseAcc [m/s²/√Hz] (기본 0.002)')

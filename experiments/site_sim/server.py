@@ -275,6 +275,7 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--rl-policy',default=None,help='start: 업로드된 정책 이름(확장자 없이, 예: res8_mlp_v1_rc4000)')
     parser.add_argument('--imu-realism',action='store_true',help='start: 실기에서 잰 IMU 바이어스·잡음·진동을 더함')
     parser.add_argument('--imu-seed',type=int,default=0)
+    parser.add_argument('--imu-profile',choices=('nominal','stress'),default=None,help='start: IMU 정지 잡음 프로필')
     parser.add_argument('--imu-vibration-scale',type=float,default=None,help='start: 이동 진동 배율')
     parser.add_argument('--visual-turn-scale',type=float,default=None,help='start: 회전 중 영상 관측 σ 배율')
     parser.add_argument('--filter-acc-noise',type=float,default=None,help='start: 필터 IMU 가속도 잡음 가정')
@@ -289,7 +290,7 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--start-seed',type=int,default=None)
     args=parser.parse_args(argv)
     extra=[]
-    for flag in ('mu','wheel_effort','delay_seed','imu_drop_prob','imu_vibration_scale','visual_turn_scale','filter_acc_noise','velocity_direction_sigma','start_noise_xy_m','start_noise_yaw_deg','start_seed'):
+    for flag in ('mu','wheel_effort','delay_seed','imu_drop_prob','imu_vibration_scale','visual_turn_scale','filter_acc_noise','velocity_direction_sigma','imu_profile','start_noise_xy_m','start_noise_yaw_deg','start_seed'):
         if getattr(args,flag) is not None:extra+=['--'+flag.replace('_','-'),str(getattr(args,flag))]
     if args.command_delay_ms is not None:extra+=['--command-delay-ms',str(args.command_delay_ms[0]),str(args.command_delay_ms[1])]
     try:

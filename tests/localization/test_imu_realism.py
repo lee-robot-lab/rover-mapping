@@ -25,11 +25,18 @@ def draw(model: ImuRealism, n: int, dt: float, speed: float, base_from_imu=EYE):
 
 def test_still_has_bias_and_white_noise_scaled_by_dt():
     gyro, force = draw(ImuRealism(seed=1), 20000, .02, 0.)
-    assert gyro.mean(0) == pytest.approx(np.radians((-.630, .485, .488)), abs=2e-5)
-    assert gyro.std(0) == pytest.approx(1.1e-4/np.sqrt(.02), rel=.05)          # 7.8e-4 rad/s = 0.0446 dps
-    assert (force-[0, 0, G]).std(0) == pytest.approx(.025/np.sqrt(.02), rel=.05)  # 0.177 m/s² = 0.018 g
+    assert gyro.mean(0) == pytest.approx(np.radians((-.637, .485, .486)), abs=2e-5)
+    assert gyro.std(0) == pytest.approx(7.2e-5/np.sqrt(.02), rel=.05)           # nominal: 맑은 정지 30 s 실측(타일) 자이로 6.3~8.1e-5 rad/s/√Hz의 평균
+    assert (force-[0, 0, G]).std(0) == pytest.approx(6e-4/np.sqrt(.02), rel=.05)   # nominal: 가속도 0.0005~0.0007 m/s²/√Hz의 평균
     gyro50, _ = draw(ImuRealism(seed=1), 20000, .05, 0.)
     assert gyro50.std(0)[0] == pytest.approx(gyro.std(0)[0]*np.sqrt(.02/.05), rel=.06)
+
+
+def test_stress_profile_keeps_the_old_sand_derived_white_noise():
+    gyro, force = draw(ImuRealism.stress(seed=1), 20000, .02, 0.)
+    assert gyro.std(0) == pytest.approx(1.1e-4/np.sqrt(.02), rel=.05)
+    assert (force-[0, 0, G]).std(0) == pytest.approx(.025/np.sqrt(.02), rel=.05)
+    assert ImuRealism.stress().gyro_bias_dps == ImuRealism().gyro_bias_dps          # 바이어스는 둘 다 같은 실측
 
 
 def test_moving_uses_measured_vibration_std():
@@ -53,7 +60,7 @@ def test_noise_is_added_in_body_frame_and_returned_to_imu_axes():
     base_from_imu = np.eye(4)
     base_from_imu[:3, :3] = r
     gyro, _ = draw(ImuRealism(seed=4), 20000, .02, 0., base_from_imu)
-    assert gyro.mean(0) == pytest.approx(r.T @ np.radians((-.630, .485, .488)), abs=2e-5)
+    assert gyro.mean(0) == pytest.approx(r.T @ np.radians((-.637, .485, .486)), abs=2e-5)
     moving, _ = draw(ImuRealism(seed=4), 20000, .02, .1, base_from_imu)
     body = moving @ r.T
     assert np.degrees(body.std(0)) == pytest.approx((1.44, 2.51, 2.87), rel=.05)
@@ -66,7 +73,7 @@ def test_seed_is_reproducible_and_invalid_dt_rejected():
     assert np.array_equal(a, b) and not np.array_equal(a, c)
     with pytest.raises(ValueError):
         ImuRealism().apply(0., 0., EYE, np.zeros(3), np.zeros(3))
-    assert ImuRealism(seed=7).parameters()['gyro_bias_dps'] == (-.630, .485, .488)
+    assert ImuRealism(seed=7).parameters()['gyro_bias_dps'] == (-.637, .485, .486)
 
 
 def test_online_estimator_default_off_unchanged_and_on_changes_sample_and_filter_input():
