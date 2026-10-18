@@ -74,3 +74,20 @@ def test_replay_endpoint_reports_missing_or_partial_telemetry(tmp_path):
         with pytest.raises(HTTPError) as error:urlopen(base+'/replay')
         assert error.value.code==503
     finally:server.shutdown();server.server_close()
+
+
+def test_replay_serves_front_camera_frames_from_the_saved_stereo_images(tmp_path):
+    import math
+    from experiments.site_sim.viewer import serve
+    output=tmp_path/'run';(output/'live').mkdir(parents=True);data=output/'stereo/mav0/cam0/data';data.mkdir(parents=True)
+    (data/'1000000000.png').write_bytes(b'P1');(data/'2000000000.png').write_bytes(b'P2')
+    rows=[{'stamp_s':k*.5,'position_m':[0,0,.4],'quaternion_wxyz':[1,0,0,0],'mission':{}} for k in range(6)]
+    (output/'telemetry.jsonl').write_text(_telemetry(rows))
+    server=serve(output,0);base=f'http://127.0.0.1:{server.server_port}'
+    try:
+        with urlopen(base+'/replay') as response:assert json.load(response)['front']==[1.0,2.0]
+        with urlopen(base+'/replay_front?t=1.9') as response:assert response.read()==b'P2'
+        with urlopen(base+'/replay_front?t=0.1') as response:assert response.read()==b'P1'
+        with pytest.raises(HTTPError) as error:urlopen(base+'/replay_front?t=x')
+        assert error.value.code==400
+    finally:server.shutdown();server.server_close()

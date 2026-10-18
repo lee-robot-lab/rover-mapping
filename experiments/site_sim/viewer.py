@@ -20,7 +20,7 @@ def replay_payload(output: Path, limit: int=2500) -> dict:
     rows=[json.loads(line) for line in (output/'telemetry.jsonl').read_text().splitlines() if line.strip()]
     if not rows:raise ValueError('empty telemetry')
     step=max(1,len(rows)//limit);picked=rows[::step]+([rows[-1]] if (len(rows)-1)%step else [])
-    data={'t':[],'gt':[],'est':[],'yaw':[],'state':[],'route':[],'err_cm':[],'frames':[]}
+    data={'t':[],'gt':[],'est':[],'yaw':[],'state':[],'route':[],'err_cm':[],'frames':[],'front':[]}
     for row in picked:
         gt=row['position_m'][:2];est=row.get('estimated_position_m',row['position_m'])[:2];w=row['quaternion_wxyz']
         data['t'].append(round(row['stamp_s'],2));data['gt'].append([round(gt[0],4),round(gt[1],4)]);data['est'].append([round(est[0],4),round(est[1],4)])
@@ -29,6 +29,8 @@ def replay_payload(output: Path, limit: int=2500) -> dict:
         data['err_cm'].append(round(math.dist(gt,est)*100,2))
     frames=output/'overview_frames'
     if frames.is_dir():data['frames']=sorted(float(p.stem) for p in frames.glob('*.jpg') if p.stem.replace('.','',1).isdigit())
+    stereo=output/'stereo/mav0/cam0/data'
+    if stereo.is_dir():data['front']=sorted(int(p.stem)/1e9 for p in stereo.glob('*.png') if p.stem.isdigit())
     return data
 
 
@@ -53,6 +55,13 @@ def serve(output: Path, port: int) -> ThreadingHTTPServer:
                         if 'replay' not in cache:cache['replay']=replay_payload(output)
                         body=json.dumps(cache['replay'],allow_nan=False).encode();mime='application/json'
                 except (OSError,ValueError,KeyError,TypeError):code=503;body=b'not ready'
+            elif path=='/replay_front':
+                try:
+                    times=cache['replay']['front'] if 'replay' in cache else replay_payload(output)['front']
+                    wanted=float(parse_qs(split.query)['t'][0]);nearest=min(times,key=lambda t:abs(t-wanted))
+                    body=(output/'stereo/mav0/cam0/data'/f'{round(nearest*1e9)}.png').read_bytes();mime='image/png'
+                except (KeyError,ValueError,IndexError):code=400;body=b'bad request'
+                except OSError:code=404
             elif path=='/replay_frame':
                 try:
                     times=cache['replay']['frames'] if 'replay' in cache else replay_payload(output)['frames']

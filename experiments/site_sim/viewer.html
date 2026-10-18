@@ -96,6 +96,7 @@ const yaw=d.yaw[i],live=liveState||{};
 state={...live,status:'재생 중',stale:false,age_s:0,reason:`위치 오차 ${d.err_cm[i].toFixed(1)} cm`,trajectory:d.gt.slice(0,i+1),estimated_trajectory:d.est.slice(0,i+1),experience,visited_cells:cells.size,
 last:{stamp_s:d.t[i],wall_s:0,position_m:[d.gt[i][0],d.gt[i][1],0],quaternion_wxyz:[Math.cos(yaw/2),0,0,Math.sin(yaw/2)],mission:{state:d.state[i],route:d.route[i],direction:'',visits:{}}}};
 update();rp('rpSlider').value=replay.t;rp('rpLabel').textContent=`${d.t[i].toFixed(1)} s · 오차 ${d.err_cm[i].toFixed(1)} cm`;
-if(d.frames&&d.frames.length){rp('overview').src='/replay_frame?t='+d.t[i].toFixed(2);text('overviewAge','(재생 화면)')}}
+if(d.frames&&d.frames.length){rp('overview').src='/replay_frame?t='+d.t[i].toFixed(2);text('overviewAge','(재생 화면)')}
+if(d.front&&d.front.length){rp('front').src='/replay_front?t='+d.t[i].toFixed(2);text('frontAge','(재생 화면)')}}
 poll();
 </script></html>
