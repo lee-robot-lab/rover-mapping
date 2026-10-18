@@ -18,6 +18,21 @@ def test_routes_share_summit_and_descent_reverses_only_selected_route():
     assert np.allclose(mission.connector()[-1],[.5,1.5])
 
 
+def test_connector_around_obstacle_has_no_removable_waypoints():
+    """격자 A* 계단 경로가 아니라, 어느 경유점도 이웃 둘을 직선으로 이어 뺄 수 없는 팽팽한 경로여야 한다."""
+    mission=mission_fixture()
+    mission.start=np.array([.5,.5,0.]);mission.junction=np.array([2.5,.5])
+    x0,x1,y0,y1=11,13,2,13
+    mission.site.observed[y0:y1+1,x0:x1+1]=False   # 직선 start→junction을 막는 장애물
+    slope=mission.settings['normal_slope_deg']
+    assert not mission.site.validate_path(np.asarray([mission.start[:2],mission.junction]),slope)['accepted']
+    path=mission.connector()
+    assert np.allclose(path[0],mission.start[:2]) and np.allclose(path[-1],mission.junction)
+    assert mission.site.validate_path(path,slope)['accepted']
+    for before,after in zip(path[:-2],path[2:]):
+        assert not mission.site.validate_path(np.asarray([before,after]),slope)['accepted']
+
+
 def test_roundtrip_source_and_directed_csv(tmp_path):
     from experiments.handheld_mapping.site_mission import SiteMission
     original=mission_fixture();folder=tmp_path/'mission';original.save(folder)

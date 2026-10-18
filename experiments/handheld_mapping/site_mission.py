@@ -89,6 +89,13 @@ class SiteMission:
         joined=np.vstack((direct[0],xy,direct[-1]))
         keep=np.r_[True,np.linalg.norm(np.diff(joined,axis=0),axis=1)>1e-9]
         joined=joined[keep]
+        pulled=[joined[0]];index=0   # 격자 계단·시작점 뒤로 가는 점을 없애도록, 안전한 가장 먼 점으로 직선 단축
+        while index<len(joined)-1:
+            far=len(joined)-1
+            while far>index+1 and not self.site.validate_path(np.asarray([joined[index],joined[far]]),slope)['accepted']:
+                far-=1
+            pulled.append(joined[far]);index=far
+        joined=np.asarray(pulled)
         if not self.site.validate_path(joined,slope)['accepted']:
             raise ValueError('connector clearance failed')
         return joined
