@@ -45,10 +45,11 @@ class SiteMission:
 
     def __init__(self, site: SiteMap, start: list | np.ndarray, junction: list | np.ndarray,
                  summit: list | np.ndarray, routes: dict, settings: dict | None=None,
-                 site_name: str='yeouido') -> None:
+                 site_name: str='yeouido', connector_waypoints: list | np.ndarray | None=None) -> None:
         self.site=site;self.start=np.asarray(start,float);self.junction=np.asarray(junction,float)
         self.summit=np.asarray(summit,float)
         self.routes={key:np.asarray(value,float).copy() for key,value in routes.items()}
+        self.connector_waypoints=None if connector_waypoints is None else np.asarray(connector_waypoints,float).copy()
         values=settings or {}
         if set(values)-DEFAULT_SETTINGS.keys():raise ValueError('unknown mission setting')
         self.settings={**DEFAULT_SETTINGS,**values}
@@ -72,7 +73,17 @@ class SiteMission:
         return path[:matches[0]+1] if len(matches) else path
 
     def connector(self) -> np.ndarray:
-        """출발→갈림길을 safe grid에서 연결하고 실제 좌표 endpoint를 보존한다."""
+        """명시한 안전 점열을 보존하거나 safe grid에서 출발→갈림길을 연결한다."""
+        if self.connector_waypoints is not None:
+            points=self.connector_waypoints
+            if (points.ndim!=2 or points.shape[1]!=2 or len(points)<2 or not np.isfinite(points).all()
+                    or not np.allclose(points[0],self.start[:2],atol=1e-6,rtol=0)
+                    or not np.allclose(points[-1],self.junction,atol=1e-6,rtol=0)
+                    or np.any(np.linalg.norm(np.diff(points,axis=0),axis=1)<1e-5)):
+                raise ValueError('invalid connector waypoints')
+            if not self.site.validate_path(points,self.settings['normal_slope_deg'])['accepted']:
+                raise ValueError('connector clearance failed')
+            return points.copy()
         direct=np.asarray([self.start[:2],self.junction])
         slope=self.settings['normal_slope_deg']
         if self.site.validate_path(direct,slope)['accepted']:
@@ -138,6 +149,7 @@ class SiteMission:
         atomic_json(folder/'mission.json',{'schema_version':1,'site_name':self.site_name,
             'frame':self.site.frame,'units':'m','site_identity':self.site.identity,
             'start':self.start.tolist(),'junction':self.junction.tolist(),'summit':self.summit.tolist(),
+            **({} if self.connector_waypoints is None else {'connector_waypoints':self.connector_waypoints.tolist()}),
             'routes':{key:value.tolist() for key,value in self.routes.items()},'settings':self.settings,
             'policy':{'ascent_order':['30','15','10'],'descent_route':'10',
                       'representative_visit_not_coverage':True,'trial_entry':self.routes['30'][1].tolist()},
@@ -150,6 +162,7 @@ class SiteMission:
             raise ValueError('invalid mission schema/frame/units')
         site=SiteMap.load(folder/'site',load_mesh=load_mesh)
         if data['site_identity']!=site.identity:raise ValueError('mission/site hash mismatch')
-        self=cls(site,data['start'],data['junction'],data['summit'],data['routes'],data['settings'],data['site_name'])
+        self=cls(site,data['start'],data['junction'],data['summit'],data['routes'],data['settings'],data['site_name'],
+                 connector_waypoints=data.get('connector_waypoints'))
         if not self.validate()['accepted']:raise ValueError('saved mission route validation failed')
         return self
