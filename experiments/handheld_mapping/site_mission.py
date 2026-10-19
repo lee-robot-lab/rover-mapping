@@ -20,6 +20,9 @@ DEFAULT_SETTINGS={'normal_slope_deg':20.,'trial_slope_deg':35.,'arrival_toleranc
                   'stuck_window_s':3.,'min_progress_m':.04,'max_attempt_s':60.,
                   'max_pose_jump_m':.5,'carrot_lookahead_m':.2,'carrot_brake_m':.3,'carrot_min_speed_factor':.35}
 DEFAULT_SETTINGS['stanley_gain']=0.   # 0이면 기존 lookahead 방향 추종, 양수면 횡방향 오차 항(Stanley식)을 더한다
+DEFAULT_SETTINGS.update(follower_blend=0.,blend_heading_hold=0.,blend_max_yaw_rate_rad_s=.09,blend_ramp_slope_deg=8.,
+                        blend_ramp_resume_deg=15.,blend_ramp_stop_deg=25.,blend_dir_rate_rad_s=1.)   # follower_blend=1이면 yaw·vy 혼합 추종기(blend_follower.py)
+ZERO_ALLOWED=('stanley_gain','follower_blend','blend_heading_hold')
 
 
 def dense_path(points: np.ndarray, spacing: float=.05) -> np.ndarray:
@@ -53,11 +56,14 @@ class SiteMission:
         values=settings or {}
         if set(values)-DEFAULT_SETTINGS.keys():raise ValueError('unknown mission setting')
         self.settings={**DEFAULT_SETTINGS,**values}
-        if (any(type(v) not in (int,float) or not math.isfinite(v) or v<(0 if k=='stanley_gain' else 1e-12) for k,v in self.settings.items())
+        if (any(type(v) not in (int,float) or not math.isfinite(v) or v<(0 if k in ZERO_ALLOWED else 1e-12) for k,v in self.settings.items())
                 or not self.settings['normal_slope_deg']<=self.settings['trial_slope_deg']<90
                 or self.settings['max_attempt_s']<=self.settings['stuck_window_s']
                 or self.settings['max_pose_jump_m']<=self.settings['arrival_tolerance_m']
-                or self.settings['max_speed_m_s']>.5 or self.settings['max_yaw_rate_rad_s']>2.):
+                or self.settings['max_speed_m_s']>.5 or self.settings['max_yaw_rate_rad_s']>2.
+                or self.settings['follower_blend'] not in (0,1) or self.settings['blend_heading_hold'] not in (0,1)
+                or self.settings['blend_max_yaw_rate_rad_s']>self.settings['max_yaw_rate_rad_s']
+                or not self.settings['blend_ramp_resume_deg']<self.settings['blend_ramp_stop_deg']<90):
             raise ValueError('invalid mission settings')
         if site_name not in ('yeouido','sacheon','demo'):raise ValueError('invalid site name')
         self.site_name=site_name

@@ -81,3 +81,41 @@ def test_save_rejects_invalid_before_creating_output(tmp_path):
     mission=mission_fixture();mission.routes['10'][1]=[-1,0]
     with pytest.raises(ValueError):mission.save(tmp_path/'bad')
     assert not (tmp_path/'bad').exists()
+
+
+BLEND_KEYS=('follower_blend','blend_heading_hold','blend_max_yaw_rate_rad_s','blend_ramp_slope_deg',
+            'blend_ramp_resume_deg','blend_ramp_stop_deg','blend_dir_rate_rad_s')
+
+
+def test_blend_settings_default_to_off_and_spec_values():
+    s=mission_fixture().settings
+    assert s['follower_blend']==0 and s['blend_heading_hold']==0
+    assert s['blend_max_yaw_rate_rad_s']==.09 and s['blend_ramp_slope_deg']==8
+    assert s['blend_ramp_resume_deg']==15 and s['blend_ramp_stop_deg']==25 and s['blend_dir_rate_rad_s']==1.0
+
+
+def test_blend_settings_accept_one():
+    from experiments.handheld_mapping.site_mission import SiteMission
+    old=mission_fixture()
+    mission=SiteMission(old.site,old.start,old.junction,old.summit,old.routes,{'follower_blend':1,'blend_heading_hold':1})
+    assert mission.settings['follower_blend']==1 and mission.settings['blend_heading_hold']==1
+
+
+@pytest.mark.parametrize('name,value',[('follower_blend',2),('blend_heading_hold',.5),('blend_max_yaw_rate_rad_s',.7),
+    ('blend_ramp_resume_deg',25),('blend_ramp_resume_deg',30),('blend_dir_rate_rad_s',0),('blend_max_yaw_rate_rad_s',0)])
+def test_blend_settings_reject_invalid(name,value):
+    from experiments.handheld_mapping.site_mission import SiteMission
+    old=mission_fixture()
+    with pytest.raises(ValueError,match='invalid mission settings'):
+        SiteMission(old.site,old.start,old.junction,old.summit,old.routes,{name:value})
+
+
+def test_old_mission_json_without_blend_keys_loads(tmp_path):
+    from experiments.handheld_mapping.site_mission import SiteMission
+    folder=tmp_path/'mission';mission_fixture().save(folder)
+    data=json.loads((folder/'mission.json').read_text())
+    for key in BLEND_KEYS:del data['settings'][key]
+    (folder/'mission.json').write_text(json.dumps(data))
+    loaded=SiteMission.load(folder,load_mesh=False)
+    assert loaded.settings['follower_blend']==0 and loaded.settings['blend_max_yaw_rate_rad_s']==.09
+    assert all(key in loaded.settings for key in BLEND_KEYS)
