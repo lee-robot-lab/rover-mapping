@@ -162,3 +162,17 @@ def test_build_estimator_wires_imu_profile_into_a_real_estimator():
     assert nominal.imu_realism.drop_probability == pytest.approx(.008)
     off = build_estimator(SimpleNamespace(**{**common, 'imu_realism': False}, imu_profile='nominal'), pose, pose, CALIBRATION)
     assert off.imu_realism is None
+
+
+def test_policy_imu_record_describes_the_active_model_and_boot_bias():
+    """노이즈가 켜진 정책 실행을 이상적 IMU 실행으로 잘못 기록하지 않는다."""
+    from types import SimpleNamespace
+    from experiments.site_sim.run import policy_imu_metadata
+    model = ImuRealism(seed=2, vibration_scale=.5)
+    record = policy_imu_metadata(SimpleNamespace(imu_realism=model, bias_s=2.))
+    assert record['imu_for_policy'] == 'physics state with simulated IMU noise and bias'
+    assert record['imu_realism'] == model.parameters()
+    assert record['gyro_bias_estimation_s'] == 2.
+    off = policy_imu_metadata(SimpleNamespace(imu_realism=None, bias_s=2.))
+    assert off['imu_for_policy'] == 'physics state, no noise or bias'
+    assert off['imu_realism'] is None

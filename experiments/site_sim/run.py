@@ -34,6 +34,14 @@ def build_estimator(args: argparse.Namespace, start_pose, actual_start_pose, cal
                            visual_schedule=None if getattr(args,'visual_turn_scale',None) is None else {'turn_rotation_scale':float(args.visual_turn_scale),'turn_position_scale':float(args.visual_turn_scale)})
 
 
+def policy_imu_metadata(rl) -> dict:
+    """실제 정책 객체의 IMU 모델·부팅 bias 보정 시간을 실행 기록에 남긴다."""
+    return {'imu_for_policy': ('physics state, no noise or bias' if rl.imu_realism is None
+                               else 'physics state with simulated IMU noise and bias'),
+            'imu_realism': None if rl.imu_realism is None else rl.imu_realism.parameters(),
+            'gyro_bias_estimation_s': float(rl.bias_s)}
+
+
 def run(args: argparse.Namespace) -> dict:
     validate_limits(args.max_sim_s,args.max_wall_s)
     import numpy as np
@@ -207,7 +215,7 @@ def run(args: argparse.Namespace) -> dict:
                           imu_realism=(_Imu.stress if getattr(args,'imu_profile','nominal')=='stress' else _Imu)(seed=int(getattr(args,'imu_seed',0))+1,vibration_scale=getattr(args,'imu_vibration_scale',1.)) if getattr(args,'imu_realism',False) else None)
             atomic_json(Path(args.output)/'rl_residual.json',{'policy':args.rl_policy,'ksrc_root':str(args.ksrc_root),'control_dt_s':control_dt,
                 'meta':{k:rl.meta.get(k) for k in ('task','checkpoint','obs_dim','student_history','control_dt_s','res8_steer_scale_rad','res8_wheel_scale','res8_rate_limit')},
-                'simulation_only':True,'imu_for_policy':'physics state, no noise or bias'})
+                'simulation_only':True,**policy_imu_metadata(rl)})
             print('SITE_SIM_RL residual policy loaded:',args.rl_policy,flush=True)
         delay=None
         if getattr(args,'command_delay_ms',None):
