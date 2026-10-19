@@ -21,7 +21,8 @@ DEFAULT_SETTINGS={'normal_slope_deg':20.,'trial_slope_deg':35.,'arrival_toleranc
                   'max_pose_jump_m':.5,'carrot_lookahead_m':.2,'carrot_brake_m':.3,'carrot_min_speed_factor':.35}
 DEFAULT_SETTINGS['stanley_gain']=0.   # 0이면 기존 lookahead 방향 추종, 양수면 횡방향 오차 항(Stanley식)을 더한다
 DEFAULT_SETTINGS.update(follower_blend=0.,blend_heading_hold=0.,blend_max_yaw_rate_rad_s=.09,blend_ramp_slope_deg=8.,
-                        blend_ramp_resume_deg=15.,blend_ramp_stop_deg=25.,blend_dir_rate_rad_s=1.)   # follower_blend=1이면 yaw·vy 혼합 추종기(blend_follower.py)
+                        blend_ramp_resume_deg=15.,blend_ramp_stop_deg=25.,blend_dir_rate_rad_s=1.,
+                        blend_realign_stop_deg=90.,blend_realign_resume_deg=45.)   # 병진 방향 오차가 stop을 넘으면 정지·재정렬, resume 이하에서 출발   # follower_blend=1이면 yaw·vy 혼합 추종기(blend_follower.py)
 ZERO_ALLOWED=('stanley_gain','follower_blend','blend_heading_hold')
 
 
@@ -63,7 +64,8 @@ class SiteMission:
                 or self.settings['max_speed_m_s']>.5 or self.settings['max_yaw_rate_rad_s']>2.
                 or self.settings['follower_blend'] not in (0,1) or self.settings['blend_heading_hold'] not in (0,1)
                 or self.settings['blend_max_yaw_rate_rad_s']>self.settings['max_yaw_rate_rad_s']
-                or not self.settings['blend_ramp_resume_deg']<self.settings['blend_ramp_stop_deg']<90):
+                or not self.settings['blend_ramp_resume_deg']<self.settings['blend_ramp_stop_deg']<90
+                or not self.settings['blend_realign_resume_deg']<self.settings['blend_realign_stop_deg']<=180):
             raise ValueError('invalid mission settings')
         if site_name not in ('yeouido','sacheon','demo'):raise ValueError('invalid site name')
         self.site_name=site_name

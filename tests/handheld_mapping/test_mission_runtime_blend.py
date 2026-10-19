@@ -112,7 +112,7 @@ def test_blend_active_result_carries_vy_and_follower_fields():
     rows=simulate(run,mission,3)
     out=rows[-1][0]
     assert set(out['command'])=={'vx_m_s','vy_m_s','yaw_rate_rad_s'}
-    assert set(out['follower'])=={'psi_ref','heading_gap_rad','travel_gap_rad','gated'}
+    assert set(out['follower'])=={'psi_ref','heading_gap_rad','travel_gap_rad','gated','realigning'}
     assert all(math.isfinite(v) for k,v in out['follower'].items() if k!='gated') and out['follower']['gated'] is False
     json.dumps(out,allow_nan=False)
 
@@ -138,23 +138,63 @@ def test_blend_retreating_reverses_without_rotating():
     assert out['follower']['gated'] is False
 
 
-def test_blend_retreat_after_forward_travel_sweeps_body_direction_at_the_slew_limit():
-    """전진 중이던 방향(θ≈0)에서 후진 단계로 넘어가면 방향 슬루 한계(1 rad/s) 때문에 약 π초 동안 몸이 옆으로 병진한다(알려진 한계, 설계 §5)."""
+def forward_then(mission,run,*,pre_path,pre_steps,dt=.1):
+    """pre_path를 전진 주행(plant 적분)하고 (xy, yaw, t)를 돌려준다. follower는 초기화 없이 그대로 둔다."""
+    run._set_path(pre_path);xy=mission.start[:2].copy();yaw=0.
+    for k in range(pre_steps):
+        t=round(k*dt,6);out=run.update(sample(mission,t,xy.tolist(),yaw_rad=yaw),t);xy,yaw=plant(xy,yaw,out['command'],dt)
+    return xy,yaw,pre_steps*dt
+
+
+def test_blend_retreat_after_forward_travel_stops_realigns_then_reverses_straight():
+    """전진 중이던 상태(θ_app≈0)에서 invalidate 없이 후퇴로 넘어가면 옆걸음 대신 정지-재정렬-직선 후진한다."""
     from experiments.handheld_mapping.mission_runtime import MissionRuntime
-    mission=blend_mission();run=MissionRuntime(mission);flat(run)
-    run._set_path([[.5,.5],[2.5,.5]]);xy=mission.start[:2].copy()
-    for k in range(5):
-        out=run.update(sample(mission,k*.02,xy.tolist()),k*.02)
-    assert out['command']['vx_m_s']>0 and abs(out['command']['vy_m_s'])<1e-6
-    run.state='retreating';run.direction='down';run._set_path([[.5,.5],[.1,.5]])
-    previous=0.;thetas=[]
-    for k in range(5,5+130):   # 위치를 고정했으므로 stuck 판정(3 s) 전까지만 본다
-        out=run.update(sample(mission,k*.02,xy.tolist()),k*.02);c=out['command']
-        theta=math.atan2(c['vy_m_s'],c['vx_m_s']);thetas.append(theta)
-        assert out['reason']=='active' and abs(wrap(theta-previous))<=.02+1e-9 and c['yaw_rate_rad_s']==0
-        previous=theta
-    assert thetas[0]>0 and all(b>a for a,b in zip(thetas,thetas[1:]))   # θ가 0에서 π를 향해 단조롭게 돈다
-    assert max(math.sin(t) for t in thetas)>.99 and thetas[-1]>1.9      # ±π/2를 지나는 옆걸음 구간이 있다
+    mission=blend_mission();mission.start=np.array([1.5,1.5,0.]);run=MissionRuntime(mission);flat(run)
+    xy,yaw,t=forward_then(mission,run,pre_path=[[1.5,1.5],[3.5,1.5]],pre_steps=40)
+    assert run.follower.initialized and abs(run.follower.theta_app)<1e-3 and run.command['vx_m_s']>0
+    run.state='retreating';run.direction='down';run._set_path([xy.tolist(),[.5,1.5]])
+    rows=[]
+    for k in range(150):
+        t+=.1;out=run.update(sample(mission,t,xy.tolist(),yaw_rad=yaw),t)
+        if out['reason']!='active':break   # 후퇴 경로 끝 도착(다음 단계로 전환)
+        c=out['command'];rows.append(out);assert c['yaw_rate_rad_s']==0
+        xy,yaw=plant(xy,yaw,c,.1)
+    realign=[o for o in rows if o['follower']['realigning']]
+    assert len(realign)>=20 and all(o['command']['vx_m_s']==o['command']['vy_m_s']==0 for o in realign)   # 정지 재정렬
+    assert rows[0]['follower']['realigning'] and run.effort<run.settings['stuck_window_s']
+    moving=[o['command'] for o in rows if math.hypot(o['command']['vx_m_s'],o['command']['vy_m_s'])>0]
+    assert all(abs(wrap(math.atan2(c['vy_m_s'],c['vx_m_s'])-math.pi))<=math.radians(45)+.03 for c in moving)   # 옆걸음(90° 근처) 없음
+    assert abs(wrap(math.atan2(moving[-1]['vy_m_s'],moving[-1]['vx_m_s'])-math.pi))<.02 and run.state=='ascending'   # 후퇴를 끝내고 15° 재등판으로 넘어갔다
+    assert xy[0]<1.2 and abs(wrap(yaw))<1e-9   # 몸은 돌지 않고 뒤로 물러났다
+
+
+def test_blend_realign_does_not_accumulate_effort_while_stopped():
+    from experiments.handheld_mapping.mission_runtime import MissionRuntime
+    mission=blend_mission();mission.start=np.array([1.5,1.5,0.]);run=MissionRuntime(mission);flat(run)
+    xy,yaw,t=forward_then(mission,run,pre_path=[[1.5,1.5],[3.5,1.5]],pre_steps=30)
+    run.state='retreating';run.direction='down';run._set_path([xy.tolist(),[.5,1.5]])
+    efforts=[]
+    for k in range(20):   # 위치 고정: 정지 재정렬 구간(약 2.4 s) 동안 effort는 0이어야 한다
+        t+=.1;out=run.update(sample(mission,t,xy.tolist(),yaw_rad=yaw),t)
+        if not out['follower']['realigning']:break
+        efforts.append(run.effort)
+    assert len(efforts)>=20 and max(efforts)<=.1+1e-9   # 첫 스텝만 직전 전진 명령 때문에 dt가 더해질 수 있다
+
+
+def test_blend_summit_180_reversal_between_phases_has_no_sideways_travel():
+    """ascending 끝(방위 0°) → 하강 시작(방위 180°): 정지-재정렬 뒤 후진 방향으로 출발하고 실패하지 않는다."""
+    from experiments.handheld_mapping.mission_runtime import MissionRuntime
+    mission=blend_mission(max_speed_m_s=.08);mission.routes['10']=np.array([[.5,1.5],[1.5,1.5],[3.5,1.5]])
+    assert mission.validate()['accepted'];run=MissionRuntime(mission);flat(run)
+    rows=simulate(run,mission,3000,dt=.1,stop=lambda out:out['state']=='complete')
+    descent=[(o,y) for o,_,y in rows if o['state']=='descending' and o['reason']=='active']
+    assert run.state=='complete' and descent
+    realign=[o for o,_ in descent if o['follower']['realigning']]
+    assert 15<=len(realign)<=30 and all(o['command']['vx_m_s']==o['command']['vy_m_s']==0 for o in realign)
+    for o,yaw in descent:   # 출발 뒤 몸 좌표 방향은 후진(π) 45° 안, 각속도는 상한 안
+        c=o['command'];assert abs(c['yaw_rate_rad_s'])<=.09+1e-12
+        if math.hypot(c['vx_m_s'],c['vy_m_s'])>0 and o['follower']['travel_gap_rad']>math.pi-.5:
+            assert abs(wrap(math.atan2(c['vy_m_s'],c['vx_m_s'])-math.pi))<=math.radians(60)   # 재개 오차 45° + 이후 yaw 변화
 
 
 def test_blend_summit_180_turn_is_slow_and_not_gated():

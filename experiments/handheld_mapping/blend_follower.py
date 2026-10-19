@@ -26,6 +26,8 @@ class BlendParams:
     dir_rate: float = 1.
     min_dir_speed: float = .01
     heading_hold: bool = False
+    realign_stop_deg: float = 90.     # 몸 좌표 병진 방향 오차가 이를 넘으면 정지하고 방향부터 재정렬
+    realign_resume_deg: float = 45.   # 재정렬 중 오차가 이하가 되면 출발
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,7 @@ class BlendOutput:
     heading_gap_rad: float
     travel_gap_rad: float
     gated: bool
+    realigning: bool = False
 
 
 class BlendFollower:
@@ -48,7 +51,7 @@ class BlendFollower:
 
     def invalidate(self) -> None:
         """다음 step에서 ψ_ref=현재 yaw, 병진 방향=목표 방향으로 다시 시작한다."""
-        self.initialized=False;self.psi_ref=0.;self.theta_app=0.;self.gated=False
+        self.initialized=False;self.psi_ref=0.;self.theta_app=0.;self.gated=False;self.realigning=False
 
     def step(self, *, yaw: float, travel_heading: float, speed: float, slope_deg: float, dt: float,
              retreat: bool=False) -> BlendOutput:
@@ -65,8 +68,10 @@ class BlendFollower:
         gap=abs(theta)
         if retreat or slope_deg<p.ramp_slope_deg:self.gated=False
         else:self.gated=gap>(p.resume_deg if self.gated else p.stop_deg)*math.pi/180.
-        speed_eff=0. if self.gated else max(0.,speed)
-        if speed_eff>=p.min_dir_speed and not fresh:
+        error=abs(_wrap(theta-self.theta_app))   # 병진 방향 오차가 크면(180° 전환·후퇴) 옆걸음 대신 정지-재정렬-출발
+        self.realigning=not fresh and speed>=p.min_dir_speed and error>(p.realign_resume_deg if self.realigning else p.realign_stop_deg)*math.pi/180.
+        speed_eff=0. if self.gated or self.realigning else max(0.,speed)
+        if self.realigning or (speed_eff>=p.min_dir_speed and not fresh):
             limit=p.dir_rate*dt;self.theta_app=_wrap(self.theta_app+max(-limit,min(limit,_wrap(theta-self.theta_app))))
         return BlendOutput(vx=speed_eff*math.cos(self.theta_app),vy=speed_eff*math.sin(self.theta_app),yaw_rate=yaw_rate,
-                           psi_ref=self.psi_ref,heading_gap_rad=abs(heading_gap),travel_gap_rad=gap,gated=self.gated)
+                           psi_ref=self.psi_ref,heading_gap_rad=abs(heading_gap),travel_gap_rad=gap,gated=self.gated,realigning=self.realigning)

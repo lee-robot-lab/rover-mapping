@@ -129,3 +129,53 @@ def test_invalidate_reinitializes_to_current_yaw():
     f.invalidate()
     out=drive(f,yaw=1.,travel_heading=-1.)
     assert out.psi_ref==1. and direction(out)==pytest.approx(wrap(-2.))
+
+
+def run_reversal(follower,n,*,retreat=False,yaw=0.):
+    """전진(θ_app≈0) 상태에서 목표 방향이 몸 뒤쪽(π)으로 바뀐 뒤 n스텝의 출력."""
+    return [follower.step(yaw=yaw,travel_heading=yaw+math.pi,speed=.08,slope_deg=0.,dt=DT,retreat=retreat) for _ in range(n)]
+
+
+def test_defaults_include_realign_thresholds():
+    from experiments.handheld_mapping.blend_follower import BlendParams
+    assert (BlendParams().realign_stop_deg,BlendParams().realign_resume_deg)==(90.,45.)
+
+
+@pytest.mark.parametrize('retreat',[False,True])
+def test_large_body_direction_error_stops_realigns_then_resumes_without_sideways_travel(retreat):
+    f=make();drive(f,50,yaw=0.,travel_heading=0.)
+    outs=run_reversal(f,200,retreat=retreat)
+    assert outs[0].realigning and outs[0].vx==outs[0].vy==0 and not outs[0].gated
+    flags=[o.realigning for o in outs];assert flags==sorted(flags,reverse=True) and not flags[-1]   # 켜졌다 한 번만 꺼진다(진동 없음)
+    moving=[o for o in outs if math.hypot(o.vx,o.vy)>0]
+    assert moving and all(abs(wrap(direction(o)-math.pi))<=math.radians(45)+DT for o in moving)   # 출발은 후진 방향 45° 안에서만
+    assert all(math.hypot(o.vx,o.vy)==0 for o in outs if o.realigning)
+    stopped=sum(o.realigning for o in outs)
+    assert 2.3<=stopped*DT<=2.45                                 # 180°→45° 오차까지 135°/(1 rad/s)≈2.36 s
+    last=outs[-1];assert last.vx==pytest.approx(-.08) and last.vy==pytest.approx(0,abs=1e-9)
+    assert all(abs(o.yaw_rate)<=.09+1e-12 for o in outs)
+    if retreat:assert all(o.yaw_rate==0 for o in outs)
+
+
+def test_realign_direction_slews_at_dir_rate_while_stopped():
+    f=make();drive(f,50,yaw=0.,travel_heading=0.)
+    thetas=[direction(o) if math.hypot(o.vx,o.vy) else None for o in run_reversal(f,5)]
+    assert thetas==[None]*5
+    assert abs(f.theta_app-5*1.0*DT)<1e-9
+
+
+def test_realign_has_hysteresis_around_the_stop_threshold():
+    f=make();drive(f,50,yaw=0.,travel_heading=0.);deg=math.radians
+    states=[]
+    for k in range(20):   # 목표를 92°와 88° 사이로 흔들어도 재개(45°) 전에는 정지 상태가 유지된다
+        out=drive(f,travel_heading=deg(92 if k%2==0 else 88));states.append(out.realigning)
+    assert all(states)
+    f=make();drive(f,50,yaw=0.,travel_heading=0.)
+    assert not any(drive(f,travel_heading=deg(80)).realigning for _ in range(30))   # 90° 미만은 정지하지 않는다
+
+
+def test_invalidate_clears_realign_state():
+    f=make();drive(f,50,yaw=0.,travel_heading=0.);run_reversal(f,3)
+    assert f.realigning
+    f.invalidate()
+    assert not f.realigning and not drive(f,yaw=0.,travel_heading=math.pi).realigning

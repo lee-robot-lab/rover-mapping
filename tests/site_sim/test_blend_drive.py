@@ -100,7 +100,7 @@ def test_telemetry_row_carries_follower_and_commands(mission, tmp_path, blend):
         recorder.observe(row, drive.runtime.events)
     if blend:
         assert 'vy_m_s' in row['requested_command'] and 'vy_m_s' in row['applied_command']
-        assert set(row['mission']['follower']) == {'psi_ref', 'heading_gap_rad', 'travel_gap_rad', 'gated'}
+        assert set(row['mission']['follower']) == {'psi_ref', 'heading_gap_rad', 'travel_gap_rad', 'gated', 'realigning'}
     else:
         assert 'vy_m_s' not in row['requested_command'] and 'follower' not in row['mission']
     recorder.finalize('failed', 'test')

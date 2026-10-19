@@ -84,7 +84,7 @@ def test_save_rejects_invalid_before_creating_output(tmp_path):
 
 
 BLEND_KEYS=('follower_blend','blend_heading_hold','blend_max_yaw_rate_rad_s','blend_ramp_slope_deg',
-            'blend_ramp_resume_deg','blend_ramp_stop_deg','blend_dir_rate_rad_s')
+            'blend_ramp_resume_deg','blend_ramp_stop_deg','blend_dir_rate_rad_s','blend_realign_stop_deg','blend_realign_resume_deg')
 
 
 def test_blend_settings_default_to_off_and_spec_values():
@@ -92,6 +92,16 @@ def test_blend_settings_default_to_off_and_spec_values():
     assert s['follower_blend']==0 and s['blend_heading_hold']==0
     assert s['blend_max_yaw_rate_rad_s']==.09 and s['blend_ramp_slope_deg']==8
     assert s['blend_ramp_resume_deg']==15 and s['blend_ramp_stop_deg']==25 and s['blend_dir_rate_rad_s']==1.0
+
+
+def test_blend_realign_defaults_and_validation():
+    from experiments.handheld_mapping.site_mission import SiteMission
+    old=mission_fixture()
+    assert old.settings['blend_realign_stop_deg']==90 and old.settings['blend_realign_resume_deg']==45
+    for change in ({'blend_realign_stop_deg':181},{'blend_realign_resume_deg':90},{'blend_realign_resume_deg':100},{'blend_realign_resume_deg':0}):
+        with pytest.raises(ValueError,match='invalid mission settings'):
+            SiteMission(old.site,old.start,old.junction,old.summit,old.routes,change)
+    SiteMission(old.site,old.start,old.junction,old.summit,old.routes,{'blend_realign_stop_deg':180,'blend_realign_resume_deg':10})
 
 
 def test_blend_settings_accept_one():

@@ -93,11 +93,32 @@ def test_step_plant_integrates_vy_in_body_frame():
     assert got_yaw==np.arctan2(np.sin(.7+.02),np.cos(.7+.02))
 
 
-def test_replay_with_blend_follower_integrates_vy_and_reaches_the_summit(tmp_path):
-    """blend 설정의 runtime이 낸 vy가 plant에 적분되어 정상까지 간다(하강 뒤 복귀 구간의 방향 전환은 별도 한계로 보고한다)."""
+def test_replay_with_blend_follower_completes_the_mission(tmp_path):
     from experiments.handheld_mapping.mission_replay import demo_mission,replay
     mission=demo_mission();mission.settings['follower_blend']=1.
     out=replay(mission,tmp_path/'blend','success')
-    assert out['visits']['summit']=='reached',out
+    assert out['state']=='complete' and out['visits']['summit']=='reached',out
     header=(tmp_path/'blend'/'commands.csv').read_text().splitlines()[0].split(',')
     assert 'vy_m_s' in header
+
+
+def reversal_mission(kind):
+    """kind: 'line'은 10° 하강을 30° 등판과 같은 선으로, 'retrace15'는 10° 경로를 15° 경로와 같게 해 정상에서 정확히 180° 반전시킨다."""
+    mission=mission_fixture();mission.routes['10']=np.array(mission.routes['30' if kind=='line' else '15'])
+    if kind=='line':mission.routes['10']=np.array([[.5,1.5],[1.5,1.5],[3.5,1.5]])
+    assert mission.validate()['accepted']
+    return mission
+
+
+@pytest.mark.parametrize('name,scenario',[('fixture','success'),('fixture','stall30'),('fixture','stall30_15'),
+                                          ('demo','success'),('demo','stall30'),('demo','stall30_15'),
+                                          ('line180','success'),('retrace15','stall30')])
+def test_blend_follower_replays_complete_including_180_degree_transitions(tmp_path,name,scenario):
+    """후퇴·정상 반전·복귀 방향 전환(각 약 180°)이 정지 판정 없이 정지-재정렬-출발로 끝까지 간다."""
+    from experiments.handheld_mapping.mission_replay import demo_mission,replay
+    mission={'fixture':mission_fixture,'demo':demo_mission,'line180':lambda:reversal_mission('line'),
+             'retrace15':lambda:reversal_mission('retrace15')}[name]()
+    mission.settings['follower_blend']=1.
+    out=replay(mission,tmp_path/'run',scenario)
+    assert out['state']=='complete' and out['visits']['return']=='reached',(name,scenario,out['reason'],out['duration_s'])
+    if scenario!='success':assert out['failed_ascent_routes']

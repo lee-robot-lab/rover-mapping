@@ -41,7 +41,8 @@ class MissionRuntime:
         self.follower=None if not self.settings['follower_blend'] else BlendFollower(BlendParams(
             max_yaw_rate=self.settings['blend_max_yaw_rate_rad_s'],ramp_slope_deg=self.settings['blend_ramp_slope_deg'],
             resume_deg=self.settings['blend_ramp_resume_deg'],stop_deg=self.settings['blend_ramp_stop_deg'],
-            dir_rate=self.settings['blend_dir_rate_rad_s'],heading_hold=bool(self.settings['blend_heading_hold'])))
+            dir_rate=self.settings['blend_dir_rate_rad_s'],heading_hold=bool(self.settings['blend_heading_hold']),
+            realign_stop_deg=self.settings['blend_realign_stop_deg'],realign_resume_deg=self.settings['blend_realign_resume_deg']))
         self.command=self._zero_command()
         self.breadcrumbs: list[list]=[]
         self._set_path(mission.connector())
@@ -205,7 +206,7 @@ class MissionRuntime:
         scale=1. if self.safety_status is None else self.safety_status['scale']
         result=self._output(command={'vx_m_s':float(out.vx*scale),'vy_m_s':float(out.vy*scale),'yaw_rate_rad_s':float(out.yaw_rate*scale)})
         result['follower']={'psi_ref':float(out.psi_ref),'heading_gap_rad':float(out.heading_gap_rad),
-                            'travel_gap_rad':float(out.travel_gap_rad),'gated':bool(out.gated)}
+                            'travel_gap_rad':float(out.travel_gap_rad),'gated':bool(out.gated),'realigning':bool(out.realigning)}
         return result
 
     def _arrived(self, position: np.ndarray, stamp: float) -> dict:
