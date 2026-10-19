@@ -35,6 +35,6 @@
 
 1. `cy_y45a`/`cy_y45b`: 번들 `max_yaw_rate_rad_s` 0.6→0.45 (각각 corner370/corner375 번들). 기준 25.9 s / 38.8 s와 비교.
 2. `cz_b370`/`cz_b375`: corner370/375 번들 그대로 `--follower blend`만 추가, 최대 200 s.
-3. 이후 후보(각각 별도 실험): `--filter-acc-noise` 0.03/0.1, 시뮬 `StereoRelocalizationWaitSeconds` 15, `unsafe_observed_motion` 2연속 위반 요구(안전 의미 변경이므로 GT 마진 동시 평가).
+3. 이후 후보(각각 별도 실험): `--filter-acc-noise` 0.03/0.1, 시뮬 `StereoRelocalizationWaitSeconds` 15(이 키는 복구 대기 패치가 들어간 ORB 코어에서만 읽힌다. 시뮬 이미지 `rover-orbslam3-jazzy:4452a3c4`에 패치가 있는지 서버에서 먼저 확인해야 하며, 없으면 무시되어 실험이 무의미하다), `unsafe_observed_motion` 2연속 위반 요구(안전 의미 변경이므로 GT 마진 동시 평가).
 
 완주(접촉 0, 최종 오차 ≤5 cm) 실행이 나오면 이 문서에 런 라벨, `git rev-parse HEAD`, 전체 옵션, GT 최소 마스크 거리, 최종 XY 오차를 추가한다.
