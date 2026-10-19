@@ -176,3 +176,69 @@ def test_policy_imu_record_describes_the_active_model_and_boot_bias():
     off = policy_imu_metadata(SimpleNamespace(imu_realism=None, bias_s=2.))
     assert off['imu_for_policy'] == 'physics state, no noise or bias'
     assert off['imu_realism'] is None
+
+
+def test_server_forwards_follower_flags(monkeypatch):
+    """--follower·--blend-max-yaw-rate가 서버 start에서 run.py 인자로 넘어가고, 모르는 추종기 이름은 argparse가 거부한다."""
+    from experiments.site_sim import server
+    seen = {}
+    monkeypatch.setattr(server, 'start', lambda *args, **kwargs: seen.update(extra=kwargs['extra_args']))
+    assert server.main(['start', 'lbl', '--follower', 'blend', '--blend-max-yaw-rate', '0.09']) == 0
+    assert seen['extra'] == ['--blend-max-yaw-rate', '0.09', '--follower', 'blend']
+    with pytest.raises(SystemExit):
+        server.main(['start', 'lbl', '--follower', 'foo'])
+
+
+def test_apply_follower_args_sets_and_validates_blend_settings(mission):
+    from types import SimpleNamespace
+    from experiments.site_sim.run import apply_follower_args
+    assert mission.settings['follower_blend'] == 0
+    apply_follower_args(mission, SimpleNamespace(follower=None, blend_max_yaw_rate=None))
+    apply_follower_args(mission, SimpleNamespace(follower='unicycle', blend_max_yaw_rate=None))
+    assert mission.settings['follower_blend'] == 0 and mission.settings['blend_max_yaw_rate_rad_s'] == .09
+    apply_follower_args(mission, SimpleNamespace(follower='blend', blend_max_yaw_rate=.05))
+    assert mission.settings['follower_blend'] == 1. and mission.settings['blend_max_yaw_rate_rad_s'] == .05
+    for bad in (.7, 0., -.1, float('nan')):
+        with pytest.raises(ValueError):
+            apply_follower_args(mission, SimpleNamespace(follower='blend', blend_max_yaw_rate=bad))
+
+
+def run_py_args(monkeypatch, tmp_path, *extra):
+    """run.py main()의 실제 argparse로 인자를 파싱한다(run()만 대체해 인자를 가로챈다)."""
+    import sys
+    from experiments.site_sim import run as run_module
+    seen = {}
+    (tmp_path/'out').mkdir()   # main()이 출력 폴더의 부모에 exit.txt를 쓴다
+    monkeypatch.setattr(run_module, 'run', lambda args: seen.update(args=args) or {'status': 'complete'})
+    monkeypatch.setattr(sys, 'argv', ['run.py', '--mission', str(tmp_path/'mission'), '--urdf', 'u', '--geometry', 'g',
+                                      '--scene-usd', 's', '--output', str(tmp_path/'out'/'run'), *extra])
+    with pytest.raises(SystemExit):
+        run_module.main()
+    return seen['args']
+
+
+@pytest.mark.parametrize('flags,blend', [(('--follower', 'blend', '--blend-max-yaw-rate', '0.05'), True), ((), False)])
+def test_run_py_flags_reach_a_stepping_drive(monkeypatch, tmp_path, mission, flags, blend):
+    """run.py의 argparse → load_mission → 실제 SimulationDrive.step까지 통과해 vy와 follower가 텔레메트리에 나온다."""
+    from experiments.site_sim.run import load_mission
+    mission.save(tmp_path/'mission')
+    args = run_py_args(monkeypatch, tmp_path, *flags)
+    loaded = load_mission(args)
+    assert loaded.settings['follower_blend'] == (1. if blend else 0.)
+    row = SimulationDrive(Robot(), Session(), loaded).step(.1)
+    if blend:
+        assert loaded.settings['blend_max_yaw_rate_rad_s'] == .05
+        assert 'vy_m_s' in row['requested_command'] and 'follower' in row['mission']
+        assert abs(row['requested_command']['yaw_rate_rad_s']) <= .05+1e-12
+    else:
+        assert 'vy_m_s' not in row['requested_command'] and 'follower' not in row['mission']
+
+
+def test_viewer_option_text_shows_follower(tmp_path):
+    from experiments.site_sim.viewer import run_options_text
+    (tmp_path/'run_options.json').write_text(json.dumps({'follower': 'blend'}))
+    assert '추종기 blend' in run_options_text(tmp_path)
+    (tmp_path/'run_options.json').write_text(json.dumps({'follower': None, 'blend_max_yaw_rate': None}))
+    assert '추종기' not in run_options_text(tmp_path)
+    (tmp_path/'run_options.json').write_text(json.dumps({'follower': 'blend', 'blend_max_yaw_rate': .05}))
+    assert 'blend ω 0.05' in run_options_text(tmp_path)

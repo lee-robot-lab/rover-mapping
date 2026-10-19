@@ -42,15 +42,32 @@ def policy_imu_metadata(rl) -> dict:
             'gyro_bias_estimation_s': float(rl.bias_s)}
 
 
+def apply_follower_args(mission, args: argparse.Namespace) -> None:
+    """--follower blend이면 blend 추종기를 켜고, --blend-max-yaw-rate가 있으면 각속도 상한(0 초과 max_yaw_rate_rad_s 이하)을 설정에 넣는다."""
+    if getattr(args,'follower',None)=='blend':mission.settings['follower_blend']=1.
+    rate=getattr(args,'blend_max_yaw_rate',None)
+    if rate is not None:
+        if not math.isfinite(rate) or not 0<rate<=mission.settings['max_yaw_rate_rad_s']:
+            raise ValueError('--blend-max-yaw-rate must be in (0, max_yaw_rate_rad_s]')
+        mission.settings['blend_max_yaw_rate_rad_s']=float(rate)
+
+
+def load_mission(args: argparse.Namespace):
+    """임무 폴더를 읽고 Stanley·추종기 실행 옵션을 설정에 반영한다."""
+    from experiments.handheld_mapping.site_mission import SiteMission
+    mission=SiteMission.load(args.mission,load_mesh=False)
+    if getattr(args,'stanley_gain',0.)>0:mission.settings['stanley_gain']=float(args.stanley_gain)
+    apply_follower_args(mission,args)
+    return mission
+
+
 def run(args: argparse.Namespace) -> dict:
     validate_limits(args.max_sim_s,args.max_wall_s)
     import numpy as np
-    from experiments.handheld_mapping.site_mission import SiteMission
     from experiments.handheld_mapping.storage import atomic_json
     from experiments.site_sim.recording import RunRecorder
     from experiments.site_sim.estimator_log import EstimatorLog
-    mission=SiteMission.load(args.mission,load_mesh=False)
-    if getattr(args,'stanley_gain',0.)>0:mission.settings['stanley_gain']=float(args.stanley_gain)
+    mission=load_mission(args)
     stereo_hz=float(getattr(args,'stereo_hz',0.))
     if not math.isfinite(stereo_hz) or not 0<=stereo_hz<=30:raise ValueError('stereo_hz must be in [0,30]')
     control_dt=float(getattr(args,'control_dt',.05))
@@ -355,6 +372,8 @@ def main() -> None:
     parser.add_argument('--save-front-s',type=float,default=0.)
     parser.add_argument('--save-overview-s',type=float,default=0.)
     parser.add_argument('--stanley-gain',type=float,default=0.)
+    parser.add_argument('--follower',choices=('unicycle','blend'),default=None,help='경로 추종기: unicycle(기본, 없으면 같음)·blend(yaw+vy 혼합)')
+    parser.add_argument('--blend-max-yaw-rate',type=float,default=None,help='blend 추종기의 각속도 상한 [rad/s] (기본 0.09)')
     parser.add_argument('--wheel-gain-left',type=float,default=1.);parser.add_argument('--wheel-gain-right',type=float,default=1.)
     parser.add_argument('--slip-start-s',type=float,default=0.);parser.add_argument('--slip-end-s',type=float,default=None)
     parser.add_argument('--stereo-hz',type=float,default=0.)

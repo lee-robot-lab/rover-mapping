@@ -17,7 +17,7 @@ from urllib.parse import parse_qs,urlsplit
 
 OPTION_LABELS=(('rl_policy','RL'),('imu_realism','실제 IMU'),('imu_drop_prob','IMU 누락'),('command_delay_ms','명령 지연 ms'),('mu','μ'),
                ('wheel_effort','바퀴 토크'),('control_dt','제어 주기 s'),('start_noise_xy_m','시작 위치 노이즈 m'),('start_noise_yaw_deg','시작 yaw 노이즈 °'),
-               ('estimator','추정 위치로 주행'),('adaptive_visual_noise','영상 신뢰도 조정'),('stanley_gain','Stanley'),('wheel_gain_left','왼쪽 바퀴 배율'))
+               ('estimator','추정 위치로 주행'),('adaptive_visual_noise','영상 신뢰도 조정'),('stanley_gain','Stanley'),('follower','추종기'),('blend_max_yaw_rate','blend ω'),('wheel_gain_left','왼쪽 바퀴 배율'))
 
 
 def run_options_text(output: Path) -> str:

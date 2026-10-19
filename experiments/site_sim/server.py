@@ -263,6 +263,8 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--texture',type=Path,default=None)
     parser.add_argument('--save-front-s',type=float,default=0.)
     parser.add_argument('--stanley-gain',type=float,default=0.,help='0보다 크면 경로 추종에 Stanley식 횡방향 오차 항을 더한다')
+    parser.add_argument('--follower',choices=('unicycle','blend'),default=None,help='start: 경로 추종기(blend=yaw+vy 혼합)')
+    parser.add_argument('--blend-max-yaw-rate',type=float,default=None,help='start: blend 추종기의 각속도 상한 [rad/s] (기본 0.09)')
     parser.add_argument('--wheel-gain-left',type=float,default=1.,help='왼쪽 바퀴 속도 배율(슬립 주입, 0~2)')
     parser.add_argument('--wheel-gain-right',type=float,default=1.)
     parser.add_argument('--slip-start-s',type=float,default=0.);parser.add_argument('--slip-end-s',type=float,default=None)
@@ -290,7 +292,7 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--start-seed',type=int,default=None)
     args=parser.parse_args(argv)
     extra=[]
-    for flag in ('mu','wheel_effort','delay_seed','imu_drop_prob','imu_vibration_scale','visual_turn_scale','filter_acc_noise','velocity_direction_sigma','imu_profile','start_noise_xy_m','start_noise_yaw_deg','start_seed'):
+    for flag in ('mu','wheel_effort','delay_seed','imu_drop_prob','imu_vibration_scale','visual_turn_scale','filter_acc_noise','velocity_direction_sigma','imu_profile','start_noise_xy_m','start_noise_yaw_deg','start_seed','blend_max_yaw_rate','follower'):
         if getattr(args,flag) is not None:extra+=['--'+flag.replace('_','-'),str(getattr(args,flag))]
     if args.command_delay_ms is not None:extra+=['--command-delay-ms',str(args.command_delay_ms[0]),str(args.command_delay_ms[1])]
     try:
