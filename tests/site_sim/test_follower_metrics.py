@@ -32,8 +32,8 @@ def make_run(root, name, seconds, *, yaw=lambda t: 0., speed=lambda t: .05, vy=N
     return out
 
 
-def follower_row(gap=0., gated=False):
-    return {'psi_ref': 0., 'heading_gap_rad': gap, 'travel_gap_rad': gap, 'gated': gated}
+def follower_row(gap=0., gated=False, realigning=False):
+    return {'psi_ref': 0., 'heading_gap_rad': gap, 'travel_gap_rad': gap, 'gated': gated, 'realigning': realigning}
 
 
 @pytest.mark.parametrize('rate,fraction', [(.2, 1.0), (.05, 0.0)])
@@ -107,6 +107,13 @@ def test_same_phase_name_twice_gets_separate_segments(tmp_path):
     phase = lambda t: ('ascending', '30') if t < 5 or t >= 10 else ('retreating', '30')
     s = summarize(make_run(tmp_path, 'r', 15, follower=lambda t: follower_row(gated=True), phase=phase))
     assert set(s['gate_stop_s_by_phase']) == {'ascending:30#0', 'retreating:30#0', 'ascending:30#1'}
+
+
+def test_realign_stop_time_is_reported_separately_from_the_ramp_gate(tmp_path):
+    from experiments.site_sim.follower_metrics import summarize
+    s = summarize(make_run(tmp_path, 'r', 10, follower=lambda t: follower_row(realigning=2 <= t < 4.5)))
+    assert s['realign_stop_s'] == pytest.approx(2.5, abs=.05) and s['gate_stop_s_total'] == 0
+    assert summarize(make_run(tmp_path, 'o', 3, old=True))['realign_stop_s'] == 0
 
 
 def test_estimator_degraded_time(tmp_path):

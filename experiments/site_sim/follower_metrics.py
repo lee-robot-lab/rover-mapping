@@ -18,7 +18,7 @@ from experiments.site_sim import clearance
 DEGRADED_STATUS = ('imu_gap', 'recovering')
 TABLE_COLUMNS = ('completed', 'duration_sim_s', 'min_clearance_m', 'contact_samples', 'omega_mean_rad_s', 'omega_max_rad_s',
                  'over_limit_fraction', 'moving_s', 'excluded_s', 'rotation_after_start_deg', 'max_estimate_error_m',
-                 'estimator_degraded_s', 'gate_stop_s_total', 'gate_resume_max')
+                 'estimator_degraded_s', 'gate_stop_s_total', 'gate_resume_max', 'realign_stop_s')
 
 
 def smooth(values: np.ndarray, window: int) -> np.ndarray:
@@ -71,6 +71,7 @@ def summarize(output: Path, mission_folder: Path | None = None, *, omega_limit: 
                    np.arctan2(np.sin(yaw_raw[first:] - yaw_raw[first]), np.cos(yaw_raw[first:] - yaw_raw[first]))).max())),
                'max_estimate_error_m': float(estimated[:, 1].max()) if len(estimated) else None,
                'estimator_degraded_s': float(dt[degraded].sum()),
+               'realign_stop_s': float(dt[np.array([bool(f and f.get('realigning')) for f in follower])].sum()),
                'gate_stop_s_by_phase': stop_s, 'gate_resume_by_phase': resumes, 'gate_stop_s_total': float(sum(stop_s.values()))}
     if mission_folder is not None:
         merged = clearance.evaluate(Path(output), Path(mission_folder))
