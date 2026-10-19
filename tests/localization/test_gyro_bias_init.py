@@ -50,3 +50,15 @@ def test_default_leaves_the_filter_bias_alone() -> None:
     run(est, 4.)
     assert est.filter.covariance[11, 11] > np.deg2rad(.03)**2      # 사전 분산이 줄지 않았다
     assert not np.allclose(est.filter.gyro_bias, BIAS, atol=1e-6)
+
+
+def test_bias_init_clears_the_cross_covariance_of_the_gyro_bias_z() -> None:
+    """gb_z 사전 분산만 줄이고 교차공분산을 남기면 다른 상태와의 상관이 그대로라 오프라인 평가(깨끗한 초기화)와 다른 필터가 된다."""
+    est = OnlineEstimator(np.eye(4), CALIBRATION, lag_s=.1, gyro_bias_init_hold_s=3., gyro_bias_sigma_dps=.03)
+    est.filter.covariance[11, 8] = est.filter.covariance[8, 11] = .5*np.sqrt(est.filter.covariance[11, 11]*est.filter.covariance[8, 8])
+    t = 0.
+    while t < 2.8:
+        t += .02
+        est.on_imu(t, .02, BIAS, np.array([0., 0., 9.81]))
+    assert abs(est.filter.covariance[11, 8]) < 1e-6
+    assert abs(est.filter.covariance[8, 11]) < 1e-6

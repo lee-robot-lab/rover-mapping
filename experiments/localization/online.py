@@ -148,6 +148,8 @@ class OnlineEstimator:
             self._bias_time += dt_s
         elif self._bias_time > 0.:
             self.filter.gyro_bias[:] = self._bias_sum/self._bias_time
+            self.filter.covariance[11, :] = 0.      # 교차공분산까지 지워야 깨끗한 사전분포가 된다(대각만 줄이면 다른 상태와의 상관이 남는다)
+            self.filter.covariance[:, 11] = 0.
             self.filter.covariance[11, 11] = np.deg2rad(self.gyro_bias_sigma_dps)**2
             self._bias_done = True
 
