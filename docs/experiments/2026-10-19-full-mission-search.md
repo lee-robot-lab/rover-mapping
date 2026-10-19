@@ -58,3 +58,18 @@
 
 - 변수 판정은 같은 설정 N≥3회 반복(같은 시드여도 ORB 비결정)의 손실 확률·종료 시각 분포로 한다. 단일 표본으로 채택/되돌림하지 않는다.
 - 후보: (a) 무변경 반복으로 baseline 분포 측정, (b) ORB 추적 map point·inlier 수를 프레임마다 기록(동작 불변), (c) 시각 보정 미수용이 0.3 s를 넘으면 yaw_rate 0 또는 `good_s` 단축, (d) `minThFAST` 3→7(반복 필요), (e) `carrot_min_speed_factor` 0.35→0.6.
+
+## 반복 실험: unicycle 기준 vs blend (corner370 번들, 동일 옵션, N=3씩)
+
+| 런 | 종료 s | 사유 | XY 오차 평균/최대/마지막 cm | ORB 손실 시작 s | 상태 이력 |
+|---|---:|---|---|---|---|
+| cx1019_corner370 (unicycle) | 25.9 | unsafe_local_segment | 5.3 / 34.7 / 34.7 | 24.0 | to_junction→trial_entry→ascending |
+| cu_r2 (unicycle) | 26.4 | unsafe_observed_motion | 3.5 / 28.7 / 28.7 | 24.3 | to_junction→trial_entry |
+| cu_r3 (unicycle) | 26.4 | unsafe_observed_motion | 6.0 / 37.2 / 37.2 | 24.2 | to_junction→trial_entry |
+| cz_b370 (blend) | 63.3 | unsafe_observed_motion | 22.2 / 57.7 / 48.5 | 없음 | to_junction→trial_entry→ascending→retreating |
+| cz_r2 (blend) | 34.5 | unsafe_observed_motion | 12.3 / 28.8 / 5.9 | 32.6 | to_junction |
+| cz_r3 (blend) | 36.2 | no_progress_to_junction | 10.5 / 27.0 / 25.8 | 없음 | to_junction→failed |
+
+- unicycle 기준은 3회 모두 25.9~26.4 s에 `trial_entry` 제자리 회전 중 ORB 손실(24.0~24.3 s)로 같은 방식으로 실패한다. 기준 실패는 결정적이다.
+- blend 3회는 모두 기준보다 오래 갔다(34.5/36.2/63.3 s). 24 s대의 결정적 ORB 손실은 사라졌지만 새 실패가 생겼다(connector 구간 no_progress/ORB 손실, 램프 정체 후 후퇴 중 위치 오차). blend 변동이 크므로 이후 판정은 blend 쪽도 N≥3으로 한다.
+- 추정기 구조 분석(cy_y45b 반사실): ORB 관측을 GT로 바꿔도 오차가 남고, 병진 residual 이 yaw·gyro bias z 로 새며(gb_z 참값 고정 시 최대 40.5→11.4 cm), 필터 가정 잡음이 시뮬 IMU 잡음보다 gyro 18~36배·accel 8~23배 작다. 변형 후보는 오프라인 다중 런 평가 중.
