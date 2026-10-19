@@ -22,6 +22,18 @@ def validate_limits(sim_s: float, wall_s: float) -> None:
         raise ValueError('bounded sim (0,900] and wall (0,3600] limits required')
 
 
+def filter_noise_overrides(args: argparse.Namespace) -> dict:
+    """필터가 가정하는 IMU 잡음 덮어쓰기: filter_acc_noise는 IMU.NoiseAcc 절댓값, filter_gyro_noise_scale은 DEFAULT_NOISE의 IMU.NoiseGyro 배율."""
+    from experiments.localization.online import DEFAULT_NOISE
+    out={}
+    if getattr(args,'filter_acc_noise',None) is not None:out['IMU.NoiseAcc']=float(args.filter_acc_noise)
+    scale=getattr(args,'filter_gyro_noise_scale',None)
+    if scale is not None:
+        if not scale>0:raise ValueError('--filter-gyro-noise-scale must be > 0')
+        out['IMU.NoiseGyro']=DEFAULT_NOISE['IMU.NoiseGyro']*float(scale)
+    return out
+
+
 def build_estimator(args: argparse.Namespace, start_pose, actual_start_pose, calibration: dict):
     """실행 옵션(IMU 프로필·시드·누락·방향 관측·회전 영상 σ)으로 OnlineEstimator를 만든다."""
     from experiments.localization.imu_realism import ImuRealism
@@ -171,7 +183,7 @@ def run(args: argparse.Namespace) -> dict:
             base_from_imu=np.linalg.inv(base)@imu_world;base_from_cam=np.linalg.inv(base)@left
             estimator_calibration={'ROS.T_c1_base':np.linalg.inv(base_from_cam).tolist(),
                                    'IMU.T_b_c1':(np.linalg.inv(base_from_imu)@base_from_cam).tolist(),**DEFAULT_NOISE,
-                                   **({'IMU.NoiseAcc':float(args.filter_acc_noise)} if getattr(args,'filter_acc_noise',None) is not None else {})}
+                                   **filter_noise_overrides(args)}
         from experiments.site_sim.visuals import install_rover_visuals
         install_rover_visuals(stage,args.urdf)
         try:   # 경기장(x 2.4~6.6, y ±1.7) 밖에 놓인 물체가 있는지 진단용으로 한 번 기록한다.
@@ -397,6 +409,7 @@ def main() -> None:
     parser.add_argument('--imu-vibration-scale',type=float,default=1.,help='이동 진동 배율')
     parser.add_argument('--visual-turn-scale',type=float,default=None,help='회전 중 영상 관측 σ 배율(기본 4, --adaptive-visual-noise 필요)')
     parser.add_argument('--filter-acc-noise',type=float,default=None,help='필터가 가정하는 IMU 가속도 잡음 IMU.NoiseAcc [m/s²/√Hz] (기본 0.002)')
+    parser.add_argument('--filter-gyro-noise-scale',type=float,default=None,help='필터가 가정하는 IMU 자이로 잡음 IMU.NoiseGyro 의 배율 (기본 1, 예: 20)')
     parser.add_argument('--velocity-direction-sigma',type=float,default=None,help='조향·바퀴 측정 이동 방향(크기는 안 씀)을 속도 방향 관측으로 쓰는 σ [m/s] (기본 꺼짐)')
     parser.add_argument('--orb-io',type=Path,default=Path('/workspace/orbio'))
     parser.add_argument('--fault-injection',action='store_true');args=parser.parse_args();code=1

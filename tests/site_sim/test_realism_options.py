@@ -242,3 +242,27 @@ def test_viewer_option_text_shows_follower(tmp_path):
     assert '추종기' not in run_options_text(tmp_path)
     (tmp_path/'run_options.json').write_text(json.dumps({'follower': 'blend', 'blend_max_yaw_rate': .05}))
     assert 'blend ω 0.05' in run_options_text(tmp_path)
+
+
+def test_filter_noise_overrides_scale_gyro_density_and_default_is_unchanged():
+    """--filter-acc-noise는 절댓값, --filter-gyro-noise-scale은 DEFAULT_NOISE 기준 배율이며 미지정이면 아무것도 바꾸지 않는다."""
+    from types import SimpleNamespace
+    from experiments.localization.online import DEFAULT_NOISE
+    from experiments.site_sim.run import filter_noise_overrides
+    assert filter_noise_overrides(SimpleNamespace()) == {}
+    assert filter_noise_overrides(SimpleNamespace(filter_acc_noise=None, filter_gyro_noise_scale=None)) == {}
+    out = filter_noise_overrides(SimpleNamespace(filter_acc_noise=.03, filter_gyro_noise_scale=20.))
+    assert out == {'IMU.NoiseAcc': .03, 'IMU.NoiseGyro': pytest.approx(DEFAULT_NOISE['IMU.NoiseGyro'] * 20)}
+    only_gyro = filter_noise_overrides(SimpleNamespace(filter_gyro_noise_scale=20.))
+    assert set(only_gyro) == {'IMU.NoiseGyro'}
+    with pytest.raises(ValueError):
+        filter_noise_overrides(SimpleNamespace(filter_gyro_noise_scale=0.))
+
+
+def test_server_forwards_the_filter_gyro_noise_scale(monkeypatch):
+    """--filter-gyro-noise-scale이 서버 start에서 run.py 인자로 그대로 넘어간다."""
+    from experiments.site_sim import server
+    seen = {}
+    monkeypatch.setattr(server, 'start', lambda *args, **kwargs: seen.update(extra=kwargs['extra_args']))
+    assert server.main(['start', 'lbl', '--filter-gyro-noise-scale', '20']) == 0
+    assert seen['extra'] == ['--filter-gyro-noise-scale', '20.0']
