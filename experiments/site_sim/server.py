@@ -292,9 +292,11 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--imu-drop-prob',type=float,default=None,help='start: IMU 패킷 누락 확률(--imu-realism 필요)')
     parser.add_argument('--start-noise-xy-m',type=float,default=None);parser.add_argument('--start-noise-yaw-deg',type=float,default=None)
     parser.add_argument('--start-seed',type=int,default=None)
+    parser.add_argument('--rtx-aa-op',type=int,default=None,help='start: 렌더러 안티앨리어싱 /rtx/post/aa/op (0 끔·1 TAA·2 FXAA·3 DLSS·4 RTXAA)')
+    parser.add_argument('--dlss-exec-mode',type=int,default=None,help='start: DLSS 모드 /rtx/post/dlss/execMode (0 Performance·1 Balanced·2 Quality·3 Auto)')
     args=parser.parse_args(argv)
     extra=[]
-    for flag in ('mu','wheel_effort','delay_seed','imu_drop_prob','imu_vibration_scale','visual_turn_scale','filter_acc_noise','filter_gyro_noise_scale','filter_gyro_bias_init_sigma_dps','velocity_direction_sigma','imu_profile','start_noise_xy_m','start_noise_yaw_deg','start_seed','blend_max_yaw_rate','follower'):
+    for flag in ('mu','wheel_effort','delay_seed','imu_drop_prob','imu_vibration_scale','visual_turn_scale','filter_acc_noise','filter_gyro_noise_scale','filter_gyro_bias_init_sigma_dps','velocity_direction_sigma','imu_profile','start_noise_xy_m','start_noise_yaw_deg','start_seed','blend_max_yaw_rate','follower','rtx_aa_op','dlss_exec_mode'):
         if getattr(args,flag) is not None:extra+=['--'+flag.replace('_','-'),str(getattr(args,flag))]
     if args.command_delay_ms is not None:extra+=['--command-delay-ms',str(args.command_delay_ms[0]),str(args.command_delay_ms[1])]
     try:

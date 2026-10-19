@@ -66,6 +66,17 @@ def apply_follower_args(mission, args: argparse.Namespace) -> None:
         mission.settings['blend_max_yaw_rate_rad_s']=float(rate)
 
 
+def rtx_setting_overrides(args: argparse.Namespace) -> list[tuple[str, int]]:
+    """--rtx-aa-op(0 끔·1 TAA·2 FXAA·3 DLSS·4 RTXAA)·--dlss-exec-mode(0 Performance·1 Balanced·2 Quality·3 Auto)가 있으면 carb 설정 (키, 값) 목록으로 만든다."""
+    out=[]
+    for attr,key,high in (('rtx_aa_op','/rtx/post/aa/op',4),('dlss_exec_mode','/rtx/post/dlss/execMode',3)):
+        value=getattr(args,attr,None)
+        if value is None:continue
+        if type(value) is not int or not 0<=value<=high:raise ValueError(f'--{attr.replace("_","-")} must be an integer in [0, {high}]')
+        out.append((key,value))
+    return out
+
+
 def load_mission(args: argparse.Namespace):
     """임무 폴더를 읽고 Stanley·추종기 실행 옵션을 설정에 반영한다."""
     from experiments.handheld_mapping.site_mission import SiteMission
@@ -103,6 +114,11 @@ def run(args: argparse.Namespace) -> dict:
                            'width':800,'height':600,'anti_aliasing':0})
         import omni.usd
         import omni.replicator.core as rep
+        import carb.settings
+        rtx=carb.settings.get_settings();rtx_keys=('/rtx/post/aa/op','/rtx/post/dlss/execMode','/rtx/rendermode')
+        print('SITE_SIM_RTX before',{k:rtx.get(k) for k in rtx_keys},flush=True)
+        for key,value in rtx_setting_overrides(args):rtx.set(key,value)
+        print('SITE_SIM_RTX after',{k:rtx.get(k) for k in rtx_keys},flush=True)
         from isaacsim.core.api.robots import Robot
         from pxr import Gf,UsdGeom,UsdLux
         from PIL import Image
@@ -414,6 +430,8 @@ def main() -> None:
     parser.add_argument('--filter-gyro-bias-init-sigma-dps',type=float,default=None,help='지정하면 start_hold_s 정지 구간의 gyro 평균으로 필터 gyro bias를 초기화하고 z bias σ 를 이 값 [dps]으로 줄인다(기본 꺼짐)')
     parser.add_argument('--filter-gyro-noise-scale',type=float,default=None,help='필터가 가정하는 IMU 자이로 잡음 IMU.NoiseGyro 의 배율 (기본 1, 예: 20)')
     parser.add_argument('--velocity-direction-sigma',type=float,default=None,help='조향·바퀴 측정 이동 방향(크기는 안 씀)을 속도 방향 관측으로 쓰는 σ [m/s] (기본 꺼짐)')
+    parser.add_argument('--rtx-aa-op',type=int,default=None,help='렌더러 안티앨리어싱 /rtx/post/aa/op (0 끔·1 TAA·2 FXAA·3 DLSS·4 RTXAA, 기본 변경 없음)')
+    parser.add_argument('--dlss-exec-mode',type=int,default=None,help='DLSS 모드 /rtx/post/dlss/execMode (0 Performance·1 Balanced·2 Quality·3 Auto, 기본 변경 없음)')
     parser.add_argument('--orb-io',type=Path,default=Path('/workspace/orbio'))
     parser.add_argument('--fault-injection',action='store_true');args=parser.parse_args();code=1
     try:

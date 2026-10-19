@@ -203,6 +203,32 @@ def test_apply_follower_args_sets_and_validates_blend_settings(mission):
             apply_follower_args(mission, SimpleNamespace(follower='blend', blend_max_yaw_rate=bad))
 
 
+def test_rtx_setting_overrides_default_to_no_change_and_validate_ranges():
+    """렌더러 옵션은 안 주면 아무것도 바꾸지 않고, 주면 carb 키로 매핑하며, 범위 밖이면 거부한다."""
+    from types import SimpleNamespace
+    from experiments.site_sim.run import rtx_setting_overrides
+    assert rtx_setting_overrides(SimpleNamespace(rtx_aa_op=None, dlss_exec_mode=None)) == []
+    assert rtx_setting_overrides(SimpleNamespace()) == []
+    assert rtx_setting_overrides(SimpleNamespace(rtx_aa_op=2, dlss_exec_mode=None)) == [('/rtx/post/aa/op', 2)]
+    assert rtx_setting_overrides(SimpleNamespace(rtx_aa_op=None, dlss_exec_mode=2)) == [('/rtx/post/dlss/execMode', 2)]
+    for bad in (SimpleNamespace(rtx_aa_op=5), SimpleNamespace(rtx_aa_op=-1), SimpleNamespace(dlss_exec_mode=4), SimpleNamespace(dlss_exec_mode=1.5)):
+        with pytest.raises(ValueError):
+            rtx_setting_overrides(bad)
+
+
+def test_server_forwards_rtx_flags(monkeypatch):
+    """--rtx-aa-op·--dlss-exec-mode가 서버 start에서 run.py 인자로 넘어가고, 안 주면 넘기지 않는다."""
+    from experiments.site_sim import server
+    seen = {}
+    monkeypatch.setattr(server, 'start', lambda *args, **kwargs: seen.update(extra=kwargs['extra_args']))
+    assert server.main(['start', 'lbl', '--rtx-aa-op', '2']) == 0
+    assert seen['extra'] == ['--rtx-aa-op', '2']
+    assert server.main(['start', 'lbl', '--dlss-exec-mode', '2']) == 0
+    assert seen['extra'] == ['--dlss-exec-mode', '2']
+    assert server.main(['start', 'lbl']) == 0
+    assert seen['extra'] == []
+
+
 def run_py_args(monkeypatch, tmp_path, *extra):
     """run.py main()의 실제 argparse로 인자를 파싱한다(run()만 대체해 인자를 가로챈다)."""
     import sys
