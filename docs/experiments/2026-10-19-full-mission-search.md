@@ -120,3 +120,14 @@
 - cz_r3 `no_progress_to_junction`: 재생으로 36.155 s에 effort 8.0 도달을 재현(실제 36.175 s). 진행은 `arcs[index]`(0.05 m 점 단위)로 재서 `min_progress_m` 0.025가 사실상 의미 없음. GT도 실제로 정지(30~36 s에 3.4 cm)라 판정은 오탐이 아님. cz_r2는 추정이 느리게 떠돌아 effort가 리셋되어 stuck을 피했을 뿐 → r2/r3 종료 사유 차이는 추정 드리프트 몇 cm에서 갈림.
 - cz_r2: 32.62 s에 정지 상태(GT 0.003~0.01 m/s)에서 ORB 손실(특징점 1,776~2,007개로 충분, 원인 미확인, 회전 때문이 아님). 34.49 s unsafe_observed_motion은 추정이 벽 inflation 안(벽까지 0.27~0.286 m < 0.30)으로 4 mm 이동해 발동. GT–벽 최소 거리 r2 0.212 m, r3 0.203 m로 외접원 0.195 m 대비 여유 약 1~2 cm(접촉 센서 기록 없음, 실제 접촉 미확인). `run.py`는 `unsafe_observed_motion`이 sim_s≥5 이후 한 번이라도 나오면 즉시 종료하는 하네스 정책.
 - 후보(한 번에 한 변수, 미실행): stuck 진행 측정을 경로 투영 거리로 연속화, 코너 반경 완화 또는 `carrot_brake_m`·`carrot_min_speed_factor` 조정, 코너 구간 θ 상한 게이트, 경로 x를 벽에서 0.08 m 이격, 같은 설정 3회 반복 시 14 s 시점 yaw·θ와 조향 조인트·RL action 로그를 저장해 θ 가설 검증.
+
+## 폐루프: 필터 gyro 잡음 ×20 (`--filter-gyro-noise-scale 20`, blend, corner370 번들, 소스 83ca595)
+
+| 런 | 종료 s | 사유 | XY 오차 평균/최대/마지막 cm | ORB 손실 시작 s | 상태 이력 |
+|---|---:|---|---|---|---|
+| cg_r1 | 52.2 | unsafe_observed_motion | 14.5 / 24.2 / 15.8 | 51.0 | to_junction→trial_entry→ascending |
+| cg_r2 | 40.8 | unsafe_observed_motion | 9.3 / 25.8 / 25.8 | 37.4 | to_junction→trial_entry→ascending |
+| (기준) blend 4회 | 63.3 / 50.1 / 34.5 / 36.2 | – | 최대 오차 57.7 / 21.6 / 28.8 / 27.0 | 없음/49.0/32.6/없음 | 2/4회만 ascending 도달 |
+
+- 판정: 개선도 악화도 단정할 수 없다(종료 시각 40.8~52.2 s는 기준 분포 34.5~63.3 s 안, 최대 XY 오차 24~26 cm는 기준 중앙 범위). 두 번 모두 ascending까지 갔고(기준은 4회 중 2회) connector 구간 실패는 없었지만 N=2라 판단 보류. 되돌리지 않고 후보로 유지.
+- 두 런 모두 끝 무렵(37~51 s)에 ORB 손실이 있었고 그 직후 종료. 오프라인 평가에서 기대한 XY 최대 오차 감소(최악 94.7→37.4 cm)가 폐루프에서 뚜렷하게 재현되지는 않았다.
