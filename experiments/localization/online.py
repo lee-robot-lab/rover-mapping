@@ -64,7 +64,8 @@ class OnlineEstimator:
     def __init__(self, start_world_from_base: np.ndarray, calibration: dict, lag_s: float = .1,
                  good_s: float = 1., invalid_s: float = 4., adaptive_visual_noise: bool = False,
                  visual_schedule: dict | None = None, imu_realism: object | None = None, direction_sigma: float | None = None,
-                 sensor_start_world_from_base: np.ndarray | None = None) -> None:
+                 sensor_start_world_from_base: np.ndarray | None = None, gyro_bias_init_hold_s: float | None = None,
+                 gyro_bias_sigma_dps: float = .03) -> None:
         self.lag_s, self.good_s, self.invalid_s = lag_s, good_s, invalid_s
         self.imu_realism = imu_realism                       # ImuRealism이면 GT에서 만든 IMU에 실기 특성을 더한다(기본 None)
         self._held_imu = None                                # 누락된 IMU 구간(시작, 끝, gyro, force)
@@ -88,6 +89,8 @@ class OnlineEstimator:
         self.direction_sigma = direction_sigma                # 속도 방향 관측 σ [m/s]. None이면 꺼짐
         self.motions = deque()                                # (stamp_s, base 축 단위 이동 방향) 아직 필터 시각에 닿지 않은 측정
         self.direction_updates = self.direction_rejected = 0
+        self.gyro_bias_init_hold_s, self.gyro_bias_sigma_dps = gyro_bias_init_hold_s, gyro_bias_sigma_dps   # 정지 구간 평균으로 gyro bias를 한 번 초기화(None이면 꺼짐)
+        self._bias_sum, self._bias_time, self._bias_done = np.zeros(3), 0., gyro_bias_init_hold_s is None
         self.filter_time = 0.
         self.reference = None
         self.previous_ok, self.map_id, self.last_accept = True, None, 0.
@@ -127,6 +130,7 @@ class OnlineEstimator:
 
     def on_imu(self, end_s: float, dt_s: float, gyro: np.ndarray, force: np.ndarray) -> None:
         """생성한 구간 평균 IMU를 같은 지연 규칙으로 수용한다. 기록 재생은 GT를 다시 미분하지 않는다."""
+        self._init_gyro_bias(end_s, dt_s, gyro)
         self.pending.append((end_s, dt_s, gyro, force))
         while self.pending and self.pending[0][0] <= end_s-self.lag_s+1e-9:
             end, dt, gyro, force = self.pending.popleft()
@@ -134,6 +138,18 @@ class OnlineEstimator:
             self.filter_gyro = gyro
             self.filter_time = end
             self._apply_motion(end)
+
+    def _init_gyro_bias(self, end_s: float, dt_s: float, gyro: np.ndarray) -> None:
+        """시작 정지 구간(hold-0.3 s까지)의 gyro 시간 평균을 필터 bias로 한 번 넣고 z bias 사전 분산을 줄인다."""
+        if self._bias_done:
+            return
+        if end_s <= self.gyro_bias_init_hold_s-.3:
+            self._bias_sum += np.asarray(gyro, float)*dt_s
+            self._bias_time += dt_s
+        elif self._bias_time > 0.:
+            self.filter.gyro_bias[:] = self._bias_sum/self._bias_time
+            self.filter.covariance[11, 11] = np.deg2rad(self.gyro_bias_sigma_dps)**2
+            self._bias_done = True
 
     def on_motion(self, stamp_s: float, vx: float, vy: float, min_speed: float = .03) -> None:
         """base 축 평면 속도 측정(조향·바퀴 조인트)의 방향을 보관한다. 느린 속도는 방향이 불안정해 버리고, 크기는 쓰지 않는다."""

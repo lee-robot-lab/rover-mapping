@@ -43,6 +43,8 @@ def build_estimator(args: argparse.Namespace, start_pose, actual_start_pose, cal
         drop_probability=float(getattr(args,'imu_drop_prob',0.))) if getattr(args,'imu_realism',False) else None
     return OnlineEstimator(start_pose,calibration,lag_s=RENDER_LAG_S,adaptive_visual_noise=getattr(args,'adaptive_visual_noise',False),
                            imu_realism=imu_realism,direction_sigma=getattr(args,'velocity_direction_sigma',None),sensor_start_world_from_base=actual_start_pose,
+                           gyro_bias_init_hold_s=None if getattr(args,'filter_gyro_bias_init_sigma_dps',None) is None else float(args.start_hold_s),
+                           gyro_bias_sigma_dps=.03 if getattr(args,'filter_gyro_bias_init_sigma_dps',None) is None else float(args.filter_gyro_bias_init_sigma_dps),
                            visual_schedule=None if getattr(args,'visual_turn_scale',None) is None else {'turn_rotation_scale':float(args.visual_turn_scale),'turn_position_scale':float(args.visual_turn_scale)})
 
 
@@ -409,6 +411,7 @@ def main() -> None:
     parser.add_argument('--imu-vibration-scale',type=float,default=1.,help='이동 진동 배율')
     parser.add_argument('--visual-turn-scale',type=float,default=None,help='회전 중 영상 관측 σ 배율(기본 4, --adaptive-visual-noise 필요)')
     parser.add_argument('--filter-acc-noise',type=float,default=None,help='필터가 가정하는 IMU 가속도 잡음 IMU.NoiseAcc [m/s²/√Hz] (기본 0.002)')
+    parser.add_argument('--filter-gyro-bias-init-sigma-dps',type=float,default=None,help='지정하면 start_hold_s 정지 구간의 gyro 평균으로 필터 gyro bias를 초기화하고 z bias σ 를 이 값 [dps]으로 줄인다(기본 꺼짐)')
     parser.add_argument('--filter-gyro-noise-scale',type=float,default=None,help='필터가 가정하는 IMU 자이로 잡음 IMU.NoiseGyro 의 배율 (기본 1, 예: 20)')
     parser.add_argument('--velocity-direction-sigma',type=float,default=None,help='조향·바퀴 측정 이동 방향(크기는 안 씀)을 속도 방향 관측으로 쓰는 σ [m/s] (기본 꺼짐)')
     parser.add_argument('--orb-io',type=Path,default=Path('/workspace/orbio'))

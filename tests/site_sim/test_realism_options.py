@@ -266,3 +266,24 @@ def test_server_forwards_the_filter_gyro_noise_scale(monkeypatch):
     monkeypatch.setattr(server, 'start', lambda *args, **kwargs: seen.update(extra=kwargs['extra_args']))
     assert server.main(['start', 'lbl', '--filter-gyro-noise-scale', '20']) == 0
     assert seen['extra'] == ['--filter-gyro-noise-scale', '20.0']
+
+
+def test_build_estimator_enables_the_gyro_bias_init_from_the_start_hold():
+    """--filter-gyro-bias-init-sigma-dps가 있으면 start_hold_s 동안 평균으로 bias를 초기화하는 추정기를 만든다(없으면 꺼짐)."""
+    from types import SimpleNamespace
+    from experiments.site_sim.run import build_estimator
+    pose = np.eye(4)
+    common = dict(imu_realism=False, adaptive_visual_noise=True, velocity_direction_sigma=None, visual_turn_scale=None, start_hold_s=3.)
+    off = build_estimator(SimpleNamespace(**common), pose, pose, CALIBRATION)
+    assert off.gyro_bias_init_hold_s is None
+    on = build_estimator(SimpleNamespace(filter_gyro_bias_init_sigma_dps=.03, **common), pose, pose, CALIBRATION)
+    assert on.gyro_bias_init_hold_s == 3. and on.gyro_bias_sigma_dps == .03
+
+
+def test_server_forwards_the_gyro_bias_init_sigma(monkeypatch):
+    """--filter-gyro-bias-init-sigma-dps가 서버 start에서 run.py 인자로 그대로 넘어간다."""
+    from experiments.site_sim import server
+    seen = {}
+    monkeypatch.setattr(server, 'start', lambda *args, **kwargs: seen.update(extra=kwargs['extra_args']))
+    assert server.main(['start', 'lbl', '--filter-gyro-bias-init-sigma-dps', '0.03']) == 0
+    assert seen['extra'] == ['--filter-gyro-bias-init-sigma-dps', '0.03']

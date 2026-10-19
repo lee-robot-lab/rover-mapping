@@ -281,6 +281,7 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--imu-vibration-scale',type=float,default=None,help='start: 이동 진동 배율')
     parser.add_argument('--visual-turn-scale',type=float,default=None,help='start: 회전 중 영상 관측 σ 배율')
     parser.add_argument('--filter-acc-noise',type=float,default=None,help='start: 필터 IMU 가속도 잡음 가정')
+    parser.add_argument('--filter-gyro-bias-init-sigma-dps',type=float,default=None,help='start: 정지 구간 gyro 평균으로 필터 bias 초기화 후 z bias σ [dps]')
     parser.add_argument('--filter-gyro-noise-scale',type=float,default=None,help='start: 필터 IMU 자이로 잡음(IMU.NoiseGyro) 배율')
     parser.add_argument('--velocity-direction-sigma',type=float,default=None,help='start: 조향·바퀴 측정 이동 방향을 속도 방향 관측으로 쓰는 σ [m/s]')
     parser.add_argument('--control-dt',type=float,default=None,help='start: 제어·IMU 구간 주기 [s] (기본 0.05; RL은 0.02 필요)')
@@ -293,7 +294,7 @@ def main(argv: list[str] | None=None) -> int:
     parser.add_argument('--start-seed',type=int,default=None)
     args=parser.parse_args(argv)
     extra=[]
-    for flag in ('mu','wheel_effort','delay_seed','imu_drop_prob','imu_vibration_scale','visual_turn_scale','filter_acc_noise','filter_gyro_noise_scale','velocity_direction_sigma','imu_profile','start_noise_xy_m','start_noise_yaw_deg','start_seed','blend_max_yaw_rate','follower'):
+    for flag in ('mu','wheel_effort','delay_seed','imu_drop_prob','imu_vibration_scale','visual_turn_scale','filter_acc_noise','filter_gyro_noise_scale','filter_gyro_bias_init_sigma_dps','velocity_direction_sigma','imu_profile','start_noise_xy_m','start_noise_yaw_deg','start_seed','blend_max_yaw_rate','follower'):
         if getattr(args,flag) is not None:extra+=['--'+flag.replace('_','-'),str(getattr(args,flag))]
     if args.command_delay_ms is not None:extra+=['--command-delay-ms',str(args.command_delay_ms[0]),str(args.command_delay_ms[1])]
     try:
