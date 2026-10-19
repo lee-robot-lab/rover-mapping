@@ -38,3 +38,17 @@
 3. 이후 후보(각각 별도 실험): `--filter-acc-noise` 0.03/0.1, 시뮬 `StereoRelocalizationWaitSeconds` 15(이 키는 복구 대기 패치가 들어간 ORB 코어에서만 읽힌다. 시뮬 이미지 `rover-orbslam3-jazzy:4452a3c4`에 패치가 있는지 서버에서 먼저 확인해야 하며, 없으면 무시되어 실험이 무의미하다), `unsafe_observed_motion` 2연속 위반 요구(안전 의미 변경이므로 GT 마진 동시 평가).
 
 완주(접촉 0, 최종 오차 ≤5 cm) 실행이 나오면 이 문서에 런 라벨, `git rev-parse HEAD`, 전체 옵션, GT 최소 마스크 거리, 최종 XY 오차를 추가한다.
+
+## 서버 복구 후 결과 (11:07~11:25)
+
+| 런 | 변수(기준 대비 한 개) | 종료 s | 사유 | XY 오차 평균/최대/마지막 cm | ORB 비정상 프레임 |
+|---|---|---:|---|---|---:|
+| cy_y45a | 회전 상한 0.45 (corner370 번들) | 15.8 | unsafe_local_segment | 4.0 / 38.7 / 38.7 | 45 (12.82 s, 회전 9~14 dps) |
+| cy_y45b | 회전 상한 0.45 (corner375 번들) | 45.0 | unsafe_observed_motion | 11.0 / 40.5 / 40.5 | 0 |
+| cz_b370 | `--follower blend` (corner370 번들) | 63.3 | unsafe_observed_motion (retreating) | 22.2 / 57.7 / 48.5 | 0 |
+| cz_b375 | `--follower blend` (corner375 번들) | 50.1 | unsafe_observed_motion (retreating) | 8.2 / 21.6 / 19.5 | 17 |
+
+판정:
+- 회전 상한 0.45: 일관된 개선 없음 → 되돌림(0.6 유지). 명령 상한을 낮춰도 실제 GT 회전은 41~55 dps까지 올라간다.
+- blend: 기준(corner370 25.9 s, corner375 38.8 s)보다 오래 갔고 두 번호 모두 trial_entry·ascending(30° 램프 등판)을 거쳐 등판 정체로 retreating 까지 갔다. corner370의 ORB 손실은 29→0 프레임. 남은 실패는 램프 구간(등판 정체와 후퇴 중 위치 오차). 채택, 다음 변수는 램프 구간 분석 결과에 따른다.
+- 이 표의 모든 실행은 `--follower` 외 옵션 동일(×1, nominal IMU 시드 1, 지연 17.6~46.5 ms, start 2 cm/2°). 단일 표본이라 ORB 비동기 편차가 섞여 있다.
