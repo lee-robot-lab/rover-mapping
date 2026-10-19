@@ -10,10 +10,41 @@ import cv2
 import numpy as np
 import pytest
 
-from experiments.localization.sand_edges import K, edge_signal, heading_sensitivity, line_ground_offset, line_heading_deg
+from experiments.localization.sand_edges import K, edge_signal, heading_sensitivity, line_ground_offset, line_heading_deg, sand_mask
 
 FRAME = Path('/home/su/rover-mapping/outputs/pi_1018/zip_shoot/촬영데이터_2026-10-18/20261018_123653_49e304/raw/left/1792294645297662109.png')
 H = 0.16
+
+
+@pytest.mark.parametrize('corner', ['top_left', 'top_right', 'bottom_left', 'bottom_right'])
+def test_border_touching_sand_does_not_fill_exterior(corner: str) -> None:
+    """모래가 어느 영상 모서리에 닿더라도 외부 배경은 남고 내부의 어두운 구멍만 메워야 한다."""
+    img = np.zeros((160, 200), np.uint8)
+    img[:120, :140] = 200
+    img[40:60, 40:60] = 0
+    if 'bottom' in corner:
+        img = np.flipud(img)
+    if 'right' in corner:
+        img = np.fliplr(img)
+    mask = sand_mask(img)
+    assert mask[80, 80] == 1
+    assert mask.mean() == pytest.approx(120 * 140 / img.size, abs=0.01)
+    assert mask[img == 0].mean() < 0.1
+
+
+def test_uniform_mask_has_no_fabricated_foreground() -> None:
+    """빈 입력은 빈 마스크, 전체 밝은 입력은 전체 마스크여야 한다."""
+    assert not sand_mask(np.zeros((80, 100), np.uint8)).any()
+    assert sand_mask(np.full((80, 100), 200, np.uint8)).all()
+
+
+def test_sand_strip_keeps_both_disconnected_exterior_regions() -> None:
+    """영상 위아래에 닿는 띠 양쪽은 모두 외부 배경이며 한쪽을 구멍으로 메우면 안 된다."""
+    img = np.zeros((160, 200), np.uint8)
+    img[:, 60:140] = 200
+    mask = sand_mask(img)
+    assert mask[80, 100] == 1
+    assert mask[80, 20] == mask[80, 180] == 0
 
 
 def _basis(pitch_deg: float, roll_deg: float = 0.) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

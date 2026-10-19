@@ -43,9 +43,10 @@ def sand_mask(gray: np.ndarray) -> np.ndarray:
     if n < 2:
         return m*0
     m = (lab == 1+np.argmax(st[1:, cv2.CC_STAT_AREA])).astype(np.uint8)
-    inv = (1-m).astype(np.uint8)
-    cv2.floodFill(inv, np.zeros((m.shape[0]+2, m.shape[1]+2), np.uint8), (0, 0), 2)
-    m[inv == 1] = 1
+    # 모서리 픽셀이 모래여도 flood-fill 시작점이 항상 외부 배경에 있도록 패딩한다.
+    inv = np.pad((1-m).astype(np.uint8), 1, constant_values=1)
+    cv2.floodFill(inv, np.zeros((inv.shape[0]+2, inv.shape[1]+2), np.uint8), (0, 0), 2)
+    m[inv[1:-1, 1:-1] == 1] = 1
     return m
 
 
