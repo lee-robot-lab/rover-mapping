@@ -32,6 +32,12 @@ def demo_mission() -> SiteMission:
     return SiteMission(site,[.5,.5,0.],[.5,1.5],[3.5,1.5],routes,site_name='demo')
 
 
+def step_plant(xy: np.ndarray, yaw: float, cmd: dict, dt: float) -> tuple[np.ndarray, float]:
+    """몸 좌표 (vx, vy)를 세계로 돌려 한 스텝 적분한다. cmd에 vy_m_s가 없으면 0(기존 unicycle 적분과 같다)."""
+    xy=xy+cmd['vx_m_s']*dt*np.array([np.cos(yaw),np.sin(yaw)])+cmd.get('vy_m_s',0.)*dt*np.array([-np.sin(yaw),np.cos(yaw)])
+    return xy,angle_wrap(yaw+cmd['yaw_rate_rad_s']*dt)
+
+
 def replay(mission: SiteMission, output: Path, scenario: str='stall30') -> dict:
     """일정 dt의 비물리 planar plant를 연결한다. 모래 물리/등판 성능 검증이 아니다."""
     if scenario not in SCENARIOS:raise ValueError('unknown scenario')
@@ -57,8 +63,7 @@ def replay(mission: SiteMission, output: Path, scenario: str='stall30') -> dict:
                  or (scenario=='return_stall' and runtime.state=='returning')
                  or (scenario=='stall30_entry' and runtime.state=='trial_entry' and xy[0]>.65))
         if not blocked:
-            xy+=cmd['vx_m_s']*dt*np.array([np.cos(yaw),np.sin(yaw)])
-            yaw=angle_wrap(yaw+cmd['yaw_rate_rad_s']*dt)
+            xy,yaw=step_plant(xy,yaw,cmd,dt)
     with (output/'commands.csv').open('w') as stream:
         writer=csv.DictWriter(stream,fieldnames=list(rows[0]));writer.writeheader();writer.writerows(rows)
     with (output/'events.jsonl').open('w') as stream:

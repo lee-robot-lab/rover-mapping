@@ -128,10 +128,10 @@ class SimulationDrive:
             s=self.session
             rl_out=None
             if self.rl is None:
-                modules=body_twist_to_modules(s.geometry,vx=applied['vx_m_s'],vy=0.,yaw_rate=applied['yaw_rate_rad_s'])
+                modules=body_twist_to_modules(s.geometry,vx=applied['vx_m_s'],vy=applied.get('vy_m_s',0.),yaw_rate=applied['yaw_rate_rad_s'])
                 steer=np.array([m.steering_angle_rad for m in modules]);wheel=np.array([m.wheel_angular_velocity_rad_s for m in modules])
             else:
-                rl_out=self.rl.step((applied['vx_m_s'],0.,applied['yaw_rate_rad_s']),self._rl_state(sim_s,quaternion),sim_s)
+                rl_out=self.rl.step((applied['vx_m_s'],applied.get('vy_m_s',0.),applied['yaw_rate_rad_s']),self._rl_state(sim_s,quaternion),sim_s)
                 pairs=[to_joint(m,float(g),float(v),s.geometry.wheel_radius_m)   # 펌웨어 규약 목표 → 시뮬 조인트 규약(steering_sign, rolling_heading)
                        for m,g,v in zip(s.geometry.modules,rl_out['steer_goal'],rl_out['wheel_mps'])]
                 steer=np.array([p[0] for p in pairs]);wheel=np.array([p[1] for p in pairs])

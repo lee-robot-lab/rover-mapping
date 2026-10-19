@@ -81,3 +81,23 @@ def test_stall_before_trial_representative_still_retreats_and_falls_back(tmp_pat
     assert out['visits']['entry30']=='failed'
     assert out['visits']['summit']=='reached'
     assert out['failed_ascent_routes']==['30']
+
+
+def test_step_plant_integrates_vy_in_body_frame():
+    from experiments.handheld_mapping.mission_replay import step_plant
+    xy,yaw=step_plant(np.zeros(2),np.pi/2,{'vx_m_s':0.,'vy_m_s':.1,'yaw_rate_rad_s':0.},1.)
+    assert np.allclose(xy,[-.1,0.]) and yaw==pytest.approx(np.pi/2)
+    start=np.array([.3,.2]);cmd={'vx_m_s':.1,'yaw_rate_rad_s':.2}   # vy 키가 없으면 기존 unicycle 적분과 비트 단위로 같다
+    got_xy,got_yaw=step_plant(start,.7,cmd,.1)
+    assert got_xy.tobytes()==(start+cmd['vx_m_s']*.1*np.array([np.cos(.7),np.sin(.7)])).tobytes()
+    assert got_yaw==np.arctan2(np.sin(.7+.02),np.cos(.7+.02))
+
+
+def test_replay_with_blend_follower_integrates_vy_and_reaches_the_summit(tmp_path):
+    """blend 설정의 runtime이 낸 vy가 plant에 적분되어 정상까지 간다(하강 뒤 복귀 구간의 방향 전환은 별도 한계로 보고한다)."""
+    from experiments.handheld_mapping.mission_replay import demo_mission,replay
+    mission=demo_mission();mission.settings['follower_blend']=1.
+    out=replay(mission,tmp_path/'blend','success')
+    assert out['visits']['summit']=='reached',out
+    header=(tmp_path/'blend'/'commands.csv').read_text().splitlines()[0].split(',')
+    assert 'vy_m_s' in header
