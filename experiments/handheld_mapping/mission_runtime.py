@@ -16,6 +16,7 @@ from experiments.handheld_mapping.site_mission import SiteMission, dense_path
 from experiments.handheld_mapping.storage import atomic_json
 from experiments.handheld_mapping.sensor_safety import SensorSafety
 from experiments.handheld_mapping.carrot_follower import CarrotPath, stanley_heading
+from experiments.handheld_mapping.blend_follower import BlendFollower, BlendParams
 
 
 def angle_wrap(value: float) -> float:
@@ -37,7 +38,11 @@ class MissionRuntime:
         self.last_stamp=None;self.last_valid_stamp=None;self.last_position=None
         self.pose_epoch=None;self.epoch_changed=False
         self.paused=True;self.started=False;self.paused_samples=0
-        self.command={'vx_m_s':0.,'yaw_rate_rad_s':0.}
+        self.follower=None if not self.settings['follower_blend'] else BlendFollower(BlendParams(
+            max_yaw_rate=self.settings['blend_max_yaw_rate_rad_s'],ramp_slope_deg=self.settings['blend_ramp_slope_deg'],
+            resume_deg=self.settings['blend_ramp_resume_deg'],stop_deg=self.settings['blend_ramp_stop_deg'],
+            dir_rate=self.settings['blend_dir_rate_rad_s'],heading_hold=bool(self.settings['blend_heading_hold'])))
+        self.command=self._zero_command()
         self.breadcrumbs: list[list]=[]
         self._set_path(mission.connector())
 
@@ -46,11 +51,26 @@ class MissionRuntime:
         self.arcs=np.r_[0.,np.cumsum(np.linalg.norm(np.diff(self.points,axis=0),axis=1))]
         self.phase_elapsed=self.effort=self.window_progress=0.
 
+    def _zero_command(self) -> dict:
+        """정지 명령. blend 모드에서만 vy_m_s를 싣는다(기본 모드의 dict는 그대로)."""
+        if self.follower is None:return {'vx_m_s':0.,'yaw_rate_rad_s':0.}
+        return {'vx_m_s':0.,'vy_m_s':0.,'yaw_rate_rad_s':0.}
+
+    def _slope_deg(self, position: np.ndarray) -> float:
+        """지도 칸의 경사(deg). 지도 밖이거나 NaN·비유한이면 0(게이트 비활성)."""
+        position=np.asarray(position,float)
+        if not np.isfinite(position).all():return 0.
+        col,row=self.mission.site.cells(position)
+        rows,cols=self.mission.site.slope_deg.shape
+        if not (0<=col<cols and 0<=row<rows):return 0.
+        value=float(self.mission.site.slope_deg[row,col])
+        return value if math.isfinite(value) else 0.
+
     def _event(self, kind: str, stamp: float, **details) -> None:
         self.events.append({'type':kind,'stamp_s':stamp,'state':self.state,'route':self.route,**details})
 
     def _output(self, reason: str='active', command: dict | None=None) -> dict:
-        self.command=command or {'vx_m_s':0.,'yaw_rate_rad_s':0.}
+        self.command=command or self._zero_command()
         result={'state':self.state,'route':self.route,'direction':self.direction,'reason':reason,
                 'visits':self.visits.copy(),'route_status':{k:v.copy() for k,v in self.route_status.items()},
                 'command':self.command.copy(),'frame':'site','site_identity':self.mission.site.identity,
@@ -79,6 +99,7 @@ class MissionRuntime:
             self.safety.inhibit(reason)
             self.safety_status={'mode':'stop','reason':reason,'scale':0.,'valid_until_s':None}
         self.paused=True;self.effort=0.;self.paused_samples+=1
+        if self.follower is not None:self.follower.invalidate()
         return self._output(reason)
 
     def update(self, sample: dict, now_s: float) -> dict:
@@ -147,7 +168,7 @@ class MissionRuntime:
         progress=float(self.arcs[self.index])
         if self.paused or progress-self.window_progress>=self.settings['min_progress_m']:
             self.window_progress=progress;self.effort=0.
-        elif abs(self.command['vx_m_s'])>.01*(1. if self.safety_status is None else self.safety_status['scale']):
+        elif math.hypot(self.command['vx_m_s'],self.command.get('vy_m_s',0.))>.01*(1. if self.safety_status is None else self.safety_status['scale']):
             # 감속 중에는 진행이 느린 것이 정상이므로 stuck 시간과 최소 지령 기준을 모두 감속 배율만큼 낮춰 센다.
             self.effort+=dt*(1. if self.safety_status is None else self.safety_status['scale'])
         budget=(self.settings['max_attempt_s'] if self.state=='ascending' else
@@ -167,6 +188,7 @@ class MissionRuntime:
         if self.settings['stanley_gain']>0 and not reverse:   # Stanley식: 경로 접선 + 횡방향 오차 보정
             offset,tangent=self.carrot.cross_track(self.index,position)
             heading=stanley_heading(tangent,offset,self.settings['max_speed_m_s'],self.settings['stanley_gain'])
+        if self.follower is not None:return self._blend_command(position,yaw,heading,carrot,reverse,dt)
         heading+=math.pi if reverse else 0.
         error=angle_wrap(heading-yaw)
         yaw_rate=float(np.clip(error*2.,-self.settings['max_yaw_rate_rad_s'],self.settings['max_yaw_rate_rad_s']))
@@ -174,6 +196,17 @@ class MissionRuntime:
         speed*=self.carrot.speed_factor(self.index,self.settings['carrot_brake_m'],self.settings['carrot_min_speed_factor'])
         scale=1. if self.safety_status is None else self.safety_status['scale']
         return self._output(command={'vx_m_s':float((-speed if reverse else speed)*scale),'yaw_rate_rad_s':yaw_rate*scale})
+
+    def _blend_command(self, position: np.ndarray, yaw: float, heading: float, carrot: np.ndarray, reverse: bool, dt: float) -> dict:
+        """blend 모드: 당근 방위로 병진하고 몸은 ψ_ref를 느리게 따라가는 (vx, vy, yaw_rate)를 만든다. 후진은 방위 그대로 넘겨 몸을 돌리지 않는다."""
+        if np.linalg.norm(carrot-position)<1e-9:heading=yaw+(math.pi if reverse else 0.)   # atan2(0,0)으로 방향이 튀지 않게
+        speed=self.settings['max_speed_m_s']*self.carrot.speed_factor(self.index,self.settings['carrot_brake_m'],self.settings['carrot_min_speed_factor'])
+        out=self.follower.step(yaw=yaw,travel_heading=heading,speed=speed,slope_deg=self._slope_deg(position),dt=dt,retreat=reverse)
+        scale=1. if self.safety_status is None else self.safety_status['scale']
+        result=self._output(command={'vx_m_s':float(out.vx*scale),'vy_m_s':float(out.vy*scale),'yaw_rate_rad_s':float(out.yaw_rate*scale)})
+        result['follower']={'psi_ref':float(out.psi_ref),'heading_gap_rad':float(out.heading_gap_rad),
+                            'travel_gap_rad':float(out.travel_gap_rad),'gated':bool(out.gated)}
+        return result
 
     def _arrived(self, position: np.ndarray, stamp: float) -> dict:
         if self.state=='to_junction':
