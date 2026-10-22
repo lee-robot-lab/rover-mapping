@@ -142,12 +142,13 @@ def test_anchor_is_forwarded_to_runner_only_in_teleop_and_after_estop_hold():
     assert gateway.control(cg.ANCHOR, (0, 0, 0), 11.) and anchored == [1, 1]
 
 
-def test_snapshot_reports_anchor_applied_from_runner_reason():
+def test_snapshot_passes_runner_detail_to_the_screen_only_while_fresh():
     gateway, _ = make()
-    gateway.runner_status(dict(READY, reason='anchored_at_preset'), 10.)
-    assert gateway.snapshot(10.1)['anchored']
-    gateway.runner_status(dict(READY, reason='active'), 11.)
-    assert not gateway.snapshot(11.1)['anchored']
+    gateway.runner_status(dict(READY, stage='entry30', run=1, reason='complete', anchor_count=2, done=True, active=False), 10.)
+    snapshot = gateway.snapshot(10.1)
+    assert (snapshot['anchor_count'], snapshot['stage'], snapshot['run'], snapshot['stationary_s']) == (2, 'entry30', 1, 3.5)
+    assert snapshot['done'] and snapshot['reason'] == 'complete'
+    assert 'anchor_count' not in gateway.snapshot(12.)    # 실행기 상태가 오래되면 이전 값을 숨긴다
 
 
 def test_runner_done_returns_to_teleop_with_zero():

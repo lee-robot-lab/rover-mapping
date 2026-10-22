@@ -148,8 +148,11 @@ class Gateway:
 
     def snapshot(self, now: float) -> dict:
         """조이스틱 화면에 보여 줄 상태."""
+        fresh = now-self.status_at <= self.status_max_age_s
+        detail = {key: self.status[key] for key in ('stationary_s', 'stage', 'run', 'reason', 'done', 'active', 'recovering', 'anchor_count')
+                  if fresh and key in self.status}   # 실행기 상태가 오래됐으면 이전 값을 보여주지 않는다
         return dict(mode=self.mode, run_id=self.run_id, missing=self.missing(now), last_reject=self.last_reject,
-                    link_ok=now-self.heartbeat_at <= self.link_timeout_s, anchored=self.status.get('reason') == 'anchored_at_preset',
+                    link_ok=now-self.heartbeat_at <= self.link_timeout_s, **detail,
                     teleop_age_s=now-self.latest['TELEOP'][1], auto_age_s=now-self.latest['AUTO'][1])
 
 

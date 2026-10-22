@@ -41,6 +41,16 @@ def pack_vo(seq: int, stamp_ns: int, vx: float, vy: float, valid: bool) -> bytes
     return struct.pack('<4sIqffI', b'KVO1', seq & 0xFFFFFFFF, stamp_ns, vx, vy, int(valid))
 
 
+GATEWAY_STATUS_KEYS = ('orb_ok', 'in_region1', 'done', 'start_aligned', 'active', 'recovering', 'run', 'stage', 'anchor_count')
+
+
+def gateway_payload(status: dict) -> bytes:
+    """gateway 수신 제한(256 B) 안에 들어가도록 조이스틱 화면에 필요한 필드만 압축해 만든다."""
+    message = {key: status[key] for key in GATEWAY_STATUS_KEYS}
+    message.update(stationary_s=round(status['stationary_s'], 1), reason=str(status['reason'])[:30])
+    return json.dumps(message, separators=(',', ':')).encode()
+
+
 def matrix(value: object) -> np.ndarray:
     """잘못된 pose가 필터를 오염시키기 전에 거부한다."""
     out = np.asarray(value, float)
@@ -69,6 +79,7 @@ class Navigation:
         self.runtime = self.new_runtime(1)
         self.active = self.recovering = False
         self.reason, self.run_id = 'waiting', 0
+        self.anchor_count = 0
         self.last_imu = self.last_frame = self.last_accept = -math.inf
         self.last_tick, self.last_map = -math.inf, None
         self.stationary_since = self.good_since = None
@@ -199,7 +210,7 @@ class Navigation:
         aligned = np.linalg.norm(self.checkpoint[:2, 3] - self.prior[:2, 3]) <= .08 and heading_error <= math.radians(8.)
         return dict(orb_ok=bool(fresh and not self.recovering), stationary_s=stationary_s,
                     in_region1=bool(inside and aligned), start_aligned=bool(aligned), active=self.active, recovering=self.recovering,
-                    run=self.run_id, stage=self.runtime.stage, reason=self.reason,
+                    run=self.run_id, stage=self.runtime.stage, reason=self.reason, anchor_count=self.anchor_count,
                     done=self.runtime.state in ('complete', 'failed'), recovery_count=self.recovery_count,
                     pose_age_s=None if not math.isfinite(self.last_frame) else max(0., now - self.last_frame),
                     imu_age_s=None if not math.isfinite(self.last_imu) else max(0., now - self.last_imu))
@@ -272,6 +283,7 @@ class Navigation:
         self.estimator = self.new_estimator(self.prior, now)
         self.last_frame_matrix = self.last_vo = None
         self.reason = 'anchored_at_preset'
+        self.anchor_count += 1
         self.events.append(dict(type='operator_anchor', stamp_s=now, pose=self.prior.tolist()))
         return True
 
@@ -430,9 +442,7 @@ def main() -> None:
                                    vo[1] if valid_vo else 0., vo[2] if valid_vo else 0., valid_vo), ('127.0.0.1', args.vo_port))
                 if now >= next_status:
                     status = nav.status(t)
-                    # 기존 gateway 수신 제한(256 B)에 맞춰 준비에 필요한 필드만 보낸다.
-                    gateway_status = {key: status[key] for key in ('orb_ok', 'stationary_s', 'in_region1', 'done')}
-                    out.sendto(json.dumps(gateway_status).encode(), ('127.0.0.1', args.status_port))
+                    out.sendto(gateway_payload(status), ('127.0.0.1', args.status_port))
                     temporary = args.state_dir / 'status.tmp'
                     temporary.write_text(json.dumps(dict(status, stamp_s=t, command=result['command'], pose=nav.checkpoint.tolist())))
                     temporary.replace(args.state_dir / 'status.json')

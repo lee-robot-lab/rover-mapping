@@ -4,6 +4,7 @@
 #       버튼·키 입력을 control_gateway가 읽는 KCTL 패킷으로 보내는지 검사한다.
 # 사용법: python -m pytest tests/handheld_mapping/test_gateway_client.py -q
 # ================================================================
+import json
 import math
 import os
 from pathlib import Path
@@ -51,9 +52,25 @@ def test_estop_is_repeated():
     assert [cg.parse_ctl(d)[1] for d, _ in sock.packets] == [cg.ESTOP]*gc.ESTOP_REPEAT
 
 
+def test_anchor_is_allowed_only_when_teleop_stationary_orb_ok_and_status_fresh():
+    client = gc.GatewayClient(Capture(), ('pi', 5006))
+    assert not client.anchor_allowed(0.)                                           # 상태를 못 받음
+    client.consume({'mode': 'TELEOP', 'missing': ['stationary_s'], 'link_ok': True}, 1.)
+    assert not client.anchor_allowed(1.1)
+    client.consume({'mode': 'TELEOP', 'missing': ['orb_ok'], 'link_ok': True}, 2.)
+    assert not client.anchor_allowed(2.1)
+    client.consume({'mode': 'TELEOP', 'missing': ['status'], 'link_ok': True}, 3.)
+    assert not client.anchor_allowed(3.1)
+    client.consume({'mode': 'TELEOP', 'missing': ['in_region1'], 'link_ok': True}, 4.)
+    assert client.anchor_allowed(4.1)                                              # 출발 구역 밖이어도 anchor는 가능
+    assert not client.anchor_allowed(6.)                                           # 상태가 오래됨
+    client.consume({'mode': 'AUTO', 'run': 1, 'missing': [], 'link_ok': True}, 7.)
+    assert not client.anchor_allowed(7.1)
+
+
 def test_anchor_packet_is_readable_by_the_gateway():
     sock = Capture()
-    gc.GatewayClient(sock, ('pi', 5006)).anchor()
+    gc.GatewayClient(sock, ('pi', 5006)).anchor(0.)
     assert [cg.parse_ctl(d)[1] for d, _ in sock.packets] == [cg.ANCHOR]
 
 
@@ -70,15 +87,64 @@ def test_status_is_stored_but_stm_telemetry_is_not_consumed():
     assert not client.consume({'cmd': [0, 0, 0], 'flags': 0}, 1.)
     assert client.consume({'mode': 'TELEOP', 'missing': ['orb_ok'], 'link_ok': True}, 1.)
     texts = [t for t, _ in client.lines(1.1)]
-    assert 'MODE TELEOP' in texts[0] and any('orb_ok' in t for t in texts)
+    assert 'MODE TELEOP' in texts[0] and any('NOT READY' in t and 'ORB' in t for t in texts)
 
 
-def test_lines_show_anchor_applied_only_in_teleop():
+def teleop(**fields):
+    return dict({'mode': 'TELEOP', 'missing': [], 'link_ok': True, 'run': 0, 'anchor_count': 0}, **fields)
+
+
+def texts_of(client, now):
+    return [(t, tone) for t, tone in client.lines(now)]
+
+
+def test_ready_and_not_ready_reasons_are_spelled_out():
     client = gc.GatewayClient(Capture(), ('pi', 5006))
-    client.consume({'mode': 'TELEOP', 'missing': [], 'link_ok': True, 'anchored': True}, 1.)
-    assert any('anchor applied' in t for t, _ in client.lines(1.1))
-    client.consume({'mode': 'AUTO', 'run_id': 1, 'missing': [], 'link_ok': True, 'anchored': True}, 2.)
-    assert not any('anchor applied' in t for t, _ in client.lines(2.1))
+    client.consume(teleop(), 1.)
+    assert ('READY: START allowed', 'ok') in texts_of(client, 1.1)
+    client.consume(teleop(missing=['stationary_s', 'orb_ok', 'in_region1'], stationary_s=1.24), 2.)
+    line = next(t for t, _ in texts_of(client, 2.1) if t.startswith('NOT READY'))
+    assert 'hold still 1.2/3.0 s' in line and 'ORB not tracking' in line and 'press ANCHOR' in line
+    client.consume(teleop(missing=['status']), 3.)
+    assert any('no runner status' in t for t, _ in texts_of(client, 3.1))
+
+
+def test_anchor_feedback_applied_then_cleared_when_auto_starts():
+    client = gc.GatewayClient(Capture(), ('pi', 5006))
+    client.consume(teleop(anchor_count=4), 1.)
+    client.anchor(1.)
+    assert ('ANCHOR sent...', 'warn') in texts_of(client, 1.1)
+    client.consume(teleop(anchor_count=5), 1.2)
+    assert ('ANCHOR applied (current pose = start preset)', 'ok') in texts_of(client, 1.3)
+    client.consume({'mode': 'AUTO', 'run': 1, 'stage': 'entry30', 'missing': [], 'link_ok': True, 'anchor_count': 5}, 2.)
+    assert 'RUN 1  entry30' in texts_of(client, 2.1)[0][0]
+    client.consume(teleop(anchor_count=5), 3.)
+    assert not any('ANCHOR' in t for t, _ in texts_of(client, 3.1))      # 이전 회차의 anchor 결과가 남지 않는다
+
+
+def test_anchor_feedback_rejected_when_count_does_not_change():
+    client = gc.GatewayClient(Capture(), ('pi', 5006))
+    client.consume(teleop(anchor_count=1), 1.)
+    client.anchor(1.)
+    client.consume(teleop(anchor_count=1), 2.4)
+    assert any(t.startswith('ANCHOR rejected') and tone == 'bad' for t, tone in texts_of(client, 2.6))
+
+
+def test_anchor_feedback_says_it_cannot_confirm_for_an_old_stack():
+    client = gc.GatewayClient(Capture(), ('pi', 5006))
+    client.consume({'mode': 'TELEOP', 'missing': [], 'link_ok': True}, 1.)     # anchor_count 필드가 없는 옛 실행기
+    client.anchor(1.)
+    assert any('cannot confirm' in t for t, _ in texts_of(client, 1.1))
+
+
+def test_previous_run_result_is_shown_in_teleop():
+    client = gc.GatewayClient(Capture(), ('pi', 5006))
+    client.consume(teleop(run=1, done=True, reason='complete'), 1.)
+    assert ('RUN 1 COMPLETE - back to TELEOP', 'ok') in texts_of(client, 1.1)
+    client.consume(teleop(run=1, done=True, reason='local_plan_blocked_timeout'), 2.)
+    assert ('RUN 1 FAILED (local_plan_blocked_timeout) - back to TELEOP', 'bad') in texts_of(client, 2.1)
+    client.consume(teleop(run=1, done=False, reason='operator'), 3.)
+    assert ('RUN 1 stopped by operator', 'warn') in texts_of(client, 3.1)
 
 
 def test_lines_report_stale_status_auto_mode_and_rejection():
@@ -138,6 +204,21 @@ def test_window_sends_heartbeat_estop_and_start(window):
     assert starts and starts[0][0] == 1.
     post_click(window, 'start2')
     assert [args[0] for op, args in collect(window.gateway, .6) if op == cg.START][:1] == [2.]
+
+
+def reply_status(window, **fields):
+    """창이 보낸 패킷의 보낸 주소를 알아내 그쪽으로 gateway 상태를 돌려준다."""
+    _, address = window.gateway.recvfrom(256)
+    window.gateway.sendto(json.dumps(dict({'mode': 'TELEOP', 'missing': [], 'link_ok': True}, **fields)).encode(), address)
+
+
+def test_anchor_button_is_ignored_until_stationary_and_orb_ok(window):
+    reply_status(window, missing=['stationary_s', 'in_region1'], stationary_s=1.0)
+    time.sleep(.3)
+    post_click(window, 'anchor')
+    assert not any(op == cg.ANCHOR for op, _ in collect(window.gateway, .5))      # 정지 3초 전에는 눌러도 보내지 않는다
+    reply_status(window, missing=['in_region1'], stationary_s=3.4)                  # 출발 구역은 anchor 조건이 아니다
+    time.sleep(.3)
     post_click(window, 'anchor')
     assert any(op == cg.ANCHOR for op, _ in collect(window.gateway, .6))
 

@@ -57,7 +57,7 @@ LEFT_CENTER = (170, 190)
 RIGHT_CENTER = (470, 190)
 GRAB_SLACK = 1.4  # click within radius*GRAB_SLACK of center still grabs the pad
 ROTATION_SPEED_SCALE = 0.5  # 패드와 Q/E의 회전 명령만 50%로 제한
-GW_EXTRA_HEIGHT = 150  # --gateway: 창 아래에 버튼·상태 줄을 더한다
+GW_EXTRA_HEIGHT = 195  # --gateway: 창 아래에 버튼·상태 줄(최대 6줄)을 더한다
 GW_BUTTONS = {name: (x, HEIGHT + 12, w, 34) for name, x, w in
               (("anchor", 16, 140), ("start1", 164, 140), ("start2", 312, 140), ("estop", 460, 164))}
 GW_LABELS = {"anchor": "ANCHOR", "start1": "START RUN 1", "start2": "START RUN 2", "estop": "E-STOP (Space)"}
@@ -244,7 +244,8 @@ def run(args):
                     if name == "estop":
                         gw.estop()
                     elif name == "anchor":
-                        gw.anchor()
+                        if gw.anchor_allowed(time.monotonic()):   # 정지 3초·ORB 정상이 아니면 눌러도 보내지 않는다
+                            gw.anchor(time.monotonic())
                     else:
                         gw.start(1 if name == "start1" else 2)
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -359,9 +360,10 @@ def run(args):
 
             if gw is not None:
                 for name, rect in gw_rects.items():
-                    pygame.draw.rect(screen, (150, 50, 50) if name == "estop" else (50, 70, 100), rect)
-                    pygame.draw.rect(screen, (140, 140, 150), rect, 1)
-                    label = font.render(GW_LABELS[name], True, (230, 230, 235))
+                    disabled = name == "anchor" and not gw.anchor_allowed(now)   # 회색: 지금은 누를 수 없다
+                    pygame.draw.rect(screen, (150, 50, 50) if name == "estop" else (38, 40, 46) if disabled else (50, 70, 100), rect)
+                    pygame.draw.rect(screen, (80, 80, 88) if disabled else (140, 140, 150), rect, 1)
+                    label = font.render(GW_LABELS[name], True, (110, 110, 120) if disabled else (230, 230, 235))
                     screen.blit(label, (rect.centerx - label.get_width() // 2, rect.centery - label.get_height() // 2))
                 for row, (text, tone) in enumerate(gw.lines(now)):
                     screen.blit(font.render(text, True, GW_COLORS[tone]), (16, HEIGHT + 56 + 22 * row))

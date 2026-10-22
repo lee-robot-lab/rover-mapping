@@ -7,6 +7,7 @@
 import json
 import os
 import socket
+import struct
 import sys
 import threading
 import time
@@ -18,9 +19,10 @@ os.environ.setdefault('SDL_AUDIODRIVER', 'dummy')
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'teleop/ksrc_snapshot/pi/teleop'))
 
 import pygame  # noqa: E402
+import gateway_client  # noqa: E402
 import teleop_joystick  # noqa: E402
 
-STATUS = {'mode': 'TELEOP', 'run_id': 0, 'missing': [], 'last_reject': '', 'link_ok': True, 'anchored': True}
+STATUS = {'mode': 'TELEOP', 'run_id': 0, 'run': 0, 'missing': [], 'last_reject': '', 'link_ok': True, 'stationary_s': 5.2, 'anchor_count': 0}
 MARKS = {1: (60, 118), 2: (580, 118), 3: (610, 40), 4: (330, 361), 5: (628, 374), 6: (610, 470)}   # 번호 -> 말풍선 위치(글자와 안 겹치는 빈 곳)
 
 
@@ -36,14 +38,19 @@ def main(output: Path) -> None:
     def fake_gateway():
         while not stop.is_set():
             try:
-                _, address = gateway.recvfrom(256)
+                data, address = gateway.recvfrom(256)
             except socket.timeout:
                 continue
+            if len(data) == struct.calcsize('<4sIB3f') and struct.unpack('<4sIB3f', data)[2] == gateway_client.ANCHOR:
+                STATUS['anchor_count'] += 1   # 실제 gateway처럼 ANCHOR 패킷을 받으면 runner의 anchor_count가 늘어난다
             gateway.sendto(json.dumps(STATUS).encode(), address)
 
     threading.Thread(target=fake_gateway, daemon=True).start()
     time.sleep(1.)
     left = teleop_joystick.LEFT_CENTER
+    pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=pygame.Rect(*teleop_joystick.GW_BUTTONS['anchor']).center, button=1))
+    pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONUP, pos=(0, 0), button=1))   # ANCHOR만 누르고 패드는 놓는다
+    time.sleep(.4)
     pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=(left[0] + 35, left[1] - 70), button=1))
     time.sleep(.5)
     shot = pygame.display.get_surface().copy()

@@ -37,14 +37,14 @@ cd /home/su/rover-mapping
 | 순서 | 할 일 | 확인 |
 |---|---|---|
 | ① | `w` `x` `a` `d`(또는 패드)로 로버를 출발 위치에 맞춘다. 정면은 **site −y** | 실제 위치를 눈으로 확인 |
-| ② | 손을 떼고 **3초 이상 정지** | `not ready:` 줄에 `stationary_s`가 사라짐 |
-| ③ | **`ANCHOR`** 버튼 클릭 | `anchor applied` 줄 |
-| ④ | **`START RUN 1`** 버튼 클릭 | 상태 줄 `MODE AUTO RUN 1` |
+| ② | 손을 떼고 **3초 이상 정지** | `NOT READY: hold still 1.2/3.0 s`가 올라가다 3.0이 되면 사라짐 |
+| ③ | **`ANCHOR`** 버튼 클릭. 정지 3초 전에는 버튼이 **회색**이라 눌리지 않는다 | `ANCHOR applied`(초록)와 `READY: START allowed` |
+| ④ | **`START RUN 1`** 버튼 클릭 | `MODE AUTO  RUN 1  <단계>` |
 | 위급 | **Space** 또는 **`E-STOP`** | `MODE TELEOP`, 바퀴 정지 |
 
 조작 키: `w`/`x` 전진·후진, `a`/`d` 좌·우, `q e z c` 대각선, `←` `→` 회전, `s` 정지. 자세한 조작은 [조이스틱 화면과 사용법](#조이스틱-화면과-사용법).
 
-**5. 2회차** — 1회차가 끝나거나 E-STOP으로 `MODE TELEOP`이 된 뒤, 다시 ①~③(정렬 → 3초 정지 → `ANCHOR`)을 하고 **`START RUN 2`**를 클릭한다.
+**5. 1회차가 끝나면 → 2회차** — 1회차가 끝나면 **자동으로 `MODE TELEOP`으로 돌아와 정지**하고, 화면에 `RUN 1 COMPLETE - back to TELEOP`(초록) 또는 `RUN 1 FAILED (원인) - back to TELEOP`(빨강)이 뜬다. 2회차는 **자동으로 시작되지 않는다.** 다시 ①~③(정렬 → 3초 정지 → `ANCHOR`)을 하고 `READY: START allowed`가 뜨면 **`START RUN 2`**를 클릭한다. 스택은 계속 켜져 있다. 자세한 동작은 [1회차가 끝나면](#1회차가-끝나면-자동으로-일어나는-일).
 
 **6. 종료 [Pi 터미널]** — GUI에서 E-STOP으로 정지를 확인한 뒤 GUI를 Esc로 닫는다.
 
@@ -191,7 +191,7 @@ PI_AP_IP='192.168.0.101'
 | 오른쪽 패드 드래그 | 회전. 오른쪽=시계, 왼쪽=반시계 | 최대 0.4 rad/s. 끄는 동안은 `←` `→`를 무시한다 |
 | 병진 키 + 오른쪽 패드 | 호를 그리며 주행 | 마우스는 하나라 패드 둘을 동시에 못 끌기 때문에 병진은 키로 한다 |
 | Space 또는 `E-STOP` 버튼 | AUTO 해제·정지 요청 | GUI `MODE TELEOP`, B에서 명령 0 확인 |
-| `ANCHOR` 버튼 | 지금 자세를 출발 preset으로 지정 | 로버는 움직이지 않는다. 5단계 참고 |
+| `ANCHOR` 버튼 | 지금 자세를 출발 preset으로 지정 | 로버는 움직이지 않는다. **정지 3초·ORB 정상일 때만 활성**이고 그 전에는 회색이라 눌러도 보내지 않는다. 5단계 참고 |
 | `START RUN 1` / `START RUN 2` | 해당 회차 AUTO 요청 | 먼저 아래 anchor·준비 조건 충족, B에서 수락 확인 |
 | Esc 또는 창 닫기 | GUI 종료 | AUTO 취소를 보장하지 않음. 먼저 E-STOP 확인 후 닫기 |
 
@@ -200,12 +200,26 @@ PI_AP_IP='192.168.0.101'
 | 상태 줄 | 뜻 |
 |---|---|
 | `MODE TELEOP`(초록) | 사람이 조종 중 |
-| `MODE AUTO RUN n (joystick ignored)`(노랑) | MPPI 주행 중. 조이스틱 이동 명령은 무시되고 E-STOP만 동작한다 |
+| `MODE AUTO  RUN n  <단계>  (joystick ignored)`(노랑) | MPPI 주행 중. 단계(`entry30`, `ascent15`, `return1` 등)가 바뀌는 것이 진행 상황이다. 조이스틱 이동 명령은 무시되고 E-STOP만 동작한다 |
 | `laptop link OK` / `laptop link LOST (AUTO keeps running)` | 노트북↔Pi 연결. 끊겨도 AUTO는 계속된다 |
-| `anchor applied (current pose = start preset)` | `ANCHOR`가 받아들여졌다 |
-| `not ready: stationary_s, orb_ok, in_region1` | START가 안 되는 이유. 3초 정지 / ORB 정상 / 출발 구역·정렬 중 모자란 것만 나온다 |
+| `READY: START allowed`(초록) | START 조건 충족: 3초 정지·ORB 정상·출발 구역(8 cm·8° 이내) |
+| `NOT READY: ...`(노랑) | START가 안 되는 이유. `hold still 1.2/3.0 s`(정지 시간), `ORB not tracking`, `not in start zone (align, hold still, press ANCHOR)`, `no runner status (stack starting?)` 중 해당하는 것만 나온다 |
+| `ANCHOR sent...` → `ANCHOR applied (current pose = start preset)`(초록) | `ANCHOR`가 받아들여졌다(runner의 anchor 횟수가 늘어난 것을 확인한 결과) |
+| `ANCHOR rejected: hold still 3 s with ORB tracking, then press again`(빨강) | 버튼이 활성이던 순간 눌렀지만 1.5초 안에 반영되지 않았다(그 사이 움직이거나 ORB가 흔들림 등). 다시 정지시키고 누른다 |
+| `ANCHOR sent (this stack cannot confirm; ...)`(노랑) | 옛 스택이라 확인 불가. B의 `operator_anchor` 이벤트로 확인 |
+| `RUN n COMPLETE - back to TELEOP`(초록) / `RUN n FAILED (원인) - back to TELEOP`(빨강) / `RUN n stopped by operator`(노랑) | 직전 회차의 결과. 다음 START 때까지 남아 있다 |
+| `ORB recovering - robot holds still` | 센서 공백으로 복구 중. 로버는 정지하고 복구되면 이어서 진행한다 |
 | `last start rejected: ...` | 마지막 START가 거절된 이유 |
 | `GATEWAY: no status (check Pi gateway)`(빨강) | Pi에서 상태가 오지 않는다. 스택 실행·IP·포트 5006 확인 |
+
+상태 줄은 Pi가 5 Hz로 보내 주는 값이라 최대 약 0.2초 늦다. 이 줄들은 **Pi의 `runner.py`·`control_gateway.py`가 새 버전일 때** 모두 나온다. 옛 스택이면 `ANCHOR sent (cannot confirm)`처럼 일부만 나온다.
+
+### 1회차가 끝나면 자동으로 일어나는 일
+
+1. 로버가 마지막 단계(`return1`)에서 멈추고 AUTO가 끝난다(성공 `complete`, 실패 `failed`). 명령은 0이다.
+2. gateway가 **자동으로 `TELEOP`으로 돌아와 0 명령을 보낸다.** 이후 조이스틱을 바로 쓸 수 있다. **2회차는 자동으로 시작되지 않는다.** 성공과 실패 모두 같은 방식으로 TELEOP에 돌아오므로, 어느 쪽인지는 `RUN n COMPLETE` / `RUN n FAILED (원인)` 줄로 구분한다.
+3. ORB·하위 정책 등 스택은 **계속 켜져 있다.** 끝내려면 Pi에서 `stop`한다.
+4. 2회차 준비: 로버가 출발 구역(8 cm·8° 이내)에서 3초 정지하면 `READY`가 뜬다. 벗어났다면 `NOT READY: not in start zone`이므로 정렬 → 3초 정지 → `ANCHOR` 후 `START RUN 2`를 누른다. 2회차는 30° 시도·정상 관찰을 생략하고 15° 등판부터 시작한다.
 
 창 포커스를 잃거나 손을 떼면 수동 명령은 0이 된다. **AUTO는 GUI 포커스 변경·종료만으로 멈추지 않는다.** Space는 GUI 창이 키 입력을 받을 때 동작한다. GUI에서 E-STOP한 뒤 B의 상태와 실제 바퀴 정지를 함께 확인한다.
 

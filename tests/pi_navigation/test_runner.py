@@ -53,6 +53,29 @@ def test_start_and_stop_require_explicit_request():
     assert nav.tick(4.)['command'] == (0., 0., 0.)
 
 
+def test_anchor_count_increases_only_when_anchor_is_accepted():
+    nav = make_runner()
+    assert not nav.anchor(0.) and nav.status(0.)['anchor_count'] == 0     # 센서·정지 조건이 없으면 거절
+    feed(nav, 3.5)
+    assert nav.anchor(3.5) and nav.status(3.5)['anchor_count'] == 1
+    assert nav.start(1, 3.5)
+    assert not nav.anchor(3.6) and nav.status(3.6)['anchor_count'] == 1   # AUTO 중에는 거절
+
+
+def test_gateway_payload_fits_the_gateway_receive_limit_even_with_worst_values():
+    import json
+    import runner
+    nav = make_runner()
+    feed(nav, 3.5)
+    payload = runner.gateway_payload(nav.status(3.5))
+    assert len(payload) <= 256 and json.loads(payload)['orb_ok'] is True
+    worst = dict(orb_ok=True, in_region1=True, done=True, start_aligned=True, active=True, recovering=True, run=2,
+                 stage='retreat15', anchor_count=99999, stationary_s=12345.678, reason='x' * 80)
+    payload = runner.gateway_payload(worst)
+    assert len(payload) <= 256
+    assert json.loads(payload)['stationary_s'] == 12345.7 and len(json.loads(payload)['reason']) == 30
+
+
 def test_gap_stops_and_recovery_preserves_pose_and_stage():
     nav = make_runner()
     feed(nav, 3.5)
@@ -162,3 +185,32 @@ def test_vo_has_existing_wire_format():
     assert (magic, seq, ns, valid) == (b'KVO1', 7, 123456789, 1)
     assert vx == pytest.approx(.1)
     assert vy == pytest.approx(-.02)
+
+
+def test_runner_status_reaches_the_joystick_screen_end_to_end():
+    """runner.status → gateway_payload → Gateway.runner_status → snapshot → GatewayClient.lines. anchor·READY·회차 결과가 화면 문장까지 간다."""
+    import json
+    import runner
+    from ksrc_runtime.handheld_mapping.control_gateway import Gateway
+    sys.path.insert(0, str(ROOT / 'teleop/ksrc_snapshot/pi/teleop'))
+    import gateway_client
+
+    class Sock:
+        def sendto(self, data, dest):
+            pass
+
+    nav, gateway, client = make_runner(), Gateway(lambda *command: None), gateway_client.GatewayClient(Sock(), ('pi', 5006))
+
+    def screen(t_nav, t_gateway):
+        gateway.runner_status(json.loads(runner.gateway_payload(nav.status(t_nav))), t_gateway)
+        client.consume(json.loads(json.dumps(gateway.snapshot(t_gateway + .01))), t_gateway)
+        return [text for text, _ in client.lines(t_gateway + .02)]
+
+    feed(nav, 3.5)
+    assert 'READY: START allowed' in screen(3.5, 10.)
+    client.anchor(10.1)
+    assert nav.anchor(3.5)
+    assert 'ANCHOR applied (current pose = start preset)' in screen(3.5, 10.2)
+    assert nav.start(1, 3.5)
+    nav.runtime.state, nav.active, nav.reason = 'complete', False, 'complete'
+    assert 'RUN 1 COMPLETE - back to TELEOP' in screen(3.5, 11.)
