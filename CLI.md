@@ -1,5 +1,70 @@
 # 현장 CLI — 노트북과 Pi 구분
 
+## 빠른 시작 — 꼭 필요한 것만
+
+**켜야 하는 것은 딱 둘이다.** ① Pi의 실기 스택(`start --real`) 하나, ② 노트북의 조이스틱 GUI 하나. 나머지(관찰 터미널·부하 수집기·서버·VPN·인터넷·별도 `udp_spi_bridge`/`run_policy`)는 **필요 없다.** 출발·anchor·E-STOP은 모두 GUI 버튼으로 한다.
+
+> 실제 모터가 움직인다. 처음에는 바퀴를 띄워 확인하고, **E-STOP을 누를 사람**을 둔다. 실제 출발 위치가 아닌 곳에서는 START를 누르지 않는다.
+
+**1. [노트북 터미널 1] Pi에 SSH 접속**
+
+```bash
+ssh -o HostKeyAlias=raspberrypi.local pi@192.168.0.101
+```
+
+**2. [Pi, 같은 터미널] 실기 스택 시작** — 한 번에 붙여 넣는다. 같은 `state/` 아래 대기 중인 이전 스택은 자동으로 끄고 시작한다.
+
+```bash
+cd /home/pi/ksrc_final_20261022/deployment/ksrc
+TEST_DIR="state/field_S1_$(date +%Y%m%d_%H%M%S)"; mkdir -p "$TEST_DIR"; printf '%s\n' "$TEST_DIR" > state/latest_test.txt
+./ksrc check && ./ksrc --state-dir "$TEST_DIR" start --real && sleep 8 && ./ksrc --state-dir "$TEST_DIR" view
+```
+
+확인: `started REAL supervisor ...` 다음에 `상태: 대기 / TELEOP`, `센서: 정상`이 나오면 된다(처음 1초쯤의 `복구 1회`는 정상). `초기화 중`이면 `./ksrc --state-dir "$TEST_DIR" view`를 다시 실행한다. 오류가 나거나 `다른 세션이 실행 중이라 시작하지 않는다`가 나오면 [막혔을 때](#빠른-판정막혔을-때)로 간다.
+
+**3. [노트북 터미널 2, 로컬 — SSH 아님] 조이스틱 GUI 실행**
+
+```bash
+cd /home/su/rover-mapping
+/home/su/rover/.venv-mapping/bin/python teleop/ksrc_snapshot/pi/teleop/teleop_joystick.py \
+  --udp "192.168.0.101:5006" --gateway --grid-keys --rate 50 --max-lin 0.15 --max-ang 0.8
+```
+
+확인: 창 아래 `MODE TELEOP`, `laptop link OK`. (`GATEWAY: no status`면 2단계가 안 된 것이다. 포트는 반드시 `:5006`.)
+
+**4. [GUI] 출발 위치에 맞추고 anchor → 출발**
+
+| 순서 | 할 일 | 확인 |
+|---|---|---|
+| ① | `w` `x` `a` `d`(또는 패드)로 로버를 출발 위치에 맞춘다. 정면은 **site −y** | 실제 위치를 눈으로 확인 |
+| ② | 손을 떼고 **3초 이상 정지** | `not ready:` 줄에 `stationary_s`가 사라짐 |
+| ③ | **`ANCHOR`** 버튼 클릭 | `anchor applied` 줄 |
+| ④ | **`START RUN 1`** 버튼 클릭 | 상태 줄 `MODE AUTO RUN 1` |
+| 위급 | **Space** 또는 **`E-STOP`** | `MODE TELEOP`, 바퀴 정지 |
+
+조작 키: `w`/`x` 전진·후진, `a`/`d` 좌·우, `q e z c` 대각선, `←` `→` 회전, `s` 정지. 자세한 조작은 [조이스틱 화면과 사용법](#조이스틱-화면과-사용법).
+
+**5. 2회차** — 1회차가 끝나거나 E-STOP으로 `MODE TELEOP`이 된 뒤, 다시 ①~③(정렬 → 3초 정지 → `ANCHOR`)을 하고 **`START RUN 2`**를 클릭한다.
+
+**6. 종료 [Pi 터미널]** — GUI에서 E-STOP으로 정지를 확인한 뒤 GUI를 Esc로 닫는다.
+
+```bash
+./ksrc --state-dir "$TEST_DIR" stop
+```
+
+`stopped owned processes`가 나오면 종료된 것이다. (`TEST_DIR`를 잊었으면 먼저 `TEST_DIR="$(cat state/latest_test.txt)"`.)
+
+**7. 로그 가져오기 [노트북 터미널 2, GUI 종료 후, 선택]**
+
+```bash
+mkdir -p ~/ksrc-field-logs
+rsync -a -e 'ssh -o HostKeyAlias=raspberrypi.local' pi@192.168.0.101:/home/pi/ksrc_final_20261022/deployment/ksrc/state/ ~/ksrc-field-logs/
+```
+
+**필요할 때만 쓰는 것:** 상태를 계속 보려면 Pi에 SSH를 하나 더 열어 `./ksrc --state-dir "$(cat state/latest_test.txt)" view --watch`(Ctrl+C는 보기만 끝냄). 부하·온도 기록이 필요하면 2단계 뒤에 `nohup bash record_load.sh "$TEST_DIR" 600 > "$TEST_DIR/load_collector.log" 2>&1 < /dev/null &`, 종료 뒤 `./ksrc --state-dir "$TEST_DIR" report`. 아래는 각 단계의 **상세 설명**이다. 위 빠른 시작으로 진행이 안 될 때만 읽는다.
+
+---
+
 **기본 실행: S1 plan 분리**. `start`만으로 ORB CPU 1·2 / 상위+plan CPU 0 / 하위 CPU 3 / RT 50을 사용한다. S0 비교 때만 `--sync-plan`을 붙인다. 모터 없는 FAKE가 기본이고, 실기는 `--real`을 명시한다. 출발 전 모터 없는 시험부터 진행하려면 [TESTS_BEFORE_FIELD.md](TESTS_BEFORE_FIELD.md)를 먼저 따른다. 초기 배치·보정은 [배포 설정 안내](deployment/ksrc/README.md), 실제 시험 기준은 [FIELD_TESTS.md](FIELD_TESTS.md)에 있다.
 
 ## 0. 터미널 역할
