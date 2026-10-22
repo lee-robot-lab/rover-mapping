@@ -4,6 +4,8 @@
 
 출발 전 사전 점검·부하 기록은 **[TESTS_BEFORE_FIELD.md](TESTS_BEFORE_FIELD.md)** 를 먼저 진행한다.
 
+명령은 **[CLI.md](CLI.md)의 터미널 A(Pi SSH)** 에서 실행한다. 로그 관찰은 터미널 B(Pi SSH), `rsync` 다운로드는 터미널 C(노트북 로컬)에서 한다. 이 문서의 `./ksrc`·Python ORB 종료 명령은 모두 Pi에서 실행한다.
+
 ## 준비와 초기 배치
 
 ![초기 배치](deployment/ksrc/figures/initial_pose.png)
