@@ -78,3 +78,10 @@ def test_report_excludes_boot_average_and_post_stop_load(tmp_path):
     assert 'CPU0: 평균 25.0% / 최대 40.0%' in out
     assert '25 ms 초과 1/3' in out
     assert '수집 중' in out  # finished.txt가 없어도 정책 저장과 별개다.
+
+
+def test_failed_start_by_global_lock_is_not_shown_as_unknown_mode(tmp_path):
+    from display import view_text
+    (tmp_path / 'supervisor.log').write_text('Traceback ...\nBlockingIOError: [Errno 11] Resource temporarily unavailable\n')
+    out = view_text(tmp_path)
+    assert '시작 실패' in out and '모드 미확인' not in out and '_supervise' in out

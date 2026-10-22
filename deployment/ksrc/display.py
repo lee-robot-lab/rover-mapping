@@ -44,6 +44,10 @@ def view_text(state: Path) -> str:
     if '--config' in command:
         config = command[command.index('--config') + 1]
         mode = 'FAKE · 모터 미사용' if Path(config).name == 'fake.json' else 'REAL · 실기 스택'
+    if not status and not stopped and 'BlockingIOError' in tail_text(state / 'supervisor.log'):
+        return '\n'.join([f'[시작 실패] {state}', '상태: 시작 실패 — 다른 실기 스택이 전역 lock을 쥐고 있어 이 폴더는 시작되지 않았다.',
+                          "살아 있는 세션 찾기: ps -eo pid,args | grep _supervise | grep -v grep  (--state-dir 값이 그 폴더)",
+                          '그 세션을 estop·stop으로 끈 뒤 다시 시작한다. 이 폴더의 모드 정보는 없다.'])
     lines = [f'[{mode}] {state}']
     if not status:
         lines += ['상태: 종료됨' if stopped else '상태: 초기화 중 또는 상태 파일 없음',

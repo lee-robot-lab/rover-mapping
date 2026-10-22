@@ -5,6 +5,7 @@
 # ================================================================
 from pathlib import Path
 import json
+import os
 import subprocess
 import sys
 import socket
@@ -100,3 +101,40 @@ except KeyboardInterrupt:
         assert (state / 'policy.npz').read_text() == 'saved after SIGINT'
     finally:
         subprocess.run([*command, 'stop'], timeout=15)
+
+
+def fake_other_session(directory: Path, **status: object) -> None:
+    """이 테스트 프로세스를 supervisor로 기록한 가짜 세션 폴더. 상태가 idle이 아니면 종료 대상이 되지 않는다."""
+    import cli
+    directory.mkdir()
+    (directory / 'supervisor.json').write_text(json.dumps(dict(pid=os.getpid(), starttime=cli.process_identity(os.getpid()))))
+    if status:
+        (directory / 'status.json').write_text(json.dumps(status))
+
+
+@pytest.mark.parametrize('status, reason', [(dict(active=True), 'AUTO'), (None, '알 수 없음')])
+def test_start_refuses_to_stop_other_session_when_auto_or_unknown(tmp_path, status, reason):
+    import cli
+    fake_other_session(tmp_path / 'other', **(status or {}))
+    with pytest.raises(RuntimeError, match=reason):
+        cli.stop_other_sessions(tmp_path / 'new')
+    assert cli.process_identity(os.getpid())   # 이 프로세스(가짜 owner)는 종료되지 않았다
+
+
+def test_start_stops_idle_previous_session_then_starts(tmp_path):
+    first, second = tmp_path / 'first', tmp_path / 'second'
+    fake = ['--seconds', '60', '--policy-script', str(tmp_path / 'missing.py')]
+    command = lambda state: [sys.executable, str(DEPLOY / 'cli.py'), '--state-dir', str(state)]
+    assert subprocess.run([*command(first), 'start', *fake], capture_output=True, text=True).returncode == 0
+    try:
+        deadline = time.time() + 30
+        while time.time() < deadline and not (first / 'status.json').exists():
+            time.sleep(.2)
+        assert (first / 'status.json').exists(), '첫 세션이 상태를 쓰지 않았다'
+        result = subprocess.run([*command(second), 'start', *fake], capture_output=True, text=True, timeout=40)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert '먼저 종료' in result.stdout and (first / 'stopped.json').is_file()
+        assert (second / 'supervisor.json').is_file() and not (second / 'stopped.json').exists()
+    finally:
+        for state in (second, first):
+            subprocess.run([*command(state), 'stop'], capture_output=True, timeout=20)

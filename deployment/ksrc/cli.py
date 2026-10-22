@@ -148,6 +148,45 @@ def stop_owned(info: dict, sig: int = signal.SIGTERM) -> None:
             pass
 
 
+def stop_session(state: Path) -> None:
+    """E-STOP을 보내고 이 폴더가 소유한 세션을 종료한다. 12초 안에 안 끝나면 오류."""
+    control(4)
+    path = state / 'supervisor.json'
+    if path.exists():
+        owner = json.loads(path.read_text())
+        stop_owned(owner)
+        deadline = time.monotonic() + 12.
+        while time.monotonic() < deadline and process_identity(owner['pid']) == owner['starttime'] and not (state / 'stopped.json').exists():
+            time.sleep(.1)
+        if not (state / 'stopped.json').exists() and process_identity(owner['pid']) == owner['starttime']:
+            raise RuntimeError('shutdown not finished; see supervisor.log')
+    print('stopped owned processes' if (state / 'stopped.json').exists() else 'supervisor not running; see logs')
+
+
+def stop_other_sessions(state: Path) -> None:
+    """같은 상위 폴더의 다른 살아 있는 세션을 끈다. AUTO 중이거나 상태를 모르면 끄지 않고 중단한다."""
+    for path in sorted(state.parent.glob('*/supervisor.json')):
+        other = path.parent
+        try:
+            owner = json.loads(path.read_text())
+        except ValueError:
+            continue
+        if other == state or process_identity(owner['pid']) != owner['starttime']:
+            continue
+        status_path = other / 'status.json'
+        try:
+            status = json.loads(status_path.read_text())
+            age = time.time() - status_path.stat().st_mtime
+        except (OSError, ValueError):
+            status, age = {}, None
+        reason = 'AUTO 주행 중' if status.get('active') else '상태를 알 수 없음' if age is None or age > 5. else ''
+        if reason:
+            raise RuntimeError(f'다른 세션이 실행 중이라 시작하지 않는다 ({reason}): {other}\n'
+                               f'먼저 ./ksrc --state-dir {other} estop 후 ./ksrc --state-dir {other} stop 으로 끈 뒤 다시 시작하세요.')
+        print('다른 세션이 대기 중이라 먼저 종료한다:', other, flush=True)
+        stop_session(other)
+
+
 def supervise(args) -> None:
     """SSH가 끊겨도 프로세스를 유지하고 ORB만 자동 재시작한다."""
     state = args.state_dir.resolve()
@@ -297,6 +336,7 @@ def main() -> None:
             previous = json.loads(path.read_text())
             if process_identity(previous['pid']) == previous['starttime']:
                 raise RuntimeError('session already running')
+        stop_other_sessions(state)
         for name in ('status.json', 'stopped.json', 'restart_orb'):
             (state / name).unlink(missing_ok=True)
         forwarded = sys.argv[1:]
@@ -335,17 +375,7 @@ def main() -> None:
             output.sendto(b'{"op":"ANCHOR"}', ('127.0.0.1', 5010))
         print('preset anchor requested; only accepted while stopped with fresh sensors for 3 s; confirm status')
     elif args.command == 'stop':
-        control(4)
-        path = state / 'supervisor.json'
-        if path.exists():
-            owner = json.loads(path.read_text())
-            stop_owned(owner)
-            deadline = time.monotonic() + 12.
-            while time.monotonic() < deadline and process_identity(owner['pid']) == owner['starttime'] and not (state / 'stopped.json').exists():
-                time.sleep(.1)
-            if not (state / 'stopped.json').exists() and process_identity(owner['pid']) == owner['starttime']:
-                raise RuntimeError('shutdown not finished; see supervisor.log')
-        print('stopped owned processes' if (state / 'stopped.json').exists() else 'supervisor not running; see logs')
+        stop_session(state)
     elif args.command == 'logs':
         for path in sorted(state.glob('*.log')):
             print(path.name, '\n', '\n'.join(path.read_text(errors='replace').splitlines()[-8:]))

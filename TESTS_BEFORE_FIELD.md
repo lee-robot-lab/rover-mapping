@@ -59,7 +59,7 @@ date -Is | tee "$TEST_DIR/actions.log"
 df -h .
 ```
 
-**확인:** `check`의 import·hash가 통과해야 한다. RT limit은 50 이상인지 확인한다. 오류가 있으면 여기서 멈추고 `check.log`를 확인한다. 이후 세션은 한 번에 하나만 실행한다.
+**확인:** `check`의 import·hash가 통과해야 한다. RT limit은 50 이상인지 확인한다. 오류가 있으면 여기서 멈추고 `check.log`를 확인한다. 이후 세션은 한 번에 하나만 실행한다. 같은 `state/` 아래 다른 세션이 대기 중이면 `start`가 먼저 종료하고, AUTO 주행 중이거나 상태를 알 수 없으면 중단한다.
 
 ## 2. 모터 없는 S1 실행과 부하 기록 시작
 
@@ -69,8 +69,8 @@ df -h .
 ./ksrc --state-dir "$TEST_DIR" start --seconds 600 && {
   nohup bash record_load.sh "$TEST_DIR" 180 > "$TEST_DIR/load_collector.log" 2>&1 < /dev/null &
   echo "collector_pid=$!" | tee -a "$TEST_DIR/actions.log"
+  ./ksrc --state-dir "$TEST_DIR" view | tee -a "$TEST_DIR/actions.log"
 }
-./ksrc --state-dir "$TEST_DIR" view | tee -a "$TEST_DIR/actions.log"
 ```
 
 `--real`이 없으므로 모터·SPI를 열지 않는다. 부하 기록은 3분, 실행 세션은 최대 10분이다. 수집기를 같은 폴더에서 다시 실행하면 부하 파일을 덮어쓰므로 중복 실행하지 않는다.
@@ -211,8 +211,8 @@ date -Is | tee "$TEST_DIR/actions.log"
 ./ksrc --state-dir "$TEST_DIR" start --real --seconds 240 && {
   nohup bash record_load.sh "$TEST_DIR" 180 > "$TEST_DIR/load_collector.log" 2>&1 < /dev/null &
   echo "collector_pid=$!" | tee -a "$TEST_DIR/actions.log"
+  ./ksrc --state-dir "$TEST_DIR" view | tee -a "$TEST_DIR/actions.log"
 }
-./ksrc --state-dir "$TEST_DIR" view | tee -a "$TEST_DIR/actions.log"
 ```
 
 실측 보정 `local/real.json`·`local/orb.yaml`이 필요하다([설정 안내](deployment/ksrc/README.md)).
