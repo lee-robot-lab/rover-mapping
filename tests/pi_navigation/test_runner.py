@@ -102,6 +102,51 @@ def test_gap_stops_and_recovery_preserves_pose_and_stage():
     assert np.linalg.norm(nav.checkpoint[:2, 3] - checkpoint[:2, 3]) < .02
 
 
+def test_orb_reset_when_idle_keeps_pose_and_recovers_on_new_map_but_is_refused_in_auto():
+    nav = make_runner()
+    feed(nav, 3.5)
+    checkpoint = nav.checkpoint.copy()
+    assert nav.orb_reset(3.5) and nav.recovering and not nav.status(3.5)['orb_ok']
+    assert nav.events[-1]['type'] == 'recovery_start' and nav.events[-1]['reason'] == 'operator_orb_reset'
+    new_origin = np.eye(4)
+    new_origin[:3, 3] = [50, -10, 2]
+    for i in range(176, 260):                 # 재시작한 ORB가 새 map(새 원점)으로 pose를 내보낸다
+        t = i / 50
+        nav.imu(t, .02, [0, 0, 0], [0, 0, 9.81], 0.)
+        if i % 3 == 0:
+            nav.frame(t, new_origin, 'orb_map_1', 2)
+        nav.tick(t)
+    assert not nav.recovering and nav.status(5.2)['orb_ok']
+    assert np.linalg.norm(nav.checkpoint[:2, 3] - checkpoint[:2, 3]) < .02      # 위치는 직전 checkpoint에서 이어진다
+    assert nav.start(1, 5.2)
+    assert not nav.orb_reset(5.3) and not nav.recovering                         # AUTO 중에는 거절
+
+
+def test_orb_restart_is_requested_only_when_frames_are_really_gone():
+    import runner
+    due = runner.orb_restart_due
+    assert not due(False, 100., 0., 50., 0., -1.)                       # 복구 중이 아니다
+    assert not due(True, 100., 0., 5., 0., -1.)                         # 복구 시작 5 s: ORB가 스스로 복구할 시간
+    assert not due(True, 100., 0., 40., 20., 39.)                       # 프레임이 계속 들어온다(복구가 진행 중)
+    assert not due(True, 100., 200., 40., 20., 10.)                     # 재시작 직후 유예 중
+    assert due(True, 100., 0., 40., 20., 10.)                           # 20 s 복구 중, 30 s 동안 프레임 없음
+    assert due(True, 100., 0., 40., 20., float('-inf'))
+
+
+def test_slow_starting_orb_is_not_killed_before_its_first_pose():
+    """ORB가 재시작 후 첫 pose까지 10 s 걸려도, 자동 재시작이 8 s마다 죽이던 때와 달리 한 번에 복구된다."""
+    import runner
+    next_restart, restarts, orb_started, orb_stuck, last_frame = 0., 0, None, True, float('-inf')
+    recovery_since = 0.                                                     # t=0에 추적 상실, ORB는 멈춘 상태
+    for step in range(0, 1200):
+        t = step / 10
+        if runner.orb_restart_due(True, t, next_restart, t, recovery_since, last_frame):
+            restarts, orb_started, orb_stuck, next_restart = restarts + 1, t, False, t + runner.ORB_STARTUP_GRACE_S
+        if not orb_stuck and t - orb_started >= 10.:                       # 재시작 후 10 s 뒤부터 프레임을 낸다
+            last_frame = t
+    assert restarts == 1 and last_frame > 100.
+
+
 def test_duplicate_imu_does_not_extend_freshness():
     nav = make_runner()
     nav.imu(.02, .02, [0, 0, 0], [0, 0, 9.81], 0.)

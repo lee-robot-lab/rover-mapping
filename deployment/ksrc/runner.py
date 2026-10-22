@@ -41,6 +41,16 @@ def pack_vo(seq: int, stamp_ns: int, vx: float, vy: float, valid: bool) -> bytes
     return struct.pack('<4sIqffI', b'KVO1', seq & 0xFFFFFFFF, stamp_ns, vx, vy, int(valid))
 
 
+ORB_LOST_RESTART_S = 10.   # 복구 중 이 시간 동안 ORB 프레임이 없을 때만 ORB 재시작을 요청한다(ORB가 스스로 복구할 시간)
+ORB_STARTUP_GRACE_S = 30.  # 재시작한 ORB는 어휘 로드·초기화로 첫 pose까지 8~10 s 걸린다(Pi 실측). 그동안 다시 죽이지 않는다
+
+
+def orb_restart_due(recovering: bool, now: float, next_restart: float, t: float, recovery_since: float, last_frame: float) -> bool:
+    """복구 중이고 ORB 프레임이 ORB_LOST_RESTART_S 넘게 없으며 유예가 끝났을 때만 ORB 재시작을 요청한다."""
+    return (recovering and now >= next_restart and t - recovery_since > ORB_LOST_RESTART_S
+            and t - last_frame > ORB_LOST_RESTART_S)
+
+
 GATEWAY_STATUS_KEYS = ('orb_ok', 'in_region1', 'done', 'start_aligned', 'active', 'recovering', 'run', 'stage', 'anchor_count')
 
 
@@ -287,6 +297,13 @@ class Navigation:
         self.events.append(dict(type='operator_anchor', stamp_s=now, pose=self.prior.tolist()))
         return True
 
+    def orb_reset(self, now: float) -> bool:
+        """운영자의 ORB 재시작 요청. AUTO 중에는 거절하고, 대기 중이면 pose를 보존한 채 복구 절차로 들어간다."""
+        if self.active:
+            return False
+        self.fail_tracking(now, 'operator_orb_reset')
+        return True
+
     def tick(self, now: float) -> dict:
         """50 Hz 제어에서 센서가 무효하거나 복구 중이면 0 명령을 출력한다."""
         zero = dict(command=(0., 0., 0.))
@@ -386,7 +403,7 @@ def main() -> None:
 
     signal.signal(signal.SIGTERM, stop_signal)
     signal.signal(signal.SIGINT, stop_signal)
-    seq, next_tick, next_status, next_restart, logged = 0, origin, origin, origin + 8., 0
+    seq, next_tick, next_status, next_restart, logged = 0, origin, origin, origin + ORB_STARTUP_GRACE_S, 0
     with (args.state_dir / 'navigation.jsonl').open('a', buffering=1) as log:
         try:
             while not stopped:
@@ -413,6 +430,10 @@ def main() -> None:
                                     nav.stop()
                                 elif data.get('op') == 'ANCHOR':
                                     nav.anchor(now)
+                                elif data.get('op') == 'ORB_RESET':
+                                    if nav.orb_reset(now):
+                                        (args.state_dir / 'restart_orb').touch()   # ORB 프로세스는 supervisor가 재시작한다
+                                        next_restart = time.monotonic() + ORB_STARTUP_GRACE_S   # 새 ORB가 올라올 때까지 자동 재시작 보류
                                 continue
                             stamp = float(data['monotonic_s']) - origin
                             if stamp > now + .02 or now - stamp > .5 or stamp < 0:
@@ -448,9 +469,9 @@ def main() -> None:
                     temporary.replace(args.state_dir / 'status.json')
                     log.write(json.dumps(dict(type='tick', stamp_s=t, command=result['command'], pose=nav.checkpoint.tolist(), **status)) + '\n')
                     next_status = now + .2
-                if nav.recovering and now >= next_restart and t - nav.recovery_since > 2.:
+                if orb_restart_due(nav.recovering, now, next_restart, t, nav.recovery_since, nav.last_frame):
                     (args.state_dir / 'restart_orb').touch()
-                    next_restart = now + 8.
+                    next_restart = now + ORB_STARTUP_GRACE_S
                 for event in nav.events[logged:]:
                     log.write(json.dumps(event) + '\n')
                 logged = len(nav.events)

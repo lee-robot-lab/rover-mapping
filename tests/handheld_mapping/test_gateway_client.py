@@ -68,6 +68,21 @@ def test_anchor_is_allowed_only_when_teleop_stationary_orb_ok_and_status_fresh()
     assert not client.anchor_allowed(7.1)
 
 
+def test_orb_reset_packet_allowed_only_in_teleop_and_note_fades():
+    sock = Capture()
+    client = gc.GatewayClient(sock, ('pi', 5006))
+    assert not client.orb_reset_allowed(0.)                                         # 상태를 못 받음
+    client.consume({'mode': 'TELEOP', 'missing': ['stationary_s', 'orb_ok'], 'link_ok': True}, 1.)
+    assert client.orb_reset_allowed(1.1)                                            # ORB가 안 되는 때가 바로 쓰는 때다
+    client.orb_reset(1.1)
+    assert [cg.parse_ctl(d)[1] for d, _ in sock.packets] == [cg.ORB_RESET]
+    assert any('ORB reset requested' in t for t, _ in client.lines(1.2))
+    client.consume({'mode': 'TELEOP', 'missing': [], 'link_ok': True}, 5.)
+    assert not any('ORB reset requested' in t for t, _ in client.lines(5.1))
+    client.consume({'mode': 'AUTO', 'run': 1, 'missing': [], 'link_ok': True}, 6.)
+    assert not client.orb_reset_allowed(6.1)
+
+
 def test_anchor_packet_is_readable_by_the_gateway():
     sock = Capture()
     gc.GatewayClient(sock, ('pi', 5006)).anchor(0.)
@@ -221,6 +236,17 @@ def test_anchor_button_is_ignored_until_stationary_and_orb_ok(window):
     time.sleep(.3)
     post_click(window, 'anchor')
     assert any(op == cg.ANCHOR for op, _ in collect(window.gateway, .6))
+
+
+def test_orb_reset_button_sends_in_teleop_and_is_ignored_in_auto(window):
+    reply_status(window)
+    time.sleep(.3)
+    post_click(window, 'orbreset')
+    assert any(op == cg.ORB_RESET for op, _ in collect(window.gateway, .6))
+    reply_status(window, mode='AUTO', run=1)
+    time.sleep(.3)
+    post_click(window, 'orbreset')
+    assert not any(op == cg.ORB_RESET for op, _ in collect(window.gateway, .5))
 
 
 def test_window_without_gateway_flag_keeps_old_behaviour():

@@ -2,17 +2,18 @@
 # gateway_client.py
 # 설명: 조이스틱 화면이 Pi의 control_gateway(텔레옵↔자동 중계)에 제어 메시지(하트비트·비상·시작)를 보내고
 #       중계가 5 Hz로 돌려주는 상태를 받아 두는 클라이언트. pygame과 무관해서 화면 없이 시험할 수 있다.
-# 사용법: gw = GatewayClient(udp_socket, (host, 5006)); gw.tick(now); gw.start(1); gw.anchor(now); gw.lines(now)
+# 사용법: gw = GatewayClient(udp_socket, (host, 5006)); gw.tick(now); gw.start(1); gw.anchor(now); gw.orb_reset(now); gw.lines(now)
 # ================================================================
 import math
 import struct
 
 CTL = struct.Struct("<4sIB3f")   # control_gateway의 KCTL 형식: 순서번호, 동작, 값 3개
-HEARTBEAT, START, ESTOP, ANCHOR = 1, 3, 4, 5   # 번호는 control_gateway와 같다(2는 쓰지 않는다)
+HEARTBEAT, START, ESTOP, ANCHOR, ORB_RESET = 1, 3, 4, 5, 6   # 번호는 control_gateway와 같다(2는 쓰지 않는다)
 ESTOP_REPEAT = 3                 # UDP 손실에 대비해 비상 정지를 연달아 보낸다
 STATUS_FRESH_S = 1.5
 ANCHOR_REPLY_S = 1.5             # 이 시간 안에 anchor_count가 늘지 않으면 거절된 것으로 본다
 STATIONARY_NEED_S = 3.0          # control_gateway의 ready_stationary_s와 같다
+ORB_RESET_NOTE_S = 3.0           # ORB RESET을 보낸 뒤 이 시간 동안 안내 줄을 보인다
 
 
 class GatewayClient:
@@ -23,6 +24,7 @@ class GatewayClient:
         self.seq = 0
         self.status, self.status_at = {}, -math.inf
         self.next_heartbeat = 0.0
+        self.orb_reset_at = -math.inf
         self.anchor_wait, self.anchor_result = None, None   # (보낸 시각, 그때의 anchor_count), applied/rejected/sent
 
     def _send(self, op, a=0.0, b=0.0, c=0.0):
@@ -48,6 +50,14 @@ class GatewayClient:
     def anchor(self, now):
         self._send(ANCHOR)
         self.anchor_wait, self.anchor_result = (now, self.status.get("anchor_count")), None
+
+    def orb_reset(self, now):
+        self._send(ORB_RESET)
+        self.orb_reset_at = now
+
+    def orb_reset_allowed(self, now):
+        """ORB RESET이 받아들여질 조건(TELEOP·상태 최신). 정지 여부는 묻지 않는다."""
+        return now - self.status_at <= STATUS_FRESH_S and self.status.get("mode") == "TELEOP"
 
     def anchor_allowed(self, now):
         """ANCHOR가 받아들여질 조건(TELEOP·정지 3초·ORB 정상·상태 최신)이 화면 상태로 충족되는가. 출발 구역은 anchor의 조건이 아니다."""
@@ -85,6 +95,8 @@ class GatewayClient:
     def _ready_lines(self, s, now):
         """TELEOP 때 보여 줄 준비 상태·anchor 결과·직전 회차 결과."""
         out, missing = [], s.get("missing") or []
+        if now - self.orb_reset_at <= ORB_RESET_NOTE_S:
+            out.append(("ORB reset requested - hold still until it recovers", "warn"))
         if "status" in missing:
             out.append(("NOT READY: no runner status (stack starting?)", "warn"))
         elif missing:

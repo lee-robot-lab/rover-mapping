@@ -43,7 +43,7 @@
     "runtime/ksrc_runtime/handheld_mapping/__init__.py": "44b21c4d9a91b613b12afef3f4fd149a657bc65a85160ab9c1dfb6605eaf0f28",
     "runtime/ksrc_runtime/handheld_mapping/color.py": "2b4d7f8e1139b82b82c99e9429ae06d52c334a26983546d551073461c7ca8772",
     "runtime/ksrc_runtime/handheld_mapping/compare.py": "d9d5cf37842f97d67b97f8abf22eea6ab70abd0c55a9a8218fc55a0c12b2b36b",
-    "runtime/ksrc_runtime/handheld_mapping/control_gateway.py": "69dcc25d1f4b31aed90b85d4e5bc6c5f337c7dd467817afd614b76e5309333fe",
+    "runtime/ksrc_runtime/handheld_mapping/control_gateway.py": "ead581d0202324dc0ac91065e0986ee51af7ea0ab40380876cf711904e5dae4b",
     "runtime/ksrc_runtime/handheld_mapping/costmap.py": "9020c6ac6b02229226677f15def6d364a080e61f0b0c83a77d440fdac52fc683",
     "runtime/ksrc_runtime/handheld_mapping/coverage_path.py": "eb9c1216c6a792741a85f4b076ae5ffd52ad836533ecef21fcdd41d4b9f2861f",
     "runtime/ksrc_runtime/handheld_mapping/depth_filter.py": "cf3161712d4ccb1844c326c9e2e66b7cfdc3b4d003bd5484d4ac5cfde9a3e16c",
@@ -83,6 +83,6 @@
   "adaptations": [
     "experiments namespace renamed to ksrc_runtime",
     "SiteMap.load(load_mesh=False) verifies grid and metadata; excludes unused mesh file hash",
-    "control_gateway: ANCHOR op (5) forwards the joystick ANCHOR button to the runner; snapshot passes runner stage/run/reason/anchor_count to the screen; velocity path unchanged"
+    "control_gateway: ANCHOR op (5) forwards the joystick ANCHOR button to the runner; snapshot passes runner stage/run/reason/anchor_count to the screen; ORB_RESET op (6) forwards the joystick ORB RESET button (TELEOP only); velocity path unchanged"
   ]
 }

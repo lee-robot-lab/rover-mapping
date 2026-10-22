@@ -142,6 +142,18 @@ def test_anchor_is_forwarded_to_runner_only_in_teleop_and_after_estop_hold():
     assert gateway.control(cg.ANCHOR, (0, 0, 0), 11.) and anchored == [1, 1]
 
 
+def test_orb_reset_is_forwarded_to_runner_only_in_teleop_and_after_estop_hold():
+    resets = []
+    gateway, _ = make(on_orb_reset=lambda: resets.append(1))
+    gateway.runner_status(dict(READY), 10.)
+    assert gateway.control(cg.ORB_RESET, (0, 0, 0), 10.1) and resets == [1]
+    gateway.control(cg.START, (1, 0, 0), 10.2)
+    assert not gateway.control(cg.ORB_RESET, (0, 0, 0), 10.3) and resets == [1]     # AUTO 중에는 받지 않는다
+    gateway.control(cg.ESTOP, (0, 0, 0), 10.4)
+    assert not gateway.control(cg.ORB_RESET, (0, 0, 0), 10.5) and resets == [1]     # 비상 정지 유지 시간
+    assert gateway.control(cg.ORB_RESET, (0, 0, 0), 11.) and resets == [1, 1]
+
+
 def test_snapshot_passes_runner_detail_to_the_screen_only_while_fresh():
     gateway, _ = make()
     gateway.runner_status(dict(READY, stage='entry30', run=1, reason='complete', anchor_count=2, done=True, active=False), 10.)

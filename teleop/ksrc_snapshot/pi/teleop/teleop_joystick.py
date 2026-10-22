@@ -57,10 +57,10 @@ LEFT_CENTER = (170, 190)
 RIGHT_CENTER = (470, 190)
 GRAB_SLACK = 1.4  # click within radius*GRAB_SLACK of center still grabs the pad
 ROTATION_SPEED_SCALE = 0.5  # 패드와 Q/E의 회전 명령만 50%로 제한
-GW_EXTRA_HEIGHT = 195  # --gateway: 창 아래에 버튼·상태 줄(최대 6줄)을 더한다
+GW_EXTRA_HEIGHT = 220  # --gateway: 창 아래에 버튼·상태 줄(최대 7줄)을 더한다
 GW_BUTTONS = {name: (x, HEIGHT + 12, w, 34) for name, x, w in
-              (("anchor", 16, 140), ("start1", 164, 140), ("start2", 312, 140), ("estop", 460, 164))}
-GW_LABELS = {"anchor": "ANCHOR", "start1": "START RUN 1", "start2": "START RUN 2", "estop": "E-STOP (Space)"}
+              (("orbreset", 16, 108), ("anchor", 132, 96), ("start1", 236, 118), ("start2", 362, 118), ("estop", 488, 136))}
+GW_LABELS = {"orbreset": "ORB RESET", "anchor": "ANCHOR", "start1": "START RUN 1", "start2": "START RUN 2", "estop": "E-STOP (Space)"}
 GW_COLORS = {"ok": (120, 220, 140), "warn": (240, 200, 90), "bad": (240, 110, 110)}
 
 
@@ -243,6 +243,9 @@ def run(args):
                     name = next(n for n, rect in gw_rects.items() if rect.collidepoint(event.pos))
                     if name == "estop":
                         gw.estop()
+                    elif name == "orbreset":
+                        if gw.orb_reset_allowed(time.monotonic()):   # AUTO 중에는 눌러도 보내지 않는다
+                            gw.orb_reset(time.monotonic())
                     elif name == "anchor":
                         if gw.anchor_allowed(time.monotonic()):   # 정지 3초·ORB 정상이 아니면 눌러도 보내지 않는다
                             gw.anchor(time.monotonic())
@@ -360,7 +363,7 @@ def run(args):
 
             if gw is not None:
                 for name, rect in gw_rects.items():
-                    disabled = name == "anchor" and not gw.anchor_allowed(now)   # 회색: 지금은 누를 수 없다
+                    disabled = (name == "anchor" and not gw.anchor_allowed(now)) or (name == "orbreset" and not gw.orb_reset_allowed(now))   # 회색: 지금은 누를 수 없다
                     pygame.draw.rect(screen, (150, 50, 50) if name == "estop" else (38, 40, 46) if disabled else (50, 70, 100), rect)
                     pygame.draw.rect(screen, (80, 80, 88) if disabled else (140, 140, 150), rect, 1)
                     label = font.render(GW_LABELS[name], True, (110, 110, 120) if disabled else (230, 230, 235))

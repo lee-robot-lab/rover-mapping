@@ -36,7 +36,8 @@ cd /home/su/rover-mapping
 
 | 순서 | 할 일 | 확인 |
 |---|---|---|
-| ① | `w` `x` `a` `d`(또는 패드)로 로버를 출발 위치에 맞춘다. 정면은 **site −y** | 실제 위치를 눈으로 확인 |
+| 먼저 | `NOT READY`에 `ORB not tracking`이 계속 뜨면 **`ORB RESET`** 버튼(대기 중에만 활성). 로버를 가만히 두고 카메라가 무늬 있는 곳을 보게 한다 | `ORB reset requested ...` 뒤 **약 10~15초**(ORB가 어휘를 읽고 초기화하는 시간)에 `ORB not tracking`이 사라짐. 그 사이 다시 누르지 않는다 |
+| ① | `w` `x` `a` `d`(또는 패드)로 로버를 출발 위치에 맞춘다. 정면은 **site −y**. 바퀴는 `w`를 잠깐 눌러 정면으로 맞춘다 | 실제 위치를 눈으로 확인 |
 | ② | 손을 떼고 **3초 이상 정지** | `NOT READY: hold still 1.2/3.0 s`가 올라가다 3.0이 되면 사라짐 |
 | ③ | **`ANCHOR`** 버튼 클릭. 정지 3초 전에는 버튼이 **회색**이라 눌리지 않는다 | `ANCHOR applied`(초록)와 `READY: START allowed` |
 | ④ | **`START RUN 1`** 버튼 클릭 | `MODE AUTO  RUN 1  <단계>` |
@@ -175,7 +176,7 @@ PI_AP_IP='192.168.0.101'
 | 2 | 오른쪽 원 `rotate` | 회전 패드. 가로로만 반응한다 |
 | 3 | 맨 위 글자 | 지금 내보내는 명령(`vx`, `vy`, `omega`)과 키 안내 |
 | 4 | `STM: ...` | 로버(STM)가 실제로 받은 명령. `no valid frame yet`이면 아직 응답이 없는 것이다 |
-| 5 | 버튼 줄 | `ANCHOR` · `START RUN 1` · `START RUN 2` · `E-STOP (Space)` |
+| 5 | 버튼 줄 | `ORB RESET` · `ANCHOR` · `START RUN 1` · `START RUN 2` · `E-STOP (Space)` |
 | 6 | 맨 아래 초록·노랑·빨강 글자 | gateway 상태 줄. 아래 표 참고 |
 
 키보드는 반드시 **`--grid-keys`로 실행**해야 한다(위 명령에 들어 있다). 이 옵션이 없으면 `qweasdzxc` 병진 키는 동작하지 않고 Q/E가 회전 키로만 쓰인다. 창을 클릭해 **포커스가 있는 상태**에서 누른다.
@@ -191,6 +192,7 @@ PI_AP_IP='192.168.0.101'
 | 오른쪽 패드 드래그 | 회전. 오른쪽=시계, 왼쪽=반시계 | 최대 0.4 rad/s. 끄는 동안은 `←` `→`를 무시한다 |
 | 병진 키 + 오른쪽 패드 | 호를 그리며 주행 | 마우스는 하나라 패드 둘을 동시에 못 끌기 때문에 병진은 키로 한다 |
 | Space 또는 `E-STOP` 버튼 | AUTO 해제·정지 요청 | GUI `MODE TELEOP`, B에서 명령 0 확인 |
+| `ORB RESET` 버튼 | ORB 프로세스만 재시작(스택·위치는 유지, 복구 절차를 거침) | **대기(TELEOP) 중에만 활성**이고 AUTO 중에는 회색이라 눌러도 보내지 않는다. 재시작 후 로버를 가만히 둔다 |
 | `ANCHOR` 버튼 | 지금 자세를 출발 preset으로 지정 | 로버는 움직이지 않는다. **정지 3초·ORB 정상일 때만 활성**이고 그 전에는 회색이라 눌러도 보내지 않는다. 5단계 참고 |
 | `START RUN 1` / `START RUN 2` | 해당 회차 AUTO 요청 | 먼저 아래 anchor·준비 조건 충족, B에서 수락 확인 |
 | Esc 또는 창 닫기 | GUI 종료 | AUTO 취소를 보장하지 않음. 먼저 E-STOP 확인 후 닫기 |
@@ -209,6 +211,7 @@ PI_AP_IP='192.168.0.101'
 | `ANCHOR sent (this stack cannot confirm; ...)`(노랑) | 옛 스택이라 확인 불가. B의 `operator_anchor` 이벤트로 확인 |
 | `RUN n COMPLETE - back to TELEOP`(초록) / `RUN n FAILED (원인) - back to TELEOP`(빨강) / `RUN n stopped by operator`(노랑) | 직전 회차의 결과. 다음 START 때까지 남아 있다 |
 | `ORB recovering - robot holds still` | 센서 공백으로 복구 중. 로버는 정지하고 복구되면 이어서 진행한다 |
+| `ORB reset requested - hold still until it recovers`(노랑, 3초) | `ORB RESET`을 보냈다. 이후 `ORB recovering`이 뜨고 정지 0.5초·안정 프레임이 쌓이면 복구된다 |
 | `last start rejected: ...` | 마지막 START가 거절된 이유 |
 | `GATEWAY: no status (check Pi gateway)`(빨강) | Pi에서 상태가 오지 않는다. 스택 실행·IP·포트 5006 확인 |
 
@@ -370,6 +373,7 @@ Pi에서 FAKE 연결·plan 분리·정상 종료·정책 주기 NPZ·부하 기�
 | `run=0`, 대기 | 회차 미시작 | 출발 준비 확인 후 START. 3분 기다리는 단계가 아님 |
 | `START 가능` | 추정 좌표·정지·센서 조건 충족 | 실제 배치 확인 후만 START. 실제 맵 자동 인식 판정 아님 |
 | AUTO 중 출발좌표 미정렬 | 출발점에서 이동함 | 이것만으로 실패 아님. 단계·복구·명령 관찰 |
+| `ORB not tracking`이 안 풀림 | 영상에 특징점이 없거나(흰 벽·가림·어두움) ORB가 멈춤 | 로버를 정지시키고 무늬 있는 곳을 보게 한다. ORB 프레임이 **10초 넘게 끊기면 스택이 ORB를 한 번 자동 재시작**하고, ORB가 올라오는 데 약 10초가 걸린다(그 뒤 30초는 다시 재시작하지 않음). 40초가 지나도 안 풀리면 GUI `ORB RESET` 또는 `touch "$TEST_DIR/restart_orb"`. 그래도 안 되면 `orb.log`·`supervisor.log` 확인 (`ls -d $TEST_DIR/orb_* | wc -l`이 계속 늘면 ORB가 반복해서 죽는 것) |
 | `start_rejected` | 요청 거부 | B 화면의 센서·정지 3초·출발 정렬 조건 확인 |
 | `복구 중` | 센서 공백/ORB 원점 재연결 | 명령 0 유지 확인. 로버를 옮기지 않기 |
 | `부하=수집 중`, 실행 스택 종료 | 두 프로세스의 종료 시간이 다름 | NPZ 저장과 별개. 원래 지정한 수집 시간까지 기다리거나 현재 구간으로 report |
