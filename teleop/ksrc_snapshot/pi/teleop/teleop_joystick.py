@@ -47,7 +47,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # pi/ -> import common.*
 from common.nucleo_link import (TLM_FLAG_GATE_PENDING, TLM_FLAG_WATCHDOG,
                                 encode_velocity_cmd)
-from joystick_math import (apply_deadzone, clamp_to_unit_circle, left_pad_to_linear,
+from gateway_client import GatewayClient
+from joystick_math import (apply_deadzone, clamp_to_unit_circle, grid_keys_to_linear, left_pad_to_linear,
                            lock_low_speed_direction, right_pad_to_angular, snap_to_axes)
 
 WIDTH, HEIGHT = 640, 380
@@ -56,6 +57,11 @@ LEFT_CENTER = (170, 190)
 RIGHT_CENTER = (470, 190)
 GRAB_SLACK = 1.4  # click within radius*GRAB_SLACK of center still grabs the pad
 ROTATION_SPEED_SCALE = 0.5  # 패드와 Q/E의 회전 명령만 50%로 제한
+GW_EXTRA_HEIGHT = 150  # --gateway: 창 아래에 버튼·상태 줄을 더한다
+GW_BUTTONS = {name: (x, HEIGHT + 12, w, 34) for name, x, w in
+              (("start1", 16, 190), ("start2", 216, 190), ("estop", 416, 208))}
+GW_LABELS = {"start1": "START RUN 1", "start2": "START RUN 2", "estop": "E-STOP (Space)"}
+GW_COLORS = {"ok": (120, 220, 140), "warn": (240, 200, 90), "bad": (240, 110, 110)}
 
 
 class Pad:
@@ -142,6 +148,7 @@ def run(args):
     spi_mode = getattr(args, "spi", False)
     last_tlm = None   # --spi: 가장 최근 텔레메트리
     n_spi_bad = 0
+    gw = None   # --gateway: Pi 중계(control_gateway)와 주고받는 클라이언트
     if ros_mode:
         sink = RosSink(getattr(args, "topic", "/cmd_vel"))
         send = sink.send
@@ -155,7 +162,9 @@ def run(args):
         usock.setblocking(False)
         pkt = struct.Struct("<4sIfff")
         useq = 0
-        print(f"[udp] -> {dest[0]}:{dest[1]} (라파에서 udp_spi_bridge.py 실행 중이어야 함)")
+        if getattr(args, "gateway", False):
+            gw = GatewayClient(usock, dest)
+        print(f"[udp] -> {dest[0]}:{dest[1]} (라파에서 " + ("control_gateway.py" if gw else "udp_spi_bridge.py") + " 실행 중이어야 함)")
 
         def send(vx, vy, omega):
             nonlocal useq, last_tlm
@@ -170,9 +179,12 @@ def run(args):
                 except (BlockingIOError, OSError):
                     break
                 try:
-                    last_tlm = json.loads(data)
+                    message = json.loads(data)
                 except ValueError:
-                    pass
+                    continue
+                if gw is not None and gw.consume(message, time.monotonic()):
+                    continue   # 중계의 상태 방송은 STM 텔레메트리와 따로 보관한다
+                last_tlm = message
     elif spi_mode:
         from common.nucleo_link import SpiLink
         link = SpiLink(args.spi_bus, args.spi_dev, args.spi_speed)
@@ -203,7 +215,7 @@ def run(args):
         print("[monitor] PC > 는 보낸 값, STM> 는 펌웨어가 받은 값 (텔레옵 시작 후 5Hz)")
 
     pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    screen = pygame.display.set_mode((WIDTH, HEIGHT + (GW_EXTRA_HEIGHT if gw else 0)))
     pygame.display.set_caption("KSRC swerve teleop (joystick)")
     font = pygame.font.SysFont(None, 22)
     clock = pygame.time.Clock()
@@ -215,14 +227,24 @@ def run(args):
     next_send = time.monotonic()
     last_dir = None   # 직전에 내보낸 병진 방향 (저속 방향 고정용)
     running = True
+    gw_rects = {name: pygame.Rect(*box) for name, box in GW_BUTTONS.items()}
 
     try:
         while running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+                elif gw is not None and event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+                    gw.estop()
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     running = False
+                elif gw is not None and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 \
+                        and any(rect.collidepoint(event.pos) for rect in gw_rects.values()):
+                    name = next(n for n, rect in gw_rects.items() if rect.collidepoint(event.pos))
+                    if name == "estop":
+                        gw.estop()
+                    else:
+                        gw.start(1 if name == "start1" else 2)
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if left_pad.contains(event.pos):
                         left_pad.start_drag(event.pos)
@@ -252,20 +274,30 @@ def run(args):
                 lnx, lny, last_dir, getattr(args, "hold_mag", 0.0),
                 getattr(args, "hold_deg", 180.0))
             vx, vy = left_pad_to_linear(lnx, lny, args.max_lin)
+            grid = getattr(args, "grid_keys", False)   # --grid-keys: qweasdzxc 가 병진, 화살표가 회전
+            if grid and not left_pad.dragging:
+                pressed = {c for c in "qweasdzxc" if keys[getattr(pygame, "K_" + c)]}
+                vx, vy = grid_keys_to_linear(pressed, args.max_lin, getattr(args, "key_speed", 0.5))
             if right_pad.dragging:
                 rnx, _ = apply_deadzone(right_pad.nx, 0.0, dz)
                 omega = right_pad_to_angular(rnx, args.max_ang)
-            elif keys[pygame.K_q] and not keys[pygame.K_e]:
+            elif grid and keys[pygame.K_LEFT] and not keys[pygame.K_RIGHT]:
                 omega = args.max_ang
-            elif keys[pygame.K_e] and not keys[pygame.K_q]:
+            elif grid and keys[pygame.K_RIGHT] and not keys[pygame.K_LEFT]:
+                omega = -args.max_ang
+            elif not grid and keys[pygame.K_q] and not keys[pygame.K_e]:
+                omega = args.max_ang
+            elif not grid and keys[pygame.K_e] and not keys[pygame.K_q]:
                 omega = -args.max_ang
             else:
                 omega = 0.0
             omega *= ROTATION_SPEED_SCALE
-            if keys[pygame.K_SPACE]:
+            if keys[pygame.K_SPACE] or (grid and keys[pygame.K_s]):
                 vx = vy = omega = 0.0
 
             now = time.monotonic()
+            if gw is not None:
+                gw.tick(now)
             if now >= next_send:
                 send(vx, vy, omega)
                 next_send = now + period
@@ -311,6 +343,9 @@ def run(args):
             help_text = "drag pads with mouse | Q/E rotate | space=stop | Esc=quit"
             screen.blit(font.render(readout, True, (220, 220, 230)), (16, 16))
             screen.blit(font.render(help_text, True, (140, 140, 150)), (16, 44))
+            if grid:
+                screen.blit(font.render("keys: w/x fwd/back  a/d strafe  q e z c diagonal  arrows rotate  s=stop",
+                                        True, (140, 170, 140)), (16, 66))
             if tlm_mode:
                 if last_tlm is not None:
                     c = last_tlm["cmd"]
@@ -319,6 +354,15 @@ def run(args):
                 else:
                     stm = f"STM: no valid frame yet  crc_bad={n_spi_bad}"
                 screen.blit(font.render(stm, True, (120, 220, 140)), (16, HEIGHT - 30))
+
+            if gw is not None:
+                for name, rect in gw_rects.items():
+                    pygame.draw.rect(screen, (150, 50, 50) if name == "estop" else (50, 70, 100), rect)
+                    pygame.draw.rect(screen, (140, 140, 150), rect, 1)
+                    label = font.render(GW_LABELS[name], True, (230, 230, 235))
+                    screen.blit(label, (rect.centerx - label.get_width() // 2, rect.centery - label.get_height() // 2))
+                for row, (text, tone) in enumerate(gw.lines(now)):
+                    screen.blit(font.render(text, True, GW_COLORS[tone]), (16, HEIGHT + 56 + 22 * row))
 
             pygame.display.flip()
             clock.tick(60)
@@ -372,6 +416,13 @@ def main():
     ap.add_argument("--hold-mag", type=float, default=0.35,
                     help="이 크기(반경 비율) 미만에서는 바퀴 축을 크게 바꾸는 방향을 0 으로 "
                          "(우->좌 전환 중 중앙을 스쳐도 조향이 돌지 않음). 0 이면 끔")
+    ap.add_argument("--grid-keys", action="store_true",
+                    help="키보드 격자: w/x 전후, a/d 좌우, q/e/z/c 대각선, s 정지, 화살표 좌우 회전 (Q/E 회전은 꺼진다)")
+    ap.add_argument("--key-speed", type=float, default=0.5,
+                    help="--grid-keys 에서 키를 누를 때 병진 속력 = max-lin 의 이 비율")
+    ap.add_argument("--gateway", action="store_true",
+                    help="--udp 와 함께: Pi 의 control_gateway.py(기본 포트 5006)와 연동. 하트비트·시작·비상 "
+                         "버튼과 상태 줄을 더한다. 없으면 기존 동작 그대로")
     ap.add_argument("--hold-deg", type=float, default=20.0,
                     help="--hold-mag 미만에서 허용하는 바퀴 축 변화 (도). 정반대 방향은 항상 허용")
     args = ap.parse_args()

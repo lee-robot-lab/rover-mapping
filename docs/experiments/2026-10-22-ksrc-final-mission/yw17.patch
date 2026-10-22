@@ -1,0 +1,196 @@
+diff -ru '--exclude=__pycache__' code_yw17/experiments_base_yw16/handheld_mapping/region_mission.py code_yw17/experiments/handheld_mapping/region_mission.py
+--- code_yw17/experiments_base_yw16/handheld_mapping/region_mission.py	2026-10-22 01:35:41.698086777 +0900
++++ code_yw17/experiments/handheld_mapping/region_mission.py	2026-10-22 17:50:58.171659572 +0900
+@@ -22,13 +22,15 @@
+ class RegionMission:
+     """추정·관측 기반 임무 전이와 지역 MPPI를 기존 속도 명령 인터페이스에 연결한다."""
+ 
+-    def __init__(self, mission, *, planner=None, safety=None, hold_s: float = 0.) -> None:
++    def __init__(self, mission, *, planner=None, safety=None, hold_s: float = 0., scenario: dict | None = None) -> None:
+         self.mission, self.settings, self.safety = mission, mission.settings, safety
+-        self.regions = json.loads((ASSETS/'gyusa_regions.json').read_text())['regions']
+-        self.portals = json.loads((ASSETS/'gyusa_region_portals.json').read_text())['portals']
+-        self.graph = RegionGraph(self.regions, self.portals);self.belief = RegionBelief(self.graph, 1)
+-        if self.graph.distance(1, mission.start[:2]) > 0:
+-            raise ValueError('region-mppi requires the gyusa region map and start region1')
++        self.scenario = scenario or {}   # 경기장별 구역·통로·단계 좌표(scenario.json). 없으면 옛 gyusa 경기장 값을 쓴다
++        self.regions = self.scenario['regions'] if 'regions' in self.scenario else json.loads((ASSETS/'gyusa_regions.json').read_text())['regions']
++        self.portals = self.scenario['portals'] if 'portals' in self.scenario else json.loads((ASSETS/'gyusa_region_portals.json').read_text())['portals']
++        self.start_region = int(self.scenario.get('start_region', 1))
++        self.graph = RegionGraph(self.regions, self.portals);self.belief = RegionBelief(self.graph, self.start_region)
++        if self.graph.distance(self.start_region, mission.start[:2]) > 0:
++            raise ValueError('region-mppi requires the start inside the start region of the region map')
+         if planner is None:
+             from experiments.handheld_mapping.terrain_mppi import TerrainMppi
+             planner = TerrainMppi(mission.site, max_speed=min(.15, self.settings['max_speed_m_s']),
+@@ -42,7 +44,7 @@
+         self.events: list[dict] = [];self.blocked_edges: set[tuple[int, int]] = set()
+         self.last_stamp = None;self.last_position = None;self.last_belief_stamp = -math.inf
+         self.phase_elapsed = 0.;self.effort = 0.;self.progress = deque();self.breadcrumbs = []
+-        self.phase_start_s=0.;self.trial30_forward_s=0.
++        self.phase_start_s=0.;self.trial30_forward_s=0.;self.turn_target=0.;self.turn_settle=0.
+         self.progress_anchor = self.progress_stamp = None;self.progress_effort = 0.
+         self.plan_profile = None
+         self.command = dict(vx_m_s=0., yaw_rate_rad_s=0.)
+@@ -51,7 +53,8 @@
+         self.sensor_status = None;self.paused = False;self.pose_epoch = None;self.blocked_since = None;self.obstacles_ignored = False
+         self.plan_offset = np.zeros(2)   # 벽 측정(--wall-plan)으로 구한 계획용 위치 보정(월드 XY, 추정기는 그대로)
+         self.corner_gate = False;self.front_obs = None;self.corner_hold = False;self.corner_wait = None;self.corner_logged = set()   # 모서리 전용 넘어가는 조건(--corner-gate)
+-        self.CORNER_GATE = {'return9': dict(prev=(6.1, -.4), target=(6.1, -1.2)), 'return7': dict(prev=(5.25, -1.2), target=(2.9, -1.2))}
++        self.CORNER_GATE = ({k: dict(v) for k, v in self.scenario['corner_gate'].items()} if 'corner_gate' in self.scenario
++                            else {'return9': dict(prev=(6.1, -.4), target=(6.1, -1.2)), 'return7': dict(prev=(5.25, -1.2), target=(2.9, -1.2))})
+         s = mission.site;yy, xx = np.indices(s.observed.shape)
+         xy = np.stack([s.origin[0]+(xx+.5)*s.resolution, s.origin[1]+(yy+.5)*s.resolution], axis=-1)
+         self.region_masks = {}
+@@ -60,7 +63,7 @@
+             mask = np.zeros(s.observed.shape, np.uint8)
+             cells = np.round((polygon-s.origin)/s.resolution-.5).astype(np.int32)
+             cv2.fillPoly(mask, [cells], 1);self.region_masks[k] = mask.astype(bool)
+-        self._belief_output = dict(current_region=1, candidates=[1], probabilities={str(k): float(k == 1) for k in self.graph.regions})
++        self._belief_output = dict(current_region=self.start_region, candidates=[self.start_region], probabilities={str(k): float(k == self.start_region) for k in self.graph.regions})
+ 
+     def observe_depth(self, observation: dict) -> None:
+         """독립 stereo 관측을 저장하며 전방 구역을 현재 구역으로 대입하지 않는다."""
+@@ -122,6 +125,43 @@
+         self.progress_anchor = self.progress_stamp = None
+         self._event('region_phase', stamp, stage=stage)
+ 
++    def _begin_descent(self, stamp: float) -> None:
++        """정상에서 바깥 고리 하행(return10…return1)을 시작한다."""
++        self.visits['return'] = 'active';self.visits['entry10'] = 'active'
++        self.route, self.direction = '10', 'down';self._phase('return10', 'descending', stamp)
++
++    @staticmethod
++    def _bearing(xy: np.ndarray, point) -> float:
++        """xy에서 point를 향하는 방위각(rad)."""
++        return math.atan2(float(point[1])-float(xy[1]), float(point[0])-float(xy[0]))
++
++    def _start_turn(self, stage: str, heading: float, stamp: float) -> None:
++        """제자리 회전 단계를 시작한다."""
++        self._phase(stage, 'turning', stamp);self.turn_target, self.turn_settle = heading, 0.
++
++    def _turn_hold(self, stamp: float, yaw: float, dt: float) -> dict:
++        """정상 관찰 단계: 목표 방향으로 제자리 회전(느리게)하고, 도착하면 정지해 hold_s 동안 서 있다가 하행 방향으로 돌아선다."""
++        look = self.scenario['look']
++        if self.state == 'holding':
++            self.command = dict(vx_m_s=0., yaw_rate_rad_s=0.)
++            if self.phase_elapsed >= float(look.get('hold_s', 4.)):
++                back = look.get('back_heading_rad')   # 관찰 뒤 돌아설 방향(없으면 하행 첫 목표 방향)
++                self._start_turn('look_back', float(back) if back is not None else self._bearing(self.last_position, self.scenario['goals']['return10']['target']), stamp)
++        else:
++            error = (self.turn_target-yaw+math.pi) % (2*math.pi)-math.pi
++            rate = float(look.get('turn_rate_rad_s', .1))
++            if abs(error) <= math.radians(float(look.get('tol_deg', 3.))):
++                self.turn_settle += dt;self.command = dict(vx_m_s=0., yaw_rate_rad_s=0.)
++                if self.turn_settle >= .5:
++                    if self.stage == 'look_face':self._phase('look_hold', 'holding', stamp)
++                    elif 'look_exit' in self.scenario.get('goals', {}):self._phase('look_exit', 'to_look_exit', stamp)   # 복도를 똑바로 나온 뒤 하행
++                    else:self._begin_descent(stamp)
++            else:
++                self.turn_settle = 0.
++                self.command = dict(vx_m_s=0., yaw_rate_rad_s=math.copysign(min(rate, max(.03, 1.5*abs(error))), error))
++        return self._output('active', dict(next_region=None, portal_segment_xy_m=None, target_xy_m=self.last_position.tolist(), guidance_valid=True,
++                                          obstacles_ignored=False, selected_trajectory=[], candidate_trajectories=[]))
++
+     def _fail_ascent(self, stamp: float, reason: str) -> None:
+         """시도한 통로만 이번 임무에서 막고 지나온 구역으로 후퇴한다."""
+         policy_stop=reason=='trial_budget'
+@@ -149,6 +189,8 @@
+ 
+     def _goal(self) -> tuple[np.ndarray, list[int], tuple[int, int] | None, bool]:
+         """목표는 통로/구역 영역이다. 기존 route CSV를 읽지 않는다."""
++        goal = self.scenario.get('goals', {}).get(self.stage)
++        if goal is not None:return np.array(goal['target'], float), list(goal['regions']), (tuple(goal['edge']) if goal.get('edge') else None), bool(goal.get('reverse', False))
+         if self.stage == 'entry30':return np.array([3.8, .4]), [1], (1, 2), False
+         if self.stage == 'ascent30':
+             center, normal, clearance = self._ascent_exit()
+@@ -226,6 +268,7 @@
+             self._belief_output = self.belief.update(stamp, likelihood, xy);self.last_belief_stamp = stamp
+         if not self.breadcrumbs or np.linalg.norm(xy-np.array(self.breadcrumbs[-1])) >= .025:
+             self.breadcrumbs.append(xy.tolist())
++        if self.state in ('turning', 'holding'):return self._turn_hold(stamp, yaw, dt)
+         target, regions, edge, reverse = self._goal();distance = float(np.linalg.norm(xy-target))
+         self.effort += max(0., self.command['vx_m_s'])*dt
+         self.progress.append((stamp, xy.copy(), self.effort))
+@@ -267,7 +310,7 @@
+                 self._fail_ascent(stamp,'tilt_limit' if tilted else 'trial_budget' if policy_stop else 'no_progress')
+                 target, regions, edge, reverse = self._goal()
+                 distance = float(np.linalg.norm(xy-target))
+-        arrived = distance <= .14
++        arrived = distance <= float(self.scenario.get('goals', {}).get(self.stage, {}).get('arrive_m', .14))   # 단계별 도착 반경(scenario goals의 arrive_m), 기본 0.14 m
+         if self.state == 'ascending':
+             center, normal, clearance = self._ascent_exit()
+             arrived = arrived and self.graph.distance(4, xy) <= 1e-7 and (xy-center)@normal >= clearance-1e-6
+@@ -289,15 +332,21 @@
+                 self.state = 'failed';self._event('mission_failed', stamp, reason='ascent_routes_exhausted')
+                 return self._stop('ascent_routes_exhausted')
+             elif self.stage == 'summit':
+-                self.visits['summit'] = 'reached';self.visits['return'] = 'active';self.visits['entry10'] = 'active'
+-                self.route, self.direction = '10', 'down';self._phase('return10', 'descending', stamp)
++                self.visits['summit'] = 'reached'
++                if self.settings.get('summit_look') and 'look' in self.scenario:self._phase('look_go', 'to_look', stamp)
++                else:self._begin_descent(stamp)
++            elif self.stage == 'look_go':
++                self._start_turn('look_face', self._bearing(xy, self.scenario['look']['face']), stamp)
++            elif self.stage == 'look_exit':
++                self._begin_descent(stamp)
+             elif self.stage == 'return1':
+                 self.visits['return'] = self.visits['entry10'] = 'reached';self.route_status['10']['down'] = 'succeeded'
+                 self.state = 'complete';self._event('mission_complete', stamp);return self._stop('complete')
+             else:
+                 stages = ['return10', 'return9', 'return8', 'return7', 'return6', 'return1']
+                 self._phase(stages[stages.index(self.stage)+1], 'descending', stamp)
+-            target, regions, edge, reverse = self._goal()
++            if self.state not in ('turning', 'holding'):target, regions, edge, reverse = self._goal()
++        if self.state in ('turning', 'holding'):return self._turn_hold(stamp, yaw, dt)
+         if self.corner_hold:
+             info = self.CORNER_GATE[self.stage];target = target+info['dir']*info['extend']   # 앞벽이 아직 멀면 목표를 조금 연장해 직진을 이어간다
+         scale = 1. if self.sensor_status is None else self.sensor_status['scale']
+@@ -331,6 +380,8 @@
+             return self._stop('local_plan_blocked', True)
+         self.blocked_since = None
+         self.command = self.last_plan['command'].copy()
++        if 'steep_pitch_deg' in self.scenario and self.state in ('ascending', 'retreating') and abs(pitch) > math.radians(float(self.scenario['steep_pitch_deg'])):
++            self.command['yaw_rate_rad_s'] = 0.   # 급경사 위에서 조향을 돌리면 미끄러져 뒤집힌다(새 맵 시뮬 시드 4·9 전복). 직진·직후진만 한다
+         portal = None if edge is None else self.graph.portals[tuple(sorted(edge))].tolist()
+         return self._output('active', dict(next_region=None if edge is None else edge[1],
+             portal_segment_xy_m=portal, target_xy_m=target.tolist(), guidance_valid=True,
+diff -ru '--exclude=__pycache__' code_yw17/experiments_base_yw16/handheld_mapping/site_mission.py code_yw17/experiments/handheld_mapping/site_mission.py
+--- code_yw17/experiments_base_yw16/handheld_mapping/site_mission.py	2026-10-22 01:35:41.697086757 +0900
++++ code_yw17/experiments/handheld_mapping/site_mission.py	2026-10-22 16:29:05.287090603 +0900
+@@ -24,8 +24,9 @@
+ DEFAULT_SETTINGS.update(follower_blend=0.,blend_heading_hold=0.,blend_max_yaw_rate_rad_s=.09,blend_ramp_slope_deg=8.,
+                         blend_ramp_resume_deg=15.,blend_ramp_stop_deg=25.,blend_dir_rate_rad_s=1.,
+                         blend_realign_stop_deg=90.,blend_realign_resume_deg=45.)   # 병진 방향 오차가 stop을 넘으면 정지·재정렬, resume 이하에서 출발   # follower_blend=1이면 yaw·vy 혼합 추종기(blend_follower.py)
++DEFAULT_SETTINGS['summit_look']=0.   # 1이면 정상에서 30° 램프 쪽으로 돌아 잠깐 서서 관찰한 뒤 하행 방향으로 돌아선다(scenario.json의 look 필요)
+ DEFAULT_SETTINGS['descent_speed_scale']=1.   # 내리막(descending) 상태에서 MPPI 최대 속도·회전·옆걸음에 곱하는 비율(1이면 그대로)
+-ZERO_ALLOWED=('stanley_gain','follower_blend','blend_heading_hold','trial30_forward_limit_s','trial30_elapsed_limit_s')
++ZERO_ALLOWED=('summit_look','stanley_gain','follower_blend','blend_heading_hold','trial30_forward_limit_s','trial30_elapsed_limit_s')
+ 
+ 
+ def dense_path(points: np.ndarray, spacing: float=.05) -> np.ndarray:
+diff -ru '--exclude=__pycache__' code_yw17/experiments_base_yw16/site_sim/run.py code_yw17/experiments/site_sim/run.py
+--- code_yw17/experiments_base_yw16/site_sim/run.py	2026-10-21 23:02:24.028113350 +0900
++++ code_yw17/experiments/site_sim/run.py	2026-10-22 16:29:05.291090602 +0900
+@@ -353,7 +353,11 @@
+             from experiments.handheld_mapping.region_mission import RegionMission
+             from experiments.handheld_mapping.region_observation import RegionObservation
+             from experiments.handheld_mapping.sensor_safety import SensorSafety
+-            runtime=RegionMission(mission,safety=SensorSafety(require_imu=True),hold_s=args.start_hold_s)
++            scenario_path=Path(args.mission)/'scenario.json'   # 새 경기장: 구역·통로·단계 좌표. 없으면 옛 gyusa 경기장 값
++            scenario=json.loads(scenario_path.read_text()) if scenario_path.exists() else None
++            if scenario and 'regions_file' in scenario:
++                regions_data=json.loads((Path(args.mission)/scenario['regions_file']).read_text());scenario['regions']=regions_data['regions'];scenario['portals']=regions_data['portals']
++            runtime=RegionMission(mission,safety=SensorSafety(require_imu=True),hold_s=args.start_hold_s,scenario=scenario)
+             runtime.corner_gate=bool(args.corner_gate)
+             runtime.planner.max_lateral=float(args.mppi_vy);runtime.planner.clearance_weight=float(args.mppi_clearance);runtime.planner.clearance_margin=float(args.mppi_clearance_margin)
+             observation_cal=json.loads((Path(args.output)/'stereo/calibration.json').read_text())
+@@ -489,7 +493,7 @@
+                                     m=wall_track.measure(left[:,:,:3],body[:2,3].copy(),float(yaw_est),float(roll),float(pitch),rate)
+                                 else:m=dict(reason='stage',lateral_delta=None,front_delta=None,axis=None,lateral_err=None,front_d=None,width=None)
+                                 if runtime is not None and runtime.corner_gate:
+-                                    cf=wall_track.front_only(left[:,:,:3],float(yaw_est),float(roll),float(pitch),rate) if runtime.stage in ('return9','return7') and runtime.state == 'descending' else None
++                                    cf=wall_track.front_only(left[:,:,:3],float(yaw_est),float(roll),float(pitch),rate) if runtime.stage in runtime.CORNER_GATE and runtime.state == 'descending' else None
+                                     track_corner=(track_corner+[cf['d']])[-3:] if cf is not None and cf['d'] is not None else []
+                                     runtime.front_obs=dict(stamp=stamp_ns*1e-9,d=float(np.median(track_corner))) if len(track_corner)==3 and max(track_corner)-min(track_corner)<=.04 else None
+                                 track_lat=(track_lat+[m['lateral_delta']])[-3:] if m['lateral_delta'] is not None else (track_lat[-3:] if not m['reason'] else [])

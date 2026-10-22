@@ -108,3 +108,23 @@ def left_pad_to_linear(nx: float, ny: float, max_lin_mps: float):
 def right_pad_to_angular(nx: float, max_ang_rps: float):
     """오른쪽으로 끌면 시계방향 = omega 음수 (차체 omega 는 반시계가 +)."""
     return -nx * max_ang_rps
+
+
+GRID_KEY_DIRS = {"w": (1, 0), "x": (-1, 0), "a": (0, 1), "d": (0, -1),
+                 "q": (1, 1), "e": (1, -1), "z": (-1, 1), "c": (-1, -1)}   # (전진 vx, 좌측 vy) 방향, 차체 y 는 좌측이 +
+
+
+def grid_keys_to_linear(pressed, max_lin_mps: float, scale: float):
+    """qweasdzxc 격자 키(누른 글자 집합)를 (vx, vy)로 바꾼다.
+
+    누른 방향을 더해 단위 길이로 맞추므로 대각선도 직진과 같은 속력이다. 반대 키가 같이 눌리면 상쇄되고,
+    s 가 눌려 있으면 정지다. 속력은 max_lin * scale.
+    """
+    if "s" in pressed:
+        return 0.0, 0.0
+    sx = sum(GRID_KEY_DIRS[k][0] for k in pressed if k in GRID_KEY_DIRS)
+    sy = sum(GRID_KEY_DIRS[k][1] for k in pressed if k in GRID_KEY_DIRS)
+    norm = math.hypot(sx, sy)
+    if norm == 0.0:
+        return 0.0, 0.0
+    return sx / norm * max_lin_mps * scale, sy / norm * max_lin_mps * scale
