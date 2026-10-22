@@ -220,10 +220,10 @@ def run(args: argparse.Namespace) -> dict:
         world.set_simulation_dt(physics_dt=.005,rendering_dt=control_dt)
         print('SITE_SIM_STAGE physics_initialization',flush=True)
         world.initialize_physics();robot.initialize()
-        from experiments.site_sim.start_noise import start_offset
+        from experiments.site_sim.start_noise import start_offset, set_start_pose
         offset_x,offset_y,offset_yaw=start_offset(int(getattr(args,'start_seed',0)),float(getattr(args,'start_noise_xy_m',0.)),float(getattr(args,'start_noise_yaw_deg',0.)))
-        yaw=float(mission.start[2])+offset_yaw;position0,_=robot.get_world_pose()
-        robot.set_world_pose(position=np.asarray(position0,float)+np.array([offset_x,offset_y,0.]),orientation=np.array([math.cos(yaw/2),0,0,math.sin(yaw/2)]))
+        yaw=float(mission.start[2])+offset_yaw
+        set_start_pose(robot, yaw, offset_x, offset_y)
         atomic_json(Path(args.output)/'start_perturbation.json',{'dx_m':offset_x,'dy_m':offset_y,'dyaw_rad':offset_yaw,'seed':int(getattr(args,'start_seed',0)),
             'note':'로버만 이만큼 틀어 놓고 추정기는 이상적인 시작 자세를 믿는다'})
         session=DriveSession(robot,args.geometry);world.play()
@@ -234,6 +234,11 @@ def run(args: argparse.Namespace) -> dict:
             if time.monotonic()-wall_start>args.max_wall_s:raise TimeoutError('startup wall timeout')
             session.stop();world.step(render=i%20==0)
         p,q=robot.get_world_pose()
+        actual_yaw=math.atan2(2.*(q[0]*q[3]+q[1]*q[2]),1.-2.*(q[2]**2+q[3]**2))
+        yaw_error=math.atan2(math.sin(actual_yaw-yaw),math.cos(actual_yaw-yaw))
+        atomic_json(Path(args.output)/'start_heading.json',{'requested_yaw_rad':yaw,'actual_yaw_rad':actual_yaw,
+                    'error_deg':math.degrees(yaw_error),'tolerance_deg':5.})
+        if abs(yaw_error)>math.radians(5.):raise ValueError(f'rover start heading mismatch: {math.degrees(yaw_error):.3f} deg')
         if not np.isfinite(np.r_[p,q]).all() or np.linalg.norm(p[:2]-mission.start[:2])>.1 or not ground+.08<p[2]<ground+.35:
             raise ValueError(f'rover settling failed: {p}')
         if getattr(args,'estimator',False):

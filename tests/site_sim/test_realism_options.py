@@ -23,6 +23,38 @@ CALIBRATION = {'ROS.T_c1_base': np.eye(4).tolist(), 'IMU.T_b_c1': np.eye(4).toli
                'IMU.NoiseGyro': .00017, 'IMU.NoiseAcc': .002, 'IMU.GyroWalk': .00002, 'IMU.AccWalk': .003}
 
 
+def test_start_heading_survives_physics_reset():
+    from experiments.site_sim import start_noise
+
+    class ResettableRobot:
+        """현재 pose와 reset pose를 분리한 articulation 대역."""
+
+        def __init__(self):
+            self.position = np.array([3.6, 2.82, .52])
+            self.orientation = np.array([1., 0., 0., 0.])
+            self.default_position = self.position.copy()
+            self.default_orientation = self.orientation.copy()
+
+        def get_world_pose(self):
+            return self.position.copy(), self.orientation.copy()
+
+        def set_world_pose(self, position, orientation):
+            self.position, self.orientation = position.copy(), orientation.copy()
+
+        def set_default_state(self, position, orientation):
+            self.default_position, self.default_orientation = position.copy(), orientation.copy()
+
+        def post_reset(self):
+            self.set_world_pose(self.default_position, self.default_orientation)
+
+    robot = ResettableRobot()
+    start_noise.set_start_pose(robot, -math.pi / 2, .02, -.01)
+    robot.post_reset()
+    assert robot.position == pytest.approx([3.62, 2.81, .52])
+    rotation = Rotation.from_quat(np.r_[robot.orientation[1:], robot.orientation[0]])
+    assert rotation.apply([1., 0., 0.]) == pytest.approx([0., -1., 0.], abs=1e-12)
+
+
 def test_delay_is_within_range_ordered_and_clearable():
     delay = ActuationDelay(.0176, .0465, seed=1)
     assert delay.pop(0.) is None

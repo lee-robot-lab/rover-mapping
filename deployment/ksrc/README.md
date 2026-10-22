@@ -61,16 +61,16 @@ cd /home/pi/ksrc_final_20261022/deployment/ksrc
 
 ```bash
 # 노트북: 아래 문자열을 실제 AP 내부망 Pi IP로 교체
-PI_AP_IP='192.168.50.2'
+PI_AP_IP='192.168.0.101'
 ping -c 3 "$PI_AP_IP"
-ssh pi@"$PI_AP_IP"
+ssh -o HostKeyAlias=raspberrypi.local pi@"$PI_AP_IP"
 
 # 이후 Pi SSH 터미널
 cd /home/pi/ksrc_final_20261022/deployment/ksrc
 ./ksrc check
 ```
 
-`192.168.50.2`는 예시이며 현재 Pi 주소를 보장하지 않는다. `raspberrypi`라는 기존 SSH alias가 다른 네트워크 IP를 가리키면 현장에서는 IP로 직접 접속한다. AP의 client isolation은 꺼져 있어야 기기끼리 SSH할 수 있다. 외부 VPN·hpi-lab 서버는 현장 실행에 필요 없다.
+`192.168.0.101`은 2026-10-22 home AP에서 확인한 Pi 주소다. 노트북 LAN은 `192.168.0.100`이며 DHCP 재할당 시 달라질 수 있다. `raspberrypi`라는 기존 SSH alias가 다른 네트워크 IP를 가리키면 현장에서는 IP로 직접 접속한다. AP의 client isolation은 꺼져 있어야 기기끼리 SSH할 수 있다. 외부 VPN·hpi-lab 서버는 현장 실행에 필요 없다.
 
 ## 4. 모터 없는 연결 시험
 
@@ -86,7 +86,7 @@ cd /home/pi/ksrc_final_20261022/deployment/ksrc
 ./ksrc logs
 ```
 
-`start`의 **기본은 FAKE**다. 합성 pose·IMU와 `run_policy --fake`를 사용하며 SPI를 열지 않는다. 정책 파일이 없는 노트북에서도 gateway·실행기 연결은 시험할 수 있다. 합성 입력은 점 로버이므로 램프 물리·슬립·실제 완주 검증이 아니다.
+`start`의 **기본은 S1 plan 분리 + FAKE**다. 합성 pose·IMU와 `run_policy --fake`를 사용하며 SPI를 열지 않는다. 정책 파일이 없는 노트북에서도 gateway·실행기 연결은 시험할 수 있다. 합성 입력은 점 로버이므로 램프 물리·슬립·실제 완주 검증이 아니다.
 
 plan 분리 모드 연결 시험:
 
@@ -130,7 +130,7 @@ plan 분리 모드 연결 시험:
 cat state/stopped.json
 ```
 
-2026-10-22 사용자 결정으로 **S1 plan 분리**를 선택했다. 현재 S0/S1 비교에서 두 시드가 각각 완주했고 Pi 상위 tick 지연이 감소했다. 다만 기존 비교 시뮬의 실제 출발 yaw는 0°(+x)였으므로, 의도한 −y 출발의 검증 결과로 사용하지 않는다. `--rt 50`이 적용되는지는 `policy.log`에서 확인한다. `check`의 RT limit도 50 이상이어야 한다.
+2026-10-22 사용자 결정으로 **S1 plan 분리**가 기본이다(상위 CPU 0 / 하위 CPU 3 / ORB CPU 1·2 / RT 50). S0 비교만 `start --sync-plan`으로 실행한다. S0/S1은 시드 2·4·7에서 각각 3/3 완주했지만 S1의 위치 추정 오차가 일부 시드에서 더 컸다. 기존 비교는 실제 yaw 0°(+x) 출발이므로 −y 출발 검증과 구분한다. `--rt 50` 적용은 `policy.log`에서 확인한다. `check`의 RT limit도 50 이상이어야 한다.
 
 노트북 GUI는 기존 `teleop/ksrc_snapshot/pi/teleop/teleop_joystick.py`를 `--gateway`로 실행한다. gateway 포트는 **5006**이다. 실제 조이스틱 명령·시작·E-STOP이 동일 gateway로 들어가며, 정책의 5005로 직접 보내는 경로와 혼용하지 않는다.
 
@@ -150,10 +150,9 @@ cat state/stopped.json
 ## 7. 상태·로그·회수
 
 ```bash
-./ksrc status
-./ksrc logs
-tail -f state/navigation.jsonl
-tail -f state/policy.log
+./ksrc view --watch  # Ctrl+C는 보기만 종료
+./ksrc report        # CPU·온도·하위 주기 요약
+./ksrc logs          # 원시 로그 끝부분이 필요한 경우만
 cat state/processes.json
 cat state/stopped.json
 ```
@@ -163,13 +162,13 @@ cat state/stopped.json
 로그는 같은 `state/`에 추가된다. 비교 시험마다 아래처럼 다른 기록 폴더를 사용한다. `--state-dir`는 하위 명령보다 앞에 둔다.
 
 ```bash
-./ksrc --state-dir state/S0_01 start --seconds 120
+./ksrc --state-dir state/S0_01 start --sync-plan --seconds 120
 ./ksrc --state-dir state/S0_01 status
 ./ksrc --state-dir state/S0_01 stop
 
 # 노트북의 다른 터미널에서 AP LAN으로 로그 회수
-PI_AP_IP='192.168.50.2'  # 실제 AP 내부망 IP
-rsync -a pi@"$PI_AP_IP":/home/pi/ksrc_final_20261022/deployment/ksrc/state/ ./ksrc-field-logs/
+PI_AP_IP='192.168.0.101'  # 실제 AP 내부망 IP
+rsync -a -e 'ssh -o HostKeyAlias=raspberrypi.local' pi@"$PI_AP_IP":/home/pi/ksrc_final_20261022/deployment/ksrc/state/ ./ksrc-field-logs/
 ```
 
 ## 8. 이번에 직접 실행한 확인

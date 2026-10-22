@@ -2,6 +2,8 @@
 
 **가기 전:** [사전 테스트·부하·로그 기록](TESTS_BEFORE_FIELD.md) · [현장 CLI](CLI.md) · [현장 시험 절차서](FIELD_TESTS.md)
 
+현재 home AP: Pi **192.168.0.101**, 노트북 LAN **192.168.0.100**(DHCP). 기본은 **S1 plan 분리 + FAKE**, 실기는 `start --real`. 읽기 쉬운 상태는 `view --watch`, 저장 결과는 `report`로 확인한다. 실제 노트북 화면 조이스틱 실행 명령과 버튼은 [CLI 4단계](CLI.md#4-실제-화면-조이스틱-실행--노트북에서)에 있다.
+
 **2026-10-22 KSRC 최종 f판 실행:** [현장 CLI 명령어 — S1 plan 분리](CLI.md), [AP 내부망·초기 배치 안내](deployment/ksrc/README.md), [현장 시험 절차서 — TELEOP→MPPI·E-STOP·ORB 자동 복구](FIELD_TESTS.md). Pi 배포 코드는 `deployment/ksrc/`에 있으며 기본 실행은 모터 없는 FAKE다.
 
 D435와 Raspberry Pi로 현장 영상을 수집하고, 노트북에서 ORB-SLAM3·TSDF 기반 3D 지도를 구성해 로버의 대표점 방문 임무를 준비하는 프로젝트다. 촬영 중 coverage/오버레이, 촬영 후 지형 층·prototype costmap 분석, 기존 STM 조이스틱 연동과 STL 기반 경로·임무 도구를 포함한다.

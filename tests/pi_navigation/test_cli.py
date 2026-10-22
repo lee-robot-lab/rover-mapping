@@ -27,6 +27,14 @@ def test_default_launch_is_fake():
     import cli
     args = cli.parser().parse_args(['start'])
     assert not args.real
+    assert args.async_plan
+    assert (args.upper_cpu, args.lower_cpu, args.orb_cpus, args.rt) == ('0', '3', '1,2', 50)
+
+
+def test_sync_plan_requires_explicit_option():
+    import cli
+    args = cli.parser().parse_args(['start', '--sync-plan'])
+    assert not args.async_plan
 
 
 def test_stop_returns_after_owned_processes_finish(tmp_path):

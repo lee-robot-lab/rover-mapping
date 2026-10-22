@@ -8,6 +8,15 @@ import math
 import numpy as np
 
 
+def set_start_pose(robot, yaw_rad: float, dx_m: float = 0., dy_m: float = 0.) -> None:
+    """초기 자세를 현재 상태와 reset 기준에 함께 넣어 play/reset 뒤에도 유지한다."""
+    position, _ = robot.get_world_pose()
+    position = np.asarray(position, float) + np.array([dx_m, dy_m, 0.])
+    orientation = np.array([math.cos(yaw_rad / 2), 0., 0., math.sin(yaw_rad / 2)])
+    robot.set_default_state(position=position, orientation=orientation)
+    robot.set_world_pose(position=position, orientation=orientation)
+
+
 def start_offset(seed: int, sigma_xy_m: float, sigma_yaw_deg: float) -> tuple[float, float, float]:
     """(dx [m], dy [m], dyaw [rad]) 정규분포 표본. 시그마가 0이면 (0, 0, 0)이고 값은 ±3σ로 자른다."""
     if sigma_xy_m < 0 or sigma_yaw_deg < 0:

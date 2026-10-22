@@ -38,17 +38,23 @@ def parser() -> argparse.ArgumentParser:
     for name in ('start', '_supervise'):
         start = commands.add_parser(name, help='백그라운드 시작' if name == 'start' else argparse.SUPPRESS)
         start.add_argument('--real', action='store_true', help='실제 camera·ORB·SPI 정책 사용')
-        start.add_argument('--async-plan', action='store_true', help='MPPI를 별도 프로세스로 계산')
-        start.add_argument('--upper-cpu', default=None)
+        plan = start.add_mutually_exclusive_group()
+        plan.add_argument('--async-plan', dest='async_plan', action='store_true', help='S1: MPPI 별도 계산(기본)')
+        plan.add_argument('--sync-plan', dest='async_plan', action='store_false', help='S0 비교 시험 전용: 동기 MPPI')
+        start.set_defaults(async_plan=True)
+        start.add_argument('--upper-cpu', default='0')
         start.add_argument('--orb-cpus', default='1,2')
-        start.add_argument('--lower-cpu', default=None)
-        start.add_argument('--rt', type=int, default=0, help='하위 정책 SCHED_FIFO 우선순위; 현장 후보 50')
+        start.add_argument('--lower-cpu', default='3')
+        start.add_argument('--rt', type=int, default=50, help='하위 정책 SCHED_FIFO 우선순위(기본 50)')
         start.add_argument('--ros-domain', type=int, default=76)
         start.add_argument('--policy-script', type=Path, default=Path('/home/pi/ksrc/pi/policy/run_policy.py'))
         start.add_argument('--policy', type=Path, default=Path('/home/pi/ksrc/pi/policy/res8_mlp_v3vo_rc4000'))
         start.add_argument('--seconds', type=float, default=3600.)
     for name in ('status', 'anchor', 'start1', 'start2', 'estop', 'stop', 'logs'):
         commands.add_parser(name)
+    view = commands.add_parser('view', help='읽기 전용 한국어 상태 요약')
+    view.add_argument('--watch', action='store_true', help='한 화면을 1초마다 갱신; Ctrl+C는 보기만 종료')
+    commands.add_parser('report', help='저장된 CPU·온도·정책 주기 로그 요약')
     teleop = commands.add_parser('teleop', help='같은 gateway를 통한 CLI 속도 명령')
     teleop.add_argument('vx', type=float)
     teleop.add_argument('vy', type=float)
@@ -303,8 +309,19 @@ def main() -> None:
         if child.poll() is not None:
             raise RuntimeError((state / 'supervisor.log').read_text()[-2500:])
         print('started', 'REAL' if args.real else 'FAKE', 'supervisor', child.pid, '; logs:', state)
+        print('plan:', 'S1 async' if args.async_plan else 'S0 sync',
+              '; upper CPU', args.upper_cpu, '; lower CPU', args.lower_cpu, '; RT', args.rt)
+        print('초기화 후 view로 확인하세요. 시작 직후 상태 파일이 없을 수 있습니다.')
     elif args.command == '_supervise':
         supervise(args)
+    elif args.command in ('view', 'report'):
+        from display import report_text, view_text, watch
+        if args.command == 'report':
+            print(report_text(state))
+        elif args.watch:
+            watch(state)
+        else:
+            print(view_text(state))
     elif args.command == 'status':
         path = state / 'status.json'
         print(path.read_text() if path.exists() else 'status unavailable; see supervisor.log')
