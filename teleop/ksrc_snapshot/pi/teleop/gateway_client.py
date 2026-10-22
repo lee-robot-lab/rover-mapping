@@ -2,13 +2,13 @@
 # gateway_client.py
 # 설명: 조이스틱 화면이 Pi의 control_gateway(텔레옵↔자동 중계)에 제어 메시지(하트비트·비상·시작)를 보내고
 #       중계가 5 Hz로 돌려주는 상태를 받아 두는 클라이언트. pygame과 무관해서 화면 없이 시험할 수 있다.
-# 사용법: gw = GatewayClient(udp_socket, (host, 5006)); gw.tick(now); gw.start(1); gw.lines(now)
+# 사용법: gw = GatewayClient(udp_socket, (host, 5006)); gw.tick(now); gw.start(1); gw.anchor(); gw.lines(now)
 # ================================================================
 import math
 import struct
 
 CTL = struct.Struct("<4sIB3f")   # control_gateway의 KCTL 형식: 순서번호, 동작, 값 3개
-HEARTBEAT, START, ESTOP = 1, 3, 4   # 번호는 control_gateway와 같다(2는 쓰지 않는다)
+HEARTBEAT, START, ESTOP, ANCHOR = 1, 3, 4, 5   # 번호는 control_gateway와 같다(2는 쓰지 않는다)
 ESTOP_REPEAT = 3                 # UDP 손실에 대비해 비상 정지를 연달아 보낸다
 STATUS_FRESH_S = 1.5
 
@@ -42,6 +42,9 @@ class GatewayClient:
     def start(self, run):
         self._send(START, float(run))
 
+    def anchor(self):
+        self._send(ANCHOR)
+
     def consume(self, message, now):
         """중계의 상태 방송이면 저장하고 True, 아니면(예: STM 텔레메트리) False."""
         if not isinstance(message, dict) or "mode" not in message:
@@ -58,6 +61,8 @@ class GatewayClient:
         out = [(f"MODE {mode}" + (f"  RUN {s.get('run_id')}  (joystick ignored)" if mode == "AUTO" else ""),
                 "ok" if mode == "TELEOP" else "warn")]
         out.append(("laptop link OK" if s.get("link_ok") else "laptop link LOST (AUTO keeps running)", "ok" if s.get("link_ok") else "warn"))
+        if mode == "TELEOP" and s.get("anchored"):
+            out.append(("anchor applied (current pose = start preset)", "ok"))
         if mode == "TELEOP" and s.get("missing"):
             out.append(("not ready: " + ", ".join(s["missing"]), "warn"))
         if s.get("last_reject"):

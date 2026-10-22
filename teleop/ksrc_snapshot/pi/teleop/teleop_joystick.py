@@ -59,8 +59,8 @@ GRAB_SLACK = 1.4  # click within radius*GRAB_SLACK of center still grabs the pad
 ROTATION_SPEED_SCALE = 0.5  # 패드와 Q/E의 회전 명령만 50%로 제한
 GW_EXTRA_HEIGHT = 150  # --gateway: 창 아래에 버튼·상태 줄을 더한다
 GW_BUTTONS = {name: (x, HEIGHT + 12, w, 34) for name, x, w in
-              (("start1", 16, 190), ("start2", 216, 190), ("estop", 416, 208))}
-GW_LABELS = {"start1": "START RUN 1", "start2": "START RUN 2", "estop": "E-STOP (Space)"}
+              (("anchor", 16, 140), ("start1", 164, 140), ("start2", 312, 140), ("estop", 460, 164))}
+GW_LABELS = {"anchor": "ANCHOR", "start1": "START RUN 1", "start2": "START RUN 2", "estop": "E-STOP (Space)"}
 GW_COLORS = {"ok": (120, 220, 140), "warn": (240, 200, 90), "bad": (240, 110, 110)}
 
 
@@ -243,6 +243,8 @@ def run(args):
                     name = next(n for n, rect in gw_rects.items() if rect.collidepoint(event.pos))
                     if name == "estop":
                         gw.estop()
+                    elif name == "anchor":
+                        gw.anchor()
                     else:
                         gw.start(1 if name == "start1" else 2)
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:

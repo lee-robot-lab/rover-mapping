@@ -90,21 +90,54 @@ cd /home/su/rover-mapping
 PI_AP_IP='192.168.0.101'
 /home/su/rover/.venv-mapping/bin/python -c "import pygame; print('pygame OK')"
 /home/su/rover/.venv-mapping/bin/python teleop/ksrc_snapshot/pi/teleop/teleop_joystick.py \
-  --udp "${PI_AP_IP}:5006" --gateway --rate 50 --max-lin 0.15 --max-ang 0.8
+  --udp "${PI_AP_IP}:5006" --gateway --grid-keys --rate 50 --max-lin 0.15 --max-ang 0.8
 ```
 
-**예상 출력:** `pygame OK`, `[udp] -> 192.168.0.101:5006 (라파에서 control_gateway.py 실행 중이어야 함)`. 노트북에 translate/rotate 패드와 `START RUN 1`, `START RUN 2`, `E-STOP (Space)` 버튼이 뜬다. 터미널 C는 GUI가 실행되는 동안 점유된다.
+**예상 출력:** `pygame OK`, `[udp] -> 192.168.0.101:5006 (라파에서 control_gateway.py 실행 중이어야 함)`. 노트북에 translate/rotate 패드, 초록색 키 안내 줄(`keys: w/x fwd/back ...`), `ANCHOR`·`START RUN 1`·`START RUN 2`·`E-STOP (Space)` 버튼이 뜬다. 터미널 C는 GUI가 실행되는 동안 점유된다.
 
 **다음 단계 조건:** GUI에 `MODE TELEOP`, `laptop link OK`가 나와야 한다. `GATEWAY: no status`가 계속 나오면 A의 스택 실행·Pi IP·포트 **5006**을 확인한다. `--gateway`만 붙여도 UDP 기본 포트가 5005이므로 **`:5006`을 생략하면 안 된다.** 별도 `udp_spi_bridge.py`·`run_policy.py`를 추가 실행하지 않는다. Pi의 `ksrc start --real`이 이미 하위 정책과 gateway를 관리한다.
 
-| 조작 | 동작 | 확인 |
+### 조이스틱 화면과 사용법
+
+![조이스틱 GUI: 병진·회전 패드, ANCHOR·START·E-STOP 버튼, 상태 줄](docs/images/joystick_gui.png)
+
+| 번호 | 화면 위치 | 의미 |
 |---|---|---|
-| 왼쪽 패드 위/아래 | body 전진/후진 | 아주 조금 드래그해 짧게 확인 |
-| 왼쪽 패드 좌/우 | body 좌/우 병진 | 손을 떼면 0으로 복귀 |
-| 오른쪽 패드 좌/우, Q/E | 반시계/시계 회전 | 이 명령의 실제 회전 상한은 0.4 rad/s(코드의 0.5배 적용) |
-| Space 또는 E-STOP 버튼 | AUTO 해제·정지 요청 | GUI TELEOP, B에서 명령 0 확인 |
-| START RUN 1/2 | 해당 회차 AUTO 요청 | 먼저 아래 anchor·준비 조건 충족, B에서 수락 확인 |
+| 1 | 왼쪽 원 `translate` | 병진 패드. 마우스로 끌면 파란 점이 따라가고, 손을 떼면 0으로 돌아온다 |
+| 2 | 오른쪽 원 `rotate` | 회전 패드. 가로로만 반응한다 |
+| 3 | 맨 위 글자 | 지금 내보내는 명령(`vx`, `vy`, `omega`)과 키 안내 |
+| 4 | `STM: ...` | 로버(STM)가 실제로 받은 명령. `no valid frame yet`이면 아직 응답이 없는 것이다 |
+| 5 | 버튼 줄 | `ANCHOR` · `START RUN 1` · `START RUN 2` · `E-STOP (Space)` |
+| 6 | 맨 아래 초록·노랑·빨강 글자 | gateway 상태 줄. 아래 표 참고 |
+
+키보드는 반드시 **`--grid-keys`로 실행**해야 한다(위 명령에 들어 있다). 이 옵션이 없으면 `qweasdzxc` 병진 키는 동작하지 않고 Q/E가 회전 키로만 쓰인다. 창을 클릭해 **포커스가 있는 상태**에서 누른다.
+
+| 조작 | 동작 | 비고 |
+|---|---|---|
+| `w` / `x` | 전진 / 후진 | 키 병진 속도는 0.075 m/s(`--max-lin 0.15`의 50%) |
+| `a` / `d` | 좌 / 우 병진 | 로버 정면은 그대로, 옆으로 이동 |
+| `q` `e` `z` `c` | 대각선: 전방좌 / 전방우 / 후방좌 / 후방우 | 대각선도 같은 속력. 반대 키를 같이 누르면 상쇄 |
+| `←` / `→` | 제자리 회전: 반시계 / 시계 | 0.4 rad/s(코드의 0.5배 적용) |
+| `s` | 정지 | 누르고 있는 동안 병진·회전이 모두 0 |
+| 왼쪽 패드 드래그 | 병진. 위=전진, 왼쪽=좌 병진 | 최대 0.15 m/s. 패드를 끄는 동안은 병진 키를 무시한다 |
+| 오른쪽 패드 드래그 | 회전. 오른쪽=시계, 왼쪽=반시계 | 최대 0.4 rad/s. 끄는 동안은 `←` `→`를 무시한다 |
+| 병진 키 + 오른쪽 패드 | 호를 그리며 주행 | 마우스는 하나라 패드 둘을 동시에 못 끌기 때문에 병진은 키로 한다 |
+| Space 또는 `E-STOP` 버튼 | AUTO 해제·정지 요청 | GUI `MODE TELEOP`, B에서 명령 0 확인 |
+| `ANCHOR` 버튼 | 지금 자세를 출발 preset으로 지정 | 로버는 움직이지 않는다. 5단계 참고 |
+| `START RUN 1` / `START RUN 2` | 해당 회차 AUTO 요청 | 먼저 아래 anchor·준비 조건 충족, B에서 수락 확인 |
 | Esc 또는 창 닫기 | GUI 종료 | AUTO 취소를 보장하지 않음. 먼저 E-STOP 확인 후 닫기 |
+
+패드는 중심 10% 데드존이 있고, 앞·뒤·좌·우 축 10° 안쪽은 축으로 맞춰진다. 낮은 속도에서는 바퀴 축을 크게 바꾸는 방향 변화가 무시된다. 새 방향으로 조향하려면 패드를 35% 이상 민다.
+
+| 상태 줄 | 뜻 |
+|---|---|
+| `MODE TELEOP`(초록) | 사람이 조종 중 |
+| `MODE AUTO RUN n (joystick ignored)`(노랑) | MPPI 주행 중. 조이스틱 이동 명령은 무시되고 E-STOP만 동작한다 |
+| `laptop link OK` / `laptop link LOST (AUTO keeps running)` | 노트북↔Pi 연결. 끊겨도 AUTO는 계속된다 |
+| `anchor applied (current pose = start preset)` | `ANCHOR`가 받아들여졌다 |
+| `not ready: stationary_s, orb_ok, in_region1` | START가 안 되는 이유. 3초 정지 / ORB 정상 / 출발 구역·정렬 중 모자란 것만 나온다 |
+| `last start rejected: ...` | 마지막 START가 거절된 이유 |
+| `GATEWAY: no status (check Pi gateway)`(빨강) | Pi에서 상태가 오지 않는다. 스택 실행·IP·포트 5006 확인 |
 
 창 포커스를 잃거나 손을 떼면 수동 명령은 0이 된다. **AUTO는 GUI 포커스 변경·종료만으로 멈추지 않는다.** Space는 GUI 창이 키 입력을 받을 때 동작한다. GUI에서 E-STOP한 뒤 B의 상태와 실제 바퀴 정지를 함께 확인한다.
 
@@ -114,22 +147,20 @@ PI_AP_IP='192.168.0.101'
 
 로버 **base_link 중심을 site (3.60, 2.82) m**, 정면을 **site −y, yaw −90°**로 맞춘다. 정면은 body +x이며 site 좌표의 −y다. 15° 통로 진입 방향이다. 배치 그림은 [초기 위치 안내](deployment/ksrc/README.md#1-초기-위치와-방향)를 참고한다.
 
-**[터미널 A · Pi SSH]** — 터미널 C의 GUI로 먼저 정렬한다. 아래는 GUI 대신 쓸 수 있는 짧은 CLI 수동 명령이다.
+**[터미널 C · 조이스틱 GUI]** — `w` `x` `a` `d` 키(또는 패드)를 짧게 눌러 정렬한다. 아래는 GUI 대신 쓸 수 있는 **[터미널 A · Pi SSH]** 짧은 CLI 수동 명령이다.
 
 ```bash
 # body 기준 전진 0.03 m/s, 1초 후 0 명령. 실제 로버가 움직인다.
 ./ksrc --state-dir "$TEST_DIR" teleop 0.03 0 0 --seconds 1
 ```
 
-위치·방향을 맞추고 **3초 이상 정지**한다. 센서가 정상일 때 아래 명령을 실행한다.
-
-**[터미널 A · Pi SSH]**
+위치·방향을 맞추고 **3초 이상 정지**한다. 센서가 정상일 때 **[터미널 C · 조이스틱 GUI]**에서 `ANCHOR` 버튼을 한 번 클릭한다. 화면 아래에 `anchor applied (current pose = start preset)`가 뜨면 적용된 것이다. 정지 3초·ORB 정상이 아니면 거절되어 아무 일도 일어나지 않으니, `not ready:`에 남은 항목을 확인하고 다시 누른다. GUI 대신 CLI로 하려면 **[터미널 A · Pi SSH]**에서 실행한다.
 
 ```bash
 ./ksrc --state-dir "$TEST_DIR" anchor
 ```
 
-B에서 `operator_anchor` 이벤트를 확인한다. `anchor`는 로버를 움직이지 않는다. 적용 확인 후 준비 상태를 조회한다.
+어느 쪽이든 B에서 `operator_anchor` 이벤트를 확인한다. `anchor`는 로버를 움직이지 않는다. 적용 확인 후 준비 상태를 조회한다.
 
 **[터미널 A · Pi SSH]**
 
@@ -171,15 +202,13 @@ E-stop 후 센서가 복구돼도 AUTO는 자동 재개하지 않는다. `estop`
 
 ## 8. 2회차 시작
 
-실제 출발 위치·−y 방향으로 다시 정렬하고 3초 이상 정지한 뒤 진행한다.
-
-**[터미널 A · Pi SSH]**
+실제 출발 위치·−y 방향으로 다시 정렬하고 3초 이상 정지한 뒤 진행한다. **[터미널 C · 조이스틱 GUI]**의 `ANCHOR` 버튼을 클릭하거나, 아래 **[터미널 A · Pi SSH]** 명령 중 하나만 쓴다.
 
 ```bash
 ./ksrc --state-dir "$TEST_DIR" anchor
 ```
 
-B에서 적용 이벤트를 확인하고 A에서 준비 상태를 확인한다.
+B에서 적용 이벤트(`operator_anchor`)를 확인하고 A에서 준비 상태를 확인한다. GUI 상태 줄의 `anchor applied`는 직전 anchor와 구분되지 않을 수 있으니 B의 이벤트를 기준으로 본다.
 
 **[터미널 A · Pi SSH]**
 

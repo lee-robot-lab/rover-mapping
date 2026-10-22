@@ -13,3 +13,5 @@ SPI bit12가 있으면 byte140~141은 signed IMU 읽기 시각이며 `wpi_corr=N
 ## 로컬 변경
 
 2026-10-15: `teleop_joystick.py`의 오른쪽 패드/Q/E 회전 명령에 0.5 배율을 적용했다. 병진 명령과 Pi bridge는 그대로다. 위 hash 안내는 변경 전 snapshot의 출처를 기록한 것이며 이 파일의 현재 내용을 검증하는 hash가 아니다.
+
+2026-10-22: `--gateway` 화면에 `ANCHOR` 버튼과 `anchor applied` 상태 줄을 추가했다(`gateway_client.py`의 `anchor()`, control_gateway의 op 5). 속도 명령 경로는 그대로다.

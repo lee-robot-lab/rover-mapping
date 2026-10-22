@@ -51,6 +51,12 @@ def test_estop_is_repeated():
     assert [cg.parse_ctl(d)[1] for d, _ in sock.packets] == [cg.ESTOP]*gc.ESTOP_REPEAT
 
 
+def test_anchor_packet_is_readable_by_the_gateway():
+    sock = Capture()
+    gc.GatewayClient(sock, ('pi', 5006)).anchor()
+    assert [cg.parse_ctl(d)[1] for d, _ in sock.packets] == [cg.ANCHOR]
+
+
 def test_heartbeat_is_sent_only_every_interval():
     sock = Capture()
     client = gc.GatewayClient(sock, ('pi', 5006), heartbeat_s=.2)
@@ -65,6 +71,14 @@ def test_status_is_stored_but_stm_telemetry_is_not_consumed():
     assert client.consume({'mode': 'TELEOP', 'missing': ['orb_ok'], 'link_ok': True}, 1.)
     texts = [t for t, _ in client.lines(1.1)]
     assert 'MODE TELEOP' in texts[0] and any('orb_ok' in t for t in texts)
+
+
+def test_lines_show_anchor_applied_only_in_teleop():
+    client = gc.GatewayClient(Capture(), ('pi', 5006))
+    client.consume({'mode': 'TELEOP', 'missing': [], 'link_ok': True, 'anchored': True}, 1.)
+    assert any('anchor applied' in t for t, _ in client.lines(1.1))
+    client.consume({'mode': 'AUTO', 'run_id': 1, 'missing': [], 'link_ok': True, 'anchored': True}, 2.)
+    assert not any('anchor applied' in t for t, _ in client.lines(2.1))
 
 
 def test_lines_report_stale_status_auto_mode_and_rejection():
@@ -124,6 +138,8 @@ def test_window_sends_heartbeat_estop_and_start(window):
     assert starts and starts[0][0] == 1.
     post_click(window, 'start2')
     assert [args[0] for op, args in collect(window.gateway, .6) if op == cg.START][:1] == [2.]
+    post_click(window, 'anchor')
+    assert any(op == cg.ANCHOR for op, _ in collect(window.gateway, .6))
 
 
 def test_window_without_gateway_flag_keeps_old_behaviour():

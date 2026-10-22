@@ -20,7 +20,7 @@ from typing import Callable
 
 CMD_FORMAT = '<4sIfff'      # run_policy 수신 형식과 같다: b'KSRC', 순서번호, vx, vy, ω
 CTL_FORMAT = '<4sIB3f'      # 제어: b'KCTL', 순서번호, 동작, 값 3개
-HEARTBEAT, POSE, START, ESTOP = 1, 2, 3, 4
+HEARTBEAT, POSE, START, ESTOP, ANCHOR = 1, 2, 3, 4, 5
 RESTART_GAP = 1000          # 순서번호가 이만큼 이상 뒤로 가면 보내는 쪽이 다시 시작한 것으로 본다
 ZERO = (0., 0., 0.)
 
@@ -58,9 +58,10 @@ class Gateway:
 
     def __init__(self, send: Callable[[float, float, float], None], on_start: Callable[[int], None] | None = None,
                  on_pose: Callable[..., None] | None = None, on_stop: Callable[[], None] | None = None,
+                 on_anchor: Callable[[], None] | None = None,
                  stale_s: float = .3, keepalive_s: float = .02, estop_hold_s: float = .5,
                  ready_stationary_s: float = 3., status_max_age_s: float = 1., link_timeout_s: float = 1.) -> None:
-        self.send, self.on_start, self.on_pose, self.on_stop = send, on_start, on_pose, on_stop
+        self.send, self.on_start, self.on_pose, self.on_stop, self.on_anchor = send, on_start, on_pose, on_stop, on_anchor
         self.stale_s, self.keepalive_s, self.estop_hold_s = stale_s, keepalive_s, estop_hold_s
         self.ready_stationary_s, self.status_max_age_s, self.link_timeout_s = ready_stationary_s, status_max_age_s, link_timeout_s
         self.mode, self.run_id = 'TELEOP', 0
@@ -127,6 +128,12 @@ class Gateway:
             if self.on_start:
                 self.on_start(self.run_id)
             return True
+        if op == ANCHOR:   # 정지·센서 조건은 실행기가 다시 확인한다. 여기서는 TELEOP일 때만 전달한다
+            if self.mode != 'TELEOP' or now < self.zero_until:
+                return False
+            if self.on_anchor:
+                self.on_anchor()
+            return True
         return False
 
     def tick(self, now: float) -> None:
@@ -142,7 +149,7 @@ class Gateway:
     def snapshot(self, now: float) -> dict:
         """조이스틱 화면에 보여 줄 상태."""
         return dict(mode=self.mode, run_id=self.run_id, missing=self.missing(now), last_reject=self.last_reject,
-                    link_ok=now-self.heartbeat_at <= self.link_timeout_s,
+                    link_ok=now-self.heartbeat_at <= self.link_timeout_s, anchored=self.status.get('reason') == 'anchored_at_preset',
                     teleop_age_s=now-self.latest['TELEOP'][1], auto_age_s=now-self.latest['AUTO'][1])
 
 
@@ -178,7 +185,7 @@ def serve(sockets, policy_addr: tuple[str, int], stop: threading.Event, runner_a
 
     gateway = Gateway(send, on_start=lambda run: to_runner(dict(op='START', run=run)),
                       on_pose=lambda x, y, yaw: to_runner(dict(op='POSE', x=x, y=y, yaw=yaw)),
-                      on_stop=lambda: to_runner(dict(op='STOP')))
+                      on_stop=lambda: to_runner(dict(op='STOP')), on_anchor=lambda: to_runner(dict(op='ANCHOR')))
     last = dict(teleop=-1, auto=-1, ctl=-1)
     gui, next_status = None, 0.
     while not stop.is_set():

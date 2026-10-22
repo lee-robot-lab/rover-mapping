@@ -130,6 +130,26 @@ def test_pose_is_forwarded_to_runner():
     assert poses == [(2.9, 1.2, 0.)]
 
 
+def test_anchor_is_forwarded_to_runner_only_in_teleop_and_after_estop_hold():
+    anchored = []
+    gateway, _ = make(on_anchor=lambda: anchored.append(1))
+    gateway.runner_status(dict(READY), 10.)
+    assert gateway.control(cg.ANCHOR, (0, 0, 0), 10.1) and anchored == [1]
+    gateway.control(cg.START, (1, 0, 0), 10.2)
+    assert not gateway.control(cg.ANCHOR, (0, 0, 0), 10.3) and anchored == [1]      # AUTO 중에는 받지 않는다
+    gateway.control(cg.ESTOP, (0, 0, 0), 10.4)
+    assert not gateway.control(cg.ANCHOR, (0, 0, 0), 10.5) and anchored == [1]      # 비상 정지 유지 시간
+    assert gateway.control(cg.ANCHOR, (0, 0, 0), 11.) and anchored == [1, 1]
+
+
+def test_snapshot_reports_anchor_applied_from_runner_reason():
+    gateway, _ = make()
+    gateway.runner_status(dict(READY, reason='anchored_at_preset'), 10.)
+    assert gateway.snapshot(10.1)['anchored']
+    gateway.runner_status(dict(READY, reason='active'), 11.)
+    assert not gateway.snapshot(11.1)['anchored']
+
+
 def test_runner_done_returns_to_teleop_with_zero():
     gateway, sink = ready_gateway()
     gateway.control(cg.START, (1, 0, 0), 10.1)
