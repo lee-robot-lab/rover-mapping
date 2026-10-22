@@ -255,3 +255,20 @@ def test_socket_round_trip_keeps_sequence_across_mode_switches_and_is_fast():
     commands = [c for _, c in policy.accepted]
     assert any(c[0] == pytest.approx(.05) for c in commands) and commands[-1] == (0., 0., 0.)   # float32로 오가므로 근사 비교
     assert sorted(delays)[len(delays)//2] < .005  # 중앙값 5 ms 미만(개발 PC 기준)
+
+
+def test_status_reply_comes_from_the_port_the_gui_sent_to():
+    """상태가 5006이 아닌 다른 소스 포트에서 오면 노트북의 stateful 방화벽·NAT가 응답으로 인정하지 않고 버린다."""
+    import json
+    sockets = cg.open_sockets('127.0.0.1', (0, 0, 0))
+    teleop_port = sockets[0].getsockname()[1]
+    stop = threading.Event()
+    thread = threading.Thread(target=cg.serve, args=(sockets, ('127.0.0.1', 9), stop), daemon=True)
+    thread.start()
+    client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    client.settimeout(2.)
+    client.sendto(cg.pack_ctl(1, cg.HEARTBEAT), ('127.0.0.1', teleop_port))
+    data, address = client.recvfrom(2048)
+    stop.set()
+    thread.join(1.)
+    assert 'mode' in json.loads(data) and address[1] == teleop_port

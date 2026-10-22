@@ -228,7 +228,9 @@ def serve(sockets, policy_addr: tuple[str, int], stop: threading.Event, runner_a
         gateway.tick(now)
         if gui and now >= next_status:
             next_status = now+1./status_hz
-            out.sendto(json.dumps(gateway.snapshot(now)).encode(), gui)
+            # 상태는 GUI가 보낸 포트(teleop_sock)로 답한다. 다른 소스 포트로 보내면 노트북의 stateful 방화벽·NAT가
+            # "나간 요청의 응답"으로 보지 않고 버려 GUI에 'no status'가 뜬다.
+            teleop_sock.sendto(json.dumps(gateway.snapshot(now)).encode(), gui)
 
 
 def main() -> None:
