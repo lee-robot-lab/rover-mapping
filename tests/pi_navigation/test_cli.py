@@ -8,6 +8,7 @@ import json
 import subprocess
 import sys
 import socket
+import time
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -61,3 +62,33 @@ def test_policy_mcu_duplicates_do_not_generate_new_imu():
     finally:
         receiver.close()
         tee.socket.close()
+
+
+def test_fake_policy_stop_uses_save_path(tmp_path):
+    policy = tmp_path / 'fake_policy.py'
+    policy.write_text('''# 테스트 정책: Ctrl+C 종료 시 로그 저장 경로를 검증한다.
+import argparse, signal, time
+from pathlib import Path
+parser = argparse.ArgumentParser()
+parser.add_argument('--log', type=Path, required=True)
+args, _ = parser.parse_known_args()
+signal.signal(signal.SIGINT, signal.default_int_handler)
+args.log.with_suffix('.ready').touch()
+try:
+    while True:
+        time.sleep(.01)
+except KeyboardInterrupt:
+    args.log.write_text('saved after SIGINT')
+''')
+    state = tmp_path / 'state'
+    command = [sys.executable, str(DEPLOY / 'cli.py'), '--state-dir', str(state)]
+    subprocess.run([*command, 'start', '--seconds', '30', '--policy-script', str(policy)], check=True)
+    try:
+        deadline = time.monotonic() + 5
+        while not (state / 'policy.ready').exists() and time.monotonic() < deadline:
+            time.sleep(.02)
+        assert (state / 'policy.ready').exists()
+        subprocess.run([*command, 'stop'], check=True, timeout=15)
+        assert (state / 'policy.npz').read_text() == 'saved after SIGINT'
+    finally:
+        subprocess.run([*command, 'stop'], timeout=15)

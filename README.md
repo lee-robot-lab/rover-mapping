@@ -1,6 +1,8 @@
 # Rover Mapping
 
-**2026-10-22 KSRC 최종 f판 실행:** [현장 CLI 명령어 — S1 plan 분리](deployment/ksrc/CLI.md), [AP 내부망·초기 배치 안내](deployment/ksrc/README.md), [현장 시험 절차서 — TELEOP→MPPI·E-STOP·ORB 자동 복구](docs/experiments/2026-10-22-pi-navigation-field-tests.md). Pi 배포 코드는 `deployment/ksrc/`에 있으며 기본 실행은 모터 없는 FAKE다.
+**가기 전:** [사전 테스트·부하·로그 기록](TESTS_BEFORE_FIELD.md) · [현장 CLI](CLI.md) · [현장 시험 절차서](FIELD_TESTS.md)
+
+**2026-10-22 KSRC 최종 f판 실행:** [현장 CLI 명령어 — S1 plan 분리](CLI.md), [AP 내부망·초기 배치 안내](deployment/ksrc/README.md), [현장 시험 절차서 — TELEOP→MPPI·E-STOP·ORB 자동 복구](FIELD_TESTS.md). Pi 배포 코드는 `deployment/ksrc/`에 있으며 기본 실행은 모터 없는 FAKE다.
 
 D435와 Raspberry Pi로 현장 영상을 수집하고, 노트북에서 ORB-SLAM3·TSDF 기반 3D 지도를 구성해 로버의 대표점 방문 임무를 준비하는 프로젝트다. 촬영 중 coverage/오버레이, 촬영 후 지형 층·prototype costmap 분석, 기존 STM 조이스틱 연동과 STL 기반 경로·임무 도구를 포함한다.
 
@@ -36,7 +38,7 @@ D435와 Raspberry Pi로 현장 영상을 수집하고, 노트북에서 ORB-SLAM3
 | 목적 | 문서 |
 |---|---|
 | 최종 f판 Pi 실행·AP SSH·초기 위치·CLI | **[현장 CLI 안내](deployment/ksrc/README.md)** |
-| TELEOP→MPPI·E-STOP·연결 단절·ORB 자동 복구 시험 | **[현장 시험 절차서](docs/experiments/2026-10-22-pi-navigation-field-tests.md)** |
+| TELEOP→MPPI·E-STOP·연결 단절·ORB 자동 복구 시험 | **[현장 시험 절차서](FIELD_TESTS.md)** |
 | 처음 설치 | [설치 설명서](docs/installation.md) |
 | 촬영·조종·지도·costmap 운영 | **[사용 설명서](docs/user-guide.md)** |
 | RGB·전역 재구성·중력·crop·출발점·병합 | **[기준 지도 워크플로](docs/experiments/reference-map-workflow.md)** |

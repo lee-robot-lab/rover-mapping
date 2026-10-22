@@ -2,7 +2,7 @@
 
 이 폴더는 `YW16 + YW17`의 최종 **f판(ksrc22)** 실행 파일과 필요한 runtime·mission 격자를 함께 담는다. `ORIGIN.json`에 원본·배포 SHA-256이 있다. 기존 `run_policy.py`는 수정하지 않는다. MPPI는 구역 기반이며 depth는 OFF다.
 
-현장에서 사용할 명령어는 **[CLI.md](CLI.md)** 에 모았다. 실제 시험의 순서·기대 동작·합격 기준은 별도 문서 **[현장 시험 절차서](../../docs/experiments/2026-10-22-pi-navigation-field-tests.md)** 에 있다.
+현장에서 사용할 명령어는 **[최상단 CLI.md](../../CLI.md)** 에 모았다. 실제 시험의 순서·기대 동작·합격 기준은 별도 문서 **[현장 시험 절차서](../../FIELD_TESTS.md)** 에 있다.
 
 ## 1. 초기 위치와 방향
 
@@ -174,4 +174,4 @@ rsync -a pi@"$PI_AP_IP":/home/pi/ksrc_final_20261022/deployment/ksrc/state/ ./ks
 
 ## 8. 이번에 직접 실행한 확인
 
-2026-10-22 Pi에서 `./ksrc check`, `configure`, ROS import, `start`(FAKE), `status`, `start1`, `estop`, `stop`을 실행했다. 예시 출력은 **[현장 시험 절차서의 확인 기록](../../docs/experiments/2026-10-22-pi-navigation-field-tests.md#이번-확인-기록)** 에 있다. 실제 모터 주행·현장 완주를 확인했다는 뜻은 아니다.
+2026-10-22 Pi에서 `./ksrc check`, `configure`, ROS import, `start`(FAKE), `status`, `start1`, `estop`, `stop`을 실행했다. 예시 출력은 **[현장 시험 절차서의 확인 기록](../../FIELD_TESTS.md#이번-확인-기록)** 에 있다. 실제 모터 주행·현장 완주를 확인했다는 뜻은 아니다.

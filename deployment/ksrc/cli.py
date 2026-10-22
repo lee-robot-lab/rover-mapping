@@ -216,7 +216,8 @@ def supervise(args) -> None:
             else:
                 command.append('--')
             command += ['--policy', str(args.policy), '--cmd-udp', '5005', '--vo-port', '5600',
-                        '--seconds', str(args.seconds), '--rt', str(args.rt), '--gc-off']
+                        '--seconds', str(args.seconds), '--rt', str(args.rt), '--gc-off',
+                        '--log', str(state / 'policy.npz')]
             launch('policy', command, args.lower_cpu)
         elif args.real:
             raise FileNotFoundError(args.policy_script)
@@ -253,7 +254,8 @@ def supervise(args) -> None:
         control(4)
         for name in ('runner', 'inputs', 'orb', 'camera', 'policy', 'gateway'):
             if name in owned:
-                stop_owned(owned[name][1])
+                # FAKE의 기존 정책은 SIGTERM handler 없이 KeyboardInterrupt에서 로그를 저장한다.
+                stop_owned(owned[name][1], signal.SIGINT if name == 'policy' and not args.real else signal.SIGTERM)
         for child, info in owned.values():
             try:
                 child.wait(timeout=3)
