@@ -44,11 +44,14 @@ mkdir -p "$TEST_DIR"
 printf '%s\n' "$TEST_DIR" > state/latest_test.txt
 date -Is | tee "$TEST_DIR/actions.log"
 ./ksrc check 2>&1 | tee "$TEST_DIR/check.log"
-./ksrc --state-dir "$TEST_DIR" start --real
-nohup bash record_load.sh "$TEST_DIR" 600 > "$TEST_DIR/load_collector.log" 2>&1 < /dev/null &
-echo "collector_pid=$!" | tee -a "$TEST_DIR/actions.log"
+./ksrc --state-dir "$TEST_DIR" start --real && {
+  nohup bash record_load.sh "$TEST_DIR" 600 > "$TEST_DIR/load_collector.log" 2>&1 < /dev/null &
+  echo "collector_pid=$!" | tee -a "$TEST_DIR/actions.log"
+}
 ./ksrc --state-dir "$TEST_DIR" view | tee -a "$TEST_DIR/actions.log"
 ```
+
+`start`가 성공했을 때만 부하 수집기가 뜬다(`&&`). 실패하면 수집기 없이 `view`만 실행되며 `status unavailable` 비슷한 화면이 나온다. `BlockingIOError: [Errno 11] Resource temporarily unavailable`는 **이전 실기 스택이 아직 살아 있다**는 뜻이므로 아래 막혔을 때 표의 순서로 정리한 뒤 이 블록을 다시 실행한다.
 
 **예상 출력:** `started REAL supervisor ...`, `plan: S1 async ; upper CPU 0 ; lower CPU 3 ; RT 50`. 시작 직후 `status unavailable` 또는 `초기화 중`이면 2초 뒤 `view`를 다시 실행한다. 계속 같으면 `tail -n 20 "$TEST_DIR/supervisor.log"`와 `runner.log`를 확인한다. 세션은 기본 최대 1시간, 부하 수집은 10분이다. 수집 시간을 늘리려면 실행 전에 `600`을 초 단위로 바꾼다(최대 3600초). 같은 폴더에서 수집기를 중복 실행하지 않는다. 명령 직후 상태 반영에는 한 차례 갱신 시간이 필요하므로 `status`와 B의 로그에서 수락 여부를 확인한다.
 
@@ -292,6 +295,7 @@ Pi에서 FAKE 연결·plan 분리·정상 종료·정책 주기 NPZ·부하 기�
 | `복구 중` | 센서 공백/ORB 원점 재연결 | 명령 0 유지 확인. 로버를 옮기지 않기 |
 | `부하=수집 중`, 실행 스택 종료 | 두 프로세스의 종료 시간이 다름 | NPZ 저장과 별개. 원래 지정한 수집 시간까지 기다리거나 현재 구간으로 report |
 | 화면이 멈춘 것 같음 | 보기 프로그램 실행 중일 수 있음 | `view --watch`/`tail -f`는 Ctrl+C, `less`의 `:` 화면은 q. 이것은 E-stop이 아님 |
+| `start` 실패, `BlockingIOError ... Resource temporarily unavailable` | 이전 `--real` 스택이 전역 lock을 쥐고 있음 (실패한 시도의 폴더가 `latest_test.txt`에 덮어써짐) | `ps -eo pid,args \| grep _supervise \| grep -v grep`로 살아 있는 `--state-dir`을 찾아 `view`로 상태 확인 → `./ksrc --state-dir <그 폴더> estop` → `stop` → `stopped.json` 확인 후 시작 블록 재실행 |
 | `TEST_DIR`를 잊음 | 터미널 변수는 공유되지 않음 | Pi에서 `cd .../deployment/ksrc`, `TEST_DIR="$(cat state/latest_test.txt)"` 복원 |
 
 원시 JSON이 꼭 필요할 때만 `./ksrc --state-dir "$TEST_DIR" status`를 쓴다. 기본 관찰은 B의 `view --watch`, 결과는 `report`다.

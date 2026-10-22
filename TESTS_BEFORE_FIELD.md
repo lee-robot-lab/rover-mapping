@@ -66,9 +66,10 @@ df -h .
 **[터미널 A · Pi SSH]**
 
 ```bash
-./ksrc --state-dir "$TEST_DIR" start --seconds 600
-nohup bash record_load.sh "$TEST_DIR" 180 > "$TEST_DIR/load_collector.log" 2>&1 < /dev/null &
-echo "collector_pid=$!" | tee -a "$TEST_DIR/actions.log"
+./ksrc --state-dir "$TEST_DIR" start --seconds 600 && {
+  nohup bash record_load.sh "$TEST_DIR" 180 > "$TEST_DIR/load_collector.log" 2>&1 < /dev/null &
+  echo "collector_pid=$!" | tee -a "$TEST_DIR/actions.log"
+}
 ./ksrc --state-dir "$TEST_DIR" view | tee -a "$TEST_DIR/actions.log"
 ```
 
@@ -207,9 +208,10 @@ mkdir -p "$TEST_DIR"
 printf '%s\n' "$TEST_DIR" > state/latest_test.txt
 date -Is | tee "$TEST_DIR/actions.log"
 ./ksrc check 2>&1 | tee "$TEST_DIR/check.log"
-./ksrc --state-dir "$TEST_DIR" start --real --seconds 240
-nohup bash record_load.sh "$TEST_DIR" 180 > "$TEST_DIR/load_collector.log" 2>&1 < /dev/null &
-echo "collector_pid=$!" | tee -a "$TEST_DIR/actions.log"
+./ksrc --state-dir "$TEST_DIR" start --real --seconds 240 && {
+  nohup bash record_load.sh "$TEST_DIR" 180 > "$TEST_DIR/load_collector.log" 2>&1 < /dev/null &
+  echo "collector_pid=$!" | tee -a "$TEST_DIR/actions.log"
+}
 ./ksrc --state-dir "$TEST_DIR" view | tee -a "$TEST_DIR/actions.log"
 ```
 
