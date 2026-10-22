@@ -1,6 +1,6 @@
 # KSRC f판 — 현장 시험 절차서
 
-이 문서는 **무엇을 어떤 순서로 시험하고 무엇을 합격으로 볼지** 정리한다. 접속·전체 명령어·배포 경로는 별도 **[AP 내부망 CLI 안내](../../deployment/ksrc/README.md)** 를 참고한다.
+이 문서는 **무엇을 어떤 순서로 시험하고 무엇을 합격으로 볼지** 정리한다. 현장 명령어는 별도 **[CLI.md](../../deployment/ksrc/CLI.md)**, 배포·초기 배치는 **[AP 내부망 안내](../../deployment/ksrc/README.md)** 를 참고한다.
 
 ## 준비와 초기 배치
 
@@ -17,7 +17,7 @@ cd /home/pi/ksrc_final_20261022/deployment/ksrc
 ./ksrc --state-dir state/T01 status
 ```
 
-실기 시험 때만 위 `start`에 `--real --upper-cpu 0 --lower-cpu 3 --orb-cpus 1,2 --rt 50`을 추가한다. S1은 `--async-plan`도 추가한다. 한 번에 세션 하나만 실행한다.
+실기 시험 때만 위 `start`에 `--real --upper-cpu 0 --lower-cpu 3 --orb-cpus 1,2 --rt 50`을 추가한다. 선택한 S1 운용에는 `--async-plan`도 추가한다. 한 번에 세션 하나만 실행한다.
 
 ## 시험 항목과 합격 기준
 

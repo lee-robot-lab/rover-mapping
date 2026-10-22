@@ -2,7 +2,7 @@
 
 이 폴더는 `YW16 + YW17`의 최종 **f판(ksrc22)** 실행 파일과 필요한 runtime·mission 격자를 함께 담는다. `ORIGIN.json`에 원본·배포 SHA-256이 있다. 기존 `run_policy.py`는 수정하지 않는다. MPPI는 구역 기반이며 depth는 OFF다.
 
-실제 시험의 순서·기대 동작·합격 기준은 별도 문서 **[현장 시험 절차서](../../docs/experiments/2026-10-22-pi-navigation-field-tests.md)** 에 있다. 이 페이지는 접속·명령어·로그 확인용이다.
+현장에서 사용할 명령어는 **[CLI.md](CLI.md)** 에 모았다. 실제 시험의 순서·기대 동작·합격 기준은 별도 문서 **[현장 시험 절차서](../../docs/experiments/2026-10-22-pi-navigation-field-tests.md)** 에 있다.
 
 ## 1. 초기 위치와 방향
 
@@ -103,10 +103,7 @@ plan 분리 모드 연결 시험:
 실제 구동 전에 시뮬 검증과 바퀴를 띄운 시험부터 진행할 것을 권고한다. 다음 `--real` 명령은 실제 camera·ORB와 정책의 SPI를 연다. 기존 SPI bridge/텔레옵 직접 제어는 종료하고, 이 세션의 gateway를 사용한다.
 
 ```bash
-# 후보 S0: 동기 plan, ORB 1·2 / 상위 0 / 하위 3, RT 50
-./ksrc start --real --orb-cpus 1,2 --upper-cpu 0 --lower-cpu 3 --rt 50
-
-# 후보 S1: plan 분리. 이전 세션을 stop한 뒤 하나만 실행
+# 선택 S1: plan 분리, ORB 1·2 / 상위 0 / 하위 3, RT 50
 ./ksrc start --real --async-plan --orb-cpus 1,2 --upper-cpu 0 --lower-cpu 3 --rt 50
 
 ./ksrc status
@@ -133,7 +130,7 @@ plan 분리 모드 연결 시험:
 cat state/stopped.json
 ```
 
-S0/S1 중 어느 것이 최종 배치인지는 별도 시뮬 결과로 고른다. 완주·오차·정지에 뚜렷한 차이가 없으면 plan 분리를 선택한다는 사용자 결정에 따라 `--async-plan`만 변경하면 된다. `--rt 50`이 적용되는지는 `policy.log`에서 확인한다. `check`의 RT limit도 50 이상이어야 한다.
+2026-10-22 사용자 결정으로 **S1 plan 분리**를 선택했다. 현재 S0/S1 비교에서 두 시드가 각각 완주했고 Pi 상위 tick 지연이 감소했다. 다만 기존 비교 시뮬의 실제 출발 yaw는 0°(+x)였으므로, 의도한 −y 출발의 검증 결과로 사용하지 않는다. `--rt 50`이 적용되는지는 `policy.log`에서 확인한다. `check`의 RT limit도 50 이상이어야 한다.
 
 노트북 GUI는 기존 `teleop/ksrc_snapshot/pi/teleop/teleop_joystick.py`를 `--gateway`로 실행한다. gateway 포트는 **5006**이다. 실제 조이스틱 명령·시작·E-STOP이 동일 gateway로 들어가며, 정책의 5005로 직접 보내는 경로와 혼용하지 않는다.
 
