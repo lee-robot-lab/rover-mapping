@@ -1,5 +1,7 @@
 # Rover Mapping
 
+**2026-10-22 KSRC 최종 f판 실행:** [AP 내부망 CLI·초기 배치 안내](deployment/ksrc/README.md), [현장 시험 절차서 — TELEOP→MPPI·E-STOP·ORB 자동 복구](docs/experiments/2026-10-22-pi-navigation-field-tests.md). Pi 배포 코드는 `deployment/ksrc/`에 있으며 기본 실행은 모터 없는 FAKE다.
+
 D435와 Raspberry Pi로 현장 영상을 수집하고, 노트북에서 ORB-SLAM3·TSDF 기반 3D 지도를 구성해 로버의 대표점 방문 임무를 준비하는 프로젝트다. 촬영 중 coverage/오버레이, 촬영 후 지형 층·prototype costmap 분석, 기존 STM 조이스틱 연동과 STL 기반 경로·임무 도구를 포함한다.
 
 **현재는 지도 품질 검증과 STL 이후 임무 준비 단계다.** IMU 융합 시험, depth 구간 전역 정합·재융합, RGB 컬러 기록, 중력 후보·crop·출발점·반복 지도 병합 편집 경로가 있다. STL 임무 편집기와 pose 기반 상태·속도 요청 실행기, 합성 시나리오 재생도 구현되어 있다. RGB 동시 수집의 실기 성능, 실측 정확도, 고정 지도에 대한 주행 보정은 검증이 남아 있다. 최신 지도 운영 절차는 [기준 지도 워크플로](docs/experiments/reference-map-workflow.md), 임무 운영 절차는 [STL 임무 도구](docs/experiments/site-mission.md)를 따른다.
@@ -33,6 +35,8 @@ D435와 Raspberry Pi로 현장 영상을 수집하고, 노트북에서 ORB-SLAM3
 
 | 목적 | 문서 |
 |---|---|
+| 최종 f판 Pi 실행·AP SSH·초기 위치·CLI | **[현장 CLI 안내](deployment/ksrc/README.md)** |
+| TELEOP→MPPI·E-STOP·연결 단절·ORB 자동 복구 시험 | **[현장 시험 절차서](docs/experiments/2026-10-22-pi-navigation-field-tests.md)** |
 | 처음 설치 | [설치 설명서](docs/installation.md) |
 | 촬영·조종·지도·costmap 운영 | **[사용 설명서](docs/user-guide.md)** |
 | RGB·전역 재구성·중력·crop·출발점·병합 | **[기준 지도 워크플로](docs/experiments/reference-map-workflow.md)** |
