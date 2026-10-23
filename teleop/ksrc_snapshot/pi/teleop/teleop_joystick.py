@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# ================================================================
+# teleop_joystick.py
+# 설명: 마우스 패드와 키보드로 로버 병진·회전 명령을 전송한다.
+# 사용법: python teleop_joystick.py --udp HOST:5006 --grid-keys --max-lin 0.15 --max-ang 0.8
+# ================================================================
 """
 KSRC 스워브 로버용 화면 마우스 조이스틱 텔레옵.
 
@@ -283,7 +288,8 @@ def run(args):
             grid = getattr(args, "grid_keys", False)   # --grid-keys: qweasdzxc 가 병진, 화살표가 회전
             if grid and not left_pad.dragging:
                 pressed = {c for c in "qweasdzxc" if keys[getattr(pygame, "K_" + c)]}
-                vx, vy = grid_keys_to_linear(pressed, args.max_lin, getattr(args, "key_speed", 0.5))
+                key_scale = 1.0 if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT] else getattr(args, "key_speed", 2.0 / 3.0)
+                vx, vy = grid_keys_to_linear(pressed, min(args.max_lin, 0.15), key_scale)
             if right_pad.dragging:
                 rnx, _ = apply_deadzone(right_pad.nx, 0.0, dz)
                 omega = right_pad_to_angular(rnx, args.max_ang)
@@ -425,8 +431,8 @@ def main():
                          "(우->좌 전환 중 중앙을 스쳐도 조향이 돌지 않음). 0 이면 끔")
     ap.add_argument("--grid-keys", action="store_true",
                     help="키보드 격자: w/x 전후, a/d 좌우, q/e/z/c 대각선, s 정지, 화살표 좌우 회전 (Q/E 회전은 꺼진다)")
-    ap.add_argument("--key-speed", type=float, default=0.5,
-                    help="--grid-keys 에서 키를 누를 때 병진 속력 = max-lin 의 이 비율")
+    ap.add_argument("--key-speed", type=float, default=2.0 / 3.0,
+                    help="--grid-keys 기본 병진 속력 = min(max-lin, 0.15)의 이 비율. Shift를 누르는 동안만 100%%")
     ap.add_argument("--gateway", action="store_true",
                     help="--udp 와 함께: Pi 의 control_gateway.py(기본 포트 5006)와 연동. 하트비트·시작·비상 "
                          "버튼과 상태 줄을 더한다. 없으면 기존 동작 그대로")

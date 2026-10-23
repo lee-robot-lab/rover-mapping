@@ -63,6 +63,49 @@ def test_window_starts_and_quits_with_grid_keys():
     assert not thread.is_alive()
 
 
+@pytest.mark.parametrize('max_lin, normal, boosted', [(.15, .10, .15), (.30, .10, .15), (.09, .06, .09)])
+def test_shift_temporarily_boosts_grid_speed_without_changing_rotation(monkeypatch, max_lin, normal, boosted):
+    pygame = pytest.importorskip('pygame')
+    import socket
+    import teleop_joystick
+    keys = FakeKeys()
+    monkeypatch.setattr(pygame.key, 'get_pressed', lambda: keys)
+    sink = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sink.bind(('127.0.0.1', 0))
+    args = SimpleNamespace(udp='127.0.0.1:%d' % sink.getsockname()[1], grid_keys=True,
+                           rate=50., max_lin=max_lin, max_ang=.8, deadzone=0., monitor=False, ros=False, spi=False)
+    thread = threading.Thread(target=teleop_joystick.run, args=(args,), daemon=True)
+    thread.start()
+    time.sleep(.3)
+    try:
+        keys.down = {pygame.K_w, pygame.K_RIGHT}
+        assert read_command(sink) == pytest.approx((normal, 0., -.4), abs=1e-5)
+        for shift in (pygame.K_LSHIFT, pygame.K_RSHIFT):
+            keys.down = {pygame.K_w, pygame.K_RIGHT, shift}
+            assert read_command(sink) == pytest.approx((boosted, 0., -.4), abs=1e-5)
+            keys.down = {pygame.K_w, pygame.K_RIGHT}
+            assert read_command(sink) == pytest.approx((normal, 0., -.4), abs=1e-5)
+        keys.down = {pygame.K_q, pygame.K_LSHIFT}
+        vx, vy, omega = read_command(sink)
+        assert vx == pytest.approx(vy)
+        assert math.hypot(vx, vy) == pytest.approx(boosted, abs=1e-5)
+        assert omega == 0.
+        for stop in (pygame.K_s, pygame.K_SPACE):
+            keys.down = {pygame.K_w, pygame.K_LEFT, pygame.K_LSHIFT, stop}
+            assert read_command(sink) == (0., 0., 0.)
+        keys.down = {pygame.K_LSHIFT}
+        pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(170, 90)))
+        assert read_command(sink) == pytest.approx((max_lin, 0., 0.), abs=1e-5)
+        pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=(170, 90)))
+        pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(570, 190)))
+        assert read_command(sink) == pytest.approx((0., 0., -.4), abs=1e-5)
+    finally:
+        pygame.event.post(pygame.event.Event(pygame.QUIT))
+        thread.join(2.)
+        sink.close()
+    assert not thread.is_alive()
+
+
 class FakeKeys:
     """pygame.key.get_pressed()가 돌려주는 객체처럼 키 상수로 조회되는 가짜 키 상태."""
 

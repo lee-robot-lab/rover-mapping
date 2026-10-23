@@ -1,0 +1,102 @@
+{
+  "start": [
+    2.6593432426452637,
+    5.572978973388672,
+    -1.330099791225133
+  ],
+  "start_status": "user-confirmed small basket center and parallel -Y heading",
+  "start_geometry": {
+    "x": 2.6593432426452637,
+    "y": 5.572978973388672,
+    "yaw": -1.330099791225133,
+    "yaw_deg": -76.20910436843205,
+    "surface_z_m": 0.4077049195766449,
+    "forward_xy": [
+      0.23837915062904358,
+      -0.9711722135543823
+    ],
+    "side_xy": [
+      0.9711722135543823,
+      0.23837915062904358
+    ],
+    "floor_dimensions_m": [
+      0.31999993324279785,
+      0.3179807662963867
+    ],
+    "user_selection": "small basket center, parallel to side walls, facing -Y",
+    "source": "final USD Arena small basket geometry",
+    "method": "dominant vertical side-wall normal and oriented floor bounding center",
+    "vertical_intersections_m": [
+      0.39884209632873535,
+      0.4077049195766449
+    ]
+  },
+  "extent": [
+    0.0,
+    0.0,
+    4.0,
+    8.120000000000001
+  ],
+  "source": "/home/su/rover/outputs/ksrc_final_map/20261022_board_level_sand/height.npz",
+  "source_sha256": "0a1920e347214379918e17a7f680220471b5f75ac0fb99e2c5091a2d2a8583ef",
+  "simulation": "kinematic SE2 + uncalibrated traction approximation; not Isaac/physical wheel slip",
+  "slip_model": "s=-0.15*log(1-clip((max(directional_grade,0)+0.03)/0.6,0,0.995))",
+  "prediction": "offline MPPI tracking geometry-checked transfer route; simulation pose drives UDP replay",
+  "dt": 0.1,
+  "horizon": 30,
+  "samples": 256,
+  "seed": 17,
+  "seconds_per_run": 35.9,
+  "state_count": 360,
+  "compute_p95_ms": 4.314172649628745,
+  "phase": "transfer",
+  "run1_entry_pose": [
+    3.6,
+    2.82,
+    -1.5707963267948966
+  ],
+  "goal_reached": true,
+  "goal_error_m": 0.054957169748116756,
+  "transfer_route_length_m": 3.1754862138855002,
+  "transfer_validation": "2D footprint radius .12m; not physical rover or sand dynamics",
+  "basket_egress_validation": "centerline only; initial full footprint clearance insufficient",
+  "teleop_cache": {
+    "state_count": 44449,
+    "route_station_spacing_m": 0.05,
+    "lateral_range_m": [
+      -0.15,
+      0.15
+    ],
+    "yaw_offsets_deg": [
+      -40,
+      40
+    ],
+    "yaw_spacing_deg": 10,
+    "v_bins_m_s": [
+      -0.08,
+      0,
+      0.08,
+      0.16
+    ],
+    "w_bins_rad_s": [
+      -0.6,
+      0,
+      0.6
+    ],
+    "position_lookup_tolerance_m": 0.04,
+    "yaw_lookup_tolerance_deg": 5,
+    "seed": 23,
+    "samples": 128,
+    "horizon_s": 3.0,
+    "tried": 44604,
+    "no_safe_prediction": 155,
+    "wall_s": 89.4394321560003,
+    "warning": "narrow basket exit uses centerline clearance approximation; not physical validation",
+    "slip_direction": "heading + pi for reverse; stationary slip unavailable in display"
+  },
+  "deployment_pack": {
+    "display_candidates": 16,
+    "coordinate_dtype": "float16",
+    "max_coordinate_error_m": 0.001953125
+  }
+}

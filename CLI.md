@@ -183,7 +183,7 @@ PI_AP_IP='192.168.0.101'
 
 | 조작 | 동작 | 비고 |
 |---|---|---|
-| `w` / `x` | 전진 / 후진 | 키 병진 속도는 0.075 m/s(`--max-lin 0.15`의 50%) |
+| `w` / `x` | 전진 / 후진 | 기본 0.10 m/s. 좌·우 Shift를 누르는 동안만 0.15 m/s, 떼면 즉시 0.10 m/s |
 | `a` / `d` | 좌 / 우 병진 | 로버 정면은 그대로, 옆으로 이동 |
 | `q` `e` `z` `c` | 대각선: 전방좌 / 전방우 / 후방좌 / 후방우 | 대각선도 같은 속력. 반대 키를 같이 누르면 상쇄 |
 | `←` / `→` | 제자리 회전: 반시계 / 시계 | 0.4 rad/s(코드의 0.5배 적용) |
@@ -382,3 +382,14 @@ Pi에서 FAKE 연결·plan 분리·정상 종료·정책 주기 NPZ·부하 기�
 | `TEST_DIR`를 잊음 | 터미널 변수는 공유되지 않음 | Pi에서 `cd .../deployment/ksrc`, `TEST_DIR="$(cat state/latest_test.txt)"` 복원 |
 
 원시 JSON이 꼭 필요할 때만 `./ksrc --state-dir "$TEST_DIR" status`를 쓴다. 기본 관찰은 B의 `view --watch`, 결과는 `report`다.
+
+## 중계 화면과 조이스틱을 같이 켜기
+
+기존 3단계의 조이스틱 실행 대신 아래 명령 하나를 사용한다. Pi 스택은 기존대로 먼저 실행한다. 중계와 조이스틱을 중복 실행하지 않는다.
+
+```bash
+cd ~/rover-mapping
+python deployment/broadcast/launch.py --pi pi@192.168.0.101
+```
+
+바구니 출발 때 실행하면 실제 pose와 수락된 START/ANCHOR 상태를 받아 중계 기록이 전환된다. 로버 없는 화면 시연은 `python deployment/broadcast/launch.py --demo` 후 사이트의 **▶ 시뮬 재생**을 누른다. Python은 numpy/pygame가 있는 기존 환경의 실행 파일을 사용한다. 상세 설정·현재 예측 지원 범위는 [중계 배포 안내](deployment/broadcast/README.md).

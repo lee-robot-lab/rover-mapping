@@ -1,0 +1,8 @@
+*
+!.gitignore
+!manifest.json
+!terrain.png
+!terrain.npz
+!predictions.npz
+!teleop_cache.npz
+!packing_verification.json
