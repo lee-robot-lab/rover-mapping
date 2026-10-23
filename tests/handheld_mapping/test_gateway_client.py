@@ -46,6 +46,21 @@ def test_control_packets_are_readable_by_the_gateway_and_seq_increases():
     assert parsed[0][0] < parsed[1][0]
 
 
+@pytest.mark.parametrize('run', [1, 2, 3, 4])
+def test_client_sends_each_supported_run(run):
+    sock = Capture()
+    gc.GatewayClient(sock, ('pi', 5006)).start(run)
+    assert cg.parse_ctl(sock.packets[0][0])[2][0] == run
+
+
+@pytest.mark.parametrize('run', [0, 5, 1.5])
+def test_client_rejects_unsupported_runs_without_sending(run):
+    sock = Capture()
+    with pytest.raises(ValueError):
+        gc.GatewayClient(sock, ('pi', 5006)).start(run)
+    assert not sock.packets
+
+
 def test_estop_is_repeated():
     sock = Capture()
     gc.GatewayClient(sock, ('pi', 5006)).estop()
@@ -219,6 +234,9 @@ def test_window_sends_heartbeat_estop_and_start(window):
     assert starts and starts[0][0] == 1.
     post_click(window, 'start2')
     assert [args[0] for op, args in collect(window.gateway, .6) if op == cg.START][:1] == [2.]
+    for run in (3, 4):
+        post_click(window, f'start{run}')
+        assert [args[0] for op, args in collect(window.gateway, .6) if op == cg.START][:1] == [float(run)]
 
 
 def reply_status(window, **fields):

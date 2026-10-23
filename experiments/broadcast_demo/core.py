@@ -31,7 +31,7 @@ def decode_packet(data: bytes) -> dict:
         if 'operator' in value:
             op=value['operator']
             if (not isinstance(op,dict) or type(op.get('active')) is not bool
-                    or type(op.get('run')) is not int or op['run'] not in (0,1,2)
+                    or type(op.get('run')) is not int or op['run'] not in (0,1,2,3,4)
                     or type(op.get('anchor_count')) is not int or op['anchor_count']<0):
                 raise ValueError('invalid operator state')
             result['operator']={key:op[key] for key in ('active','run','anchor_count')}
@@ -78,8 +78,8 @@ class Session:
         self.run = 0
         self.rotation = 0.
         self.offset = np.zeros(2)
-        self.tracks = [[], []]
-        self.distances = [0., 0.]
+        self.tracks = [[], [], [], []]
+        self.distances = [0., 0., 0., 0.]
         self.started = None
         self.stopped = None
         self.active = False
@@ -122,8 +122,8 @@ class Session:
     def start(self, run: int, now: float | None = None, require_history: bool = True, align: bool = True) -> None:
         with self.lock:
             now = time.monotonic() if now is None else now
-            if run not in (1, 2) or self.received is None or now-self.received > .5:
-                raise ValueError('fresh pose required to start RUN 1/2')
+            if run not in (1,2,3,4) or self.received is None or now-self.received > .5:
+                raise ValueError('fresh pose required to start RUN 1..4')
             if run == 2 and require_history and not self.tracks[0]:
                 raise ValueError('RUN 1 record required')
             self.rotation = float(wrap(self.start_pose[2]-self.raw['yaw'])) if align else 0.
@@ -131,9 +131,9 @@ class Session:
             self.offset = (np.asarray(self.start_pose[:2])-np.array([[c, -s], [s, c]]) @ [self.raw['x'], self.raw['y']]
                            if align else np.zeros(2))
             if run == 1:
-                self.tracks, self.distances = [[], []], [0., 0.]
+                self.tracks, self.distances = [[], [], [], []], [0., 0., 0., 0.]
             else:
-                self.tracks[1], self.distances[1] = [], 0.
+                self.tracks[run-1], self.distances[run-1] = [], 0.
             self.run, self.started, self.active = run, now, True
             self.stopped = None
             p = self.pose()

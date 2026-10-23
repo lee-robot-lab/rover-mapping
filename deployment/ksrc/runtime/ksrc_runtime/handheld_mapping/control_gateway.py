@@ -118,6 +118,9 @@ class Gateway:
                 self.on_stop()
             return True
         if op == START:
+            if args[0] not in (1.,2.,3.,4.):
+                self.last_reject='run'
+                return False
             if self.mode != 'TELEOP' or now < self.zero_until:
                 self.last_reject = 'mode'
                 return False

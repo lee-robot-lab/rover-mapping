@@ -43,7 +43,7 @@
     "runtime/ksrc_runtime/handheld_mapping/__init__.py": "44b21c4d9a91b613b12afef3f4fd149a657bc65a85160ab9c1dfb6605eaf0f28",
     "runtime/ksrc_runtime/handheld_mapping/color.py": "2b4d7f8e1139b82b82c99e9429ae06d52c334a26983546d551073461c7ca8772",
     "runtime/ksrc_runtime/handheld_mapping/compare.py": "d9d5cf37842f97d67b97f8abf22eea6ab70abd0c55a9a8218fc55a0c12b2b36b",
-    "runtime/ksrc_runtime/handheld_mapping/control_gateway.py": "5f58644a9e36ef2521714e3a3b4a86c4319eaacaf24c196b8ce29af52fae5064",
+    "runtime/ksrc_runtime/handheld_mapping/control_gateway.py": "1c06716695e9c96d9a9e67bd7d82e4ef44ba78ae81347c2937d0e0674f5876d5",
     "runtime/ksrc_runtime/handheld_mapping/costmap.py": "9020c6ac6b02229226677f15def6d364a080e61f0b0c83a77d440fdac52fc683",
     "runtime/ksrc_runtime/handheld_mapping/coverage_path.py": "eb9c1216c6a792741a85f4b076ae5ffd52ad836533ecef21fcdd41d4b9f2861f",
     "runtime/ksrc_runtime/handheld_mapping/depth_filter.py": "cf3161712d4ccb1844c326c9e2e66b7cfdc3b4d003bd5484d4ac5cfde9a3e16c",
@@ -57,7 +57,7 @@
     "runtime/ksrc_runtime/handheld_mapping/reconstruct.py": "31a6eb975bd73b9ee4b57eac602e541c82ba1f3e002bdb04cca0f8b9d6bdfb5c",
     "runtime/ksrc_runtime/handheld_mapping/recording.py": "c7ebc70fef84ee3d7c1bcb8cfee89900a07a5658b18c90ad6fa50f6a2c81508e",
     "runtime/ksrc_runtime/handheld_mapping/reference.py": "e9ca8c973db3ab68ca7f5630c81f3153320949ceceb2bf503e96ef9dd73a3935",
-    "runtime/ksrc_runtime/handheld_mapping/region_mission.py": "020e37e73104ba4e44aada367e887ffb7c72ffa30f6a5566b1f58c5f24c83aa2",
+    "runtime/ksrc_runtime/handheld_mapping/region_mission.py": "9d959b40412c5670befe311827ed31238144f9001cb30c511d4f8b98d735c9e5",
     "runtime/ksrc_runtime/handheld_mapping/registration.py": "0fb682d9442ad4102dd5be7007716739f799b40c582e22f1306e8e378f2d8adc",
     "runtime/ksrc_runtime/handheld_mapping/sensor_safety.py": "bed8bee539c96cc8abab0e6daaf9e2a948d0e662b0814c1ccc2132ac6a08f5d3",
     "runtime/ksrc_runtime/handheld_mapping/site_map.py": "499cb9c8c7480507d1ba837e5855ca7f1bd46d0881d6135d2f7e484f203e7405",
@@ -83,6 +83,7 @@
   "adaptations": [
     "experiments namespace renamed to ksrc_runtime",
     "SiteMap.load(load_mesh=False) verifies grid and metadata; excludes unused mesh file hash",
-    "control_gateway: ANCHOR op (5) forwards the joystick ANCHOR button to the runner; snapshot passes runner stage/run/reason/anchor_count to the screen; ORB_RESET op (6) forwards the joystick ORB RESET button (TELEOP only); status replies are sent from the teleop socket (same source port the GUI sent to); velocity path unchanged"
+    "control_gateway: ANCHOR op (5) forwards the joystick ANCHOR button to the runner; snapshot passes runner stage/run/reason/anchor_count to the screen; ORB_RESET op (6) forwards the joystick ORB RESET button (TELEOP only); status replies are sent from the teleop socket (same source port the GUI sent to); velocity path unchanged",
+    "2026-10-23: RUN3 fallback after 30-degree retreat uses outer ascent 1-6-7-8-9-10-4; RUN4 starts outer ascent; START accepts only runs 1..4. RUN1/2 policies unchanged."
   ]
 }

@@ -40,7 +40,7 @@ class Broadcast:
         self.cost, self.cell, self.origin = terrain['cost'], float(terrain['cell']), terrain['origin']
         ij = np.indices(self.cost.shape).reshape(2, -1).T
         self.grid_points = self.origin + ij*self.cell
-        self.explored = np.zeros((2, len(ij)), dtype=bool)
+        self.explored = np.zeros((4, len(ij)), dtype=bool)
         self.session = Session(tuple(self.meta['start']))
         self.lookup = Lookup(self.prediction_data['states'], self.prediction_data['runs'])
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -142,7 +142,7 @@ class Broadcast:
             if run == 1:
                 self.explored[:] = False
             else:
-                self.explored[1] = False
+                self.explored[run-1] = False
             self.remember()
 
     def state(self) -> dict:
@@ -224,7 +224,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         app = self.server.app
         try:
-            if app.live and self.path in ('/api/demo/replay','/api/run/1','/api/run/2','/api/stop'):
+            if app.live and self.path in ('/api/demo/replay','/api/run/1','/api/run/2','/api/run/3','/api/run/4','/api/stop'):
                 raise ValueError('live recording follows the joystick operator state only')
             if self.path == '/api/demo/replay':
                 app.play_demo(self.server.server_address[1])
@@ -233,7 +233,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/api/stop':
                 app.stop_demo()
             with app.session.lock:
-                if self.path in ('/api/run/1', '/api/run/2'):
+                if self.path in ('/api/run/1','/api/run/2','/api/run/3','/api/run/4'):
                     app.save()
                     app.start(int(self.path[-1]))
                 elif self.path == '/api/stop':

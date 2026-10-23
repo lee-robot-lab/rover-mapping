@@ -110,3 +110,17 @@ def test_old_operator_packet_cannot_stop_active_recording():
             assert time.monotonic()<deadline;time.sleep(.01)
         assert app.session.active and app.operator['run']==1
     finally:sock.close();app.close()
+
+
+def test_run3_run4_are_recorded_without_overwriting_previous_runs():
+    app=Broadcast(DEFAULT_OUT,'127.0.0.1',0,live=True)
+    try:
+        for run in (1,2,3,4):
+            app.session.ingest(packet(run),record=False)
+            app.sync_operator(dict(active=True,run=run,anchor_count=run))
+            assert app.session.run==run and app.session.active
+        state=app.session.snapshot()
+        assert len(state['tracks'])==4
+        assert all(len(track)==1 for track in state['tracks'])
+        assert decode_packet(json.dumps(dict(packet(5),operator=dict(active=True,run=4,anchor_count=4))).encode())['operator']['run']==4
+    finally:app.close()

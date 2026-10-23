@@ -174,3 +174,18 @@ rsync -a -e 'ssh -o HostKeyAlias=raspberrypi.local' pi@"$PI_AP_IP":/home/pi/ksrc
 ## 8. 이번에 직접 실행한 확인
 
 2026-10-22 Pi에서 `./ksrc check`, `configure`, ROS import, `start`(FAKE), `status`, `start1`, `estop`, `stop`을 실행했다. 예시 출력은 **[현장 시험 절차서의 확인 기록](../../FIELD_TESTS.md#이번-확인-기록)** 에 있다. 실제 모터 주행·현장 완주를 확인했다는 뜻은 아니다.
+
+## RUN 3·4 추가 — Pi 백업 대조 완료
+
+| 명령/버튼 | 상승 경로 |
+|---|---|
+| START RUN 1 / `./ksrc start1` | 30° 시도 → 후퇴 → 15° 우회(기존) |
+| START RUN 2 / `./ksrc start2` | 15° 직행, 관찰 생략·하행0.7배(기존) |
+| START RUN 3 / `./ksrc start3` | 30° 시도 → 후퇴 → 외곽 경로 상승 |
+| START RUN 4 / `./ksrc start4` | 처음부터 외곽 경로 상승 |
+
+‘10도 경로’는 외곽 경로의 기존 이름이다. 실제 외곽에는5°·7°·7.27° 구간이 포함된다. 상승 구역 순서는 `1→6→7→8→9→10→4`, 정상 이후에는 기존 관찰·하행·복귀를 재사용한다. RUN3/4의 관찰·하행 속도는 별도 변경 요청이 없어 RUN1 기본값을 유지한다. 30°의5초 전진/10초 경과 중단 정책·후퇴 동작, 시작 정렬/센서/3초 정지 조건, E-STOP은 유지한다.
+
+새 단계는 `outer6→outer7→outer8→outer9→outer10→outer4→summit`. 외곽 상승 중 과도한기울기·정체는 임무 실패·정지로 처리하며30/15도 경사로 잘못 후퇴하지 않는다. 중계도1~4회차를 수신하고 각각의 궤적을 보존한다. 본 주행의 사전 MPPI/슬립 표시 캐시는 아직 제공하지 않는다.
+
+모터 없는 검증은 `python deployment/ksrc/validation/run_variants_kinematic.py`. 실제 MPPI+점기구학으로 RUN3/4의 정상·복귀 완료를 확인했으나, 센서 오차·바퀴 접촉·모래·실기 완주 검증은 아니다. 실기 적용 전 시뮬레이션과 바퀴를 띄운 시험을 권장한다. 2026-10-23 Pi 백업 `cmwcmw57/pi-backup@7e2f955`와 대조했다. 기존 배포 HEAD와 65개 파일이 동일했고, 차이는 gateway의 상태 응답 소스 포트 수정과 ORIGIN 기록이었다. 저수준 정책은 `/home/pi/ksrc/pi/policy/run_policy.py`, 모델은 같은 폴더의 `res8_mlp_v3vo_rc4000`을 계속 사용한다. `SpiLink.exchange/exchange_res`, 보정 축, UDP 명령 형식은 연결 가능한 구조로 확인했다. 백업을 실제 Pi에서 실행한 검증은 아니다. 업데이트·리허설 순서는 [CLI.md](../../CLI.md)를 따른다.

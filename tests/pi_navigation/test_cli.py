@@ -38,6 +38,16 @@ def test_sync_plan_requires_explicit_option():
     assert not args.async_plan
 
 
+@pytest.mark.parametrize('run', [1, 2, 3, 4])
+def test_start_command_sends_selected_run(monkeypatch, run):
+    import cli
+    sent = []
+    monkeypatch.setattr(sys, 'argv', ['ksrc', f'start{run}'])
+    monkeypatch.setattr(cli, 'control', lambda op, value: sent.append((op, value)))
+    cli.main()
+    assert sent == [(3, run)]
+
+
 def test_stop_returns_after_owned_processes_finish(tmp_path):
     command = [sys.executable, str(DEPLOY / 'cli.py'), '--state-dir', str(tmp_path)]
     started = subprocess.run([*command, 'start', '--seconds', '30', '--policy-script', str(tmp_path / 'missing.py')],

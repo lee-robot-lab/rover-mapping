@@ -2,7 +2,23 @@
 
 ## 빠른 시작 — 꼭 필요한 것만
 
-**켜야 하는 것은 딱 둘이다.** ① Pi의 실기 스택(`start --real`) 하나, ② 노트북의 조이스틱 GUI 하나. 나머지(관찰 터미널·부하 수집기·서버·VPN·인터넷·별도 `udp_spi_bridge`/`run_policy`)는 **필요 없다.** 출발·anchor·E-STOP은 모두 GUI 버튼으로 한다.
+2026-10-23 Pi 백업 `cmwcmw57/pi-backup@7e2f955`의 경로·설정·정책 인터페이스를 대조한 절차다. 아래 업데이트를 한 번 적용한 뒤 사용한다. 실기 모터 주행 검증은 별도로 필요하다.
+
+**켜야 하는 것은 둘이다.** ① Pi의 실기 스택(`start --real`), ② 노트북의 중계+조이스틱 launcher. 출발·anchor·E-STOP은 GUI 버튼으로 한다. 별도 `udp_spi_bridge`/`run_policy`를 중복 실행하지 않는다.
+
+### 한 번만: 최신 코드 배포 [노트북 로컬]
+
+Pi의 기존 세션을 E-STOP → `stop`으로 종료한 상태에서 실행한다. `local/` 보정·의존성과 `state/` 기록은 보존하며 `/home/pi/ksrc`의 펌웨어·정책·모델은 교체하지 않는다.
+
+```bash
+cd ~/rover-mapping
+git pull --ff-only origin claude/sim-realism-rl-replay
+rsync -a --exclude local/ --exclude state/ --exclude __pycache__/ \
+  -e 'ssh -o HostKeyAlias=raspberrypi.local' \
+  deployment/ksrc/ pi@192.168.0.101:/home/pi/ksrc_final_20261022/deployment/ksrc/
+```
+
+Pi에는 `git pull` 대신 위 배포 폴더를 복사한다. 백업 저장소는 Pi 파일의 스냅샷이며 이번 RUN3/4 수정은 `rover-mapping`에 있다.
 
 > 실제 모터가 움직인다. 처음에는 바퀴를 띄워 확인하고, **E-STOP을 누를 사람**을 둔다. 실제 출발 위치가 아닌 곳에서는 START를 누르지 않는다.
 
@@ -22,15 +38,14 @@ TEST_DIR="state/field_S1_$(date +%Y%m%d_%H%M%S)"; mkdir -p "$TEST_DIR"; printf '
 
 확인: `started REAL supervisor ...` 다음에 `상태: 대기 / TELEOP`, `센서: 정상`이 나오면 된다(처음 1초쯤의 `복구 1회`는 정상). `초기화 중`이면 `./ksrc --state-dir "$TEST_DIR" view`를 다시 실행한다. 오류가 나거나 `다른 세션이 실행 중이라 시작하지 않는다`가 나오면 [막혔을 때](#빠른-판정막혔을-때)로 간다.
 
-**3. [노트북 터미널 2, 로컬 — SSH 아님] 조이스틱 GUI 실행**
+**3. [노트북 터미널 2, 로컬 — SSH 아님] 중계+조이스틱 실행**
 
 ```bash
 cd /home/su/rover-mapping
-/home/su/rover/.venv-mapping/bin/python teleop/ksrc_snapshot/pi/teleop/teleop_joystick.py \
-  --udp "192.168.0.101:5006" --gateway --grid-keys --rate 50 --max-lin 0.15 --max-ang 0.8
+/home/su/rover/.venv-mapping/bin/python deployment/broadcast/launch.py --pi pi@192.168.0.101
 ```
 
-확인: 창 아래 `MODE TELEOP`, `laptop link OK`. (`GATEWAY: no status`면 2단계가 안 된 것이다. 포트는 반드시 `:5006`.)
+확인: 브라우저 `http://127.0.0.1:8765`와 조이스틱 창이 열린다. 창 아래 `MODE TELEOP`, `laptop link OK`를 확인한다. (`GATEWAY: no status`면 Pi 스택·UDP 5006 연결을 확인.) 다른 노트북에서는 numpy/pygame가 설치된 Python 경로로 바꾼다. 바구니에서 출발하기 전에 연결한다.
 
 **4. [GUI] 출발 위치에 맞추고 anchor → 출발**
 
@@ -45,7 +60,16 @@ cd /home/su/rover-mapping
 
 조작 키: `w`/`x` 전진·후진, `a`/`d` 좌·우, `q e z c` 대각선, `←` `→` 회전, `s` 정지. 자세한 조작은 [조이스틱 화면과 사용법](#조이스틱-화면과-사용법).
 
-**5. 1회차가 끝나면 → 2회차** — 1회차가 끝나면 **자동으로 `MODE TELEOP`으로 돌아와 정지**하고, 화면에 `RUN 1 COMPLETE - back to TELEOP`(초록) 또는 `RUN 1 FAILED (원인) - back to TELEOP`(빨강)이 뜬다. 2회차는 **자동으로 시작되지 않는다.** 다시 ①~③(정렬 → 3초 정지 → `ANCHOR`)을 하고 `READY: START allowed`가 뜨면 **`START RUN 2`**를 클릭한다. 스택은 계속 켜져 있다. 자세한 동작은 [1회차가 끝나면](#1회차가-끝나면-자동으로-일어나는-일).
+**5. 다음 회차** — 종료되면 자동으로 `MODE TELEOP`으로 돌아와 정지한다. 스택을 켜 둔 채 시작 구역에서 site −y 방향으로 맞추고 3초 정지한다. 복귀 시 +x를 보고 있으면 시계 방향으로 90° 회전한다. 위치 추정이 맞으면 ANCHOR 없이 다음 START를 눌러도 된다. 추정이 어긋났을 때만 정해진 출발점·방향에 실제로 맞춘 뒤 ANCHOR한다. 다음 회차는 자동으로 시작되지 않는다.
+
+| 버튼 | 상승 동작 |
+|---|---|
+| START RUN 1 | 30° 시도 후 중단·후퇴하면 15° 우회 |
+| START RUN 2 | 15° 직행, 정상 관찰 생략, 하행 속도 0.7배 |
+| START RUN 3 | 30° 시도 후 중단·후퇴하면 외곽 경로로 상승 |
+| START RUN 4 | 처음부터 외곽 경로로 상승 |
+
+외곽은 통칭 “10도” 경로이며 맵의 실제 구역 경사를 사용한다. RUN3/4는 구역 1→6→7→8→9→10→4로 올라가고 이후 관찰·하행·복귀는 기존 기본 동작이다. 30° 시도 시간 제한에 따른 중단과 실제 미끄러짐 측정 실패는 구분한다.
 
 **6. 종료 [Pi 터미널]** — GUI에서 E-STOP으로 정지를 확인한 뒤 GUI를 Esc로 닫는다.
 
@@ -393,3 +417,7 @@ python deployment/broadcast/launch.py --pi pi@192.168.0.101
 ```
 
 바구니 출발 때 실행하면 실제 pose와 수락된 START/ANCHOR 상태를 받아 중계 기록이 전환된다. 로버 없는 화면 시연은 `python deployment/broadcast/launch.py --demo` 후 사이트의 **▶ 시뮬 재생**을 누른다. Python은 numpy/pygame가 있는 기존 환경의 실행 파일을 사용한다. 상세 설정·현재 예측 지원 범위는 [중계 배포 안내](deployment/broadcast/README.md).
+
+## 추가 회차 명령
+
+GUI의 `START RUN 3` 또는 Pi의 `./ksrc --state-dir "$TEST_DIR" start3`는 30도 경사 시도 후 중단·실패하면 15도 경사를 건너뛰고 외곽 10도 경사로 상승한다. `START RUN 4` 또는 `./ksrc --state-dir "$TEST_DIR" start4`는 처음부터 외곽 10도 경사로 상승한다. 기존과 같이 출발 준비 조건을 만족한 상태에서 요청하고 `view --watch`로 수락 여부를 확인한다.

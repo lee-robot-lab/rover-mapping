@@ -45,6 +45,8 @@ class GatewayClient:
             self._send(ESTOP)
 
     def start(self, run):
+        if run not in (1, 2, 3, 4):
+            raise ValueError("run must be 1, 2, 3, or 4")
         self._send(START, float(run))
 
     def anchor(self, now):

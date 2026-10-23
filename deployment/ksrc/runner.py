@@ -119,8 +119,10 @@ class Navigation:
         return est
 
     def new_runtime(self, run: int) -> RegionMission:
-        """f판 규칙을 읽고 2회차에만 30° 생략·하행 0.7배를 적용한다."""
+        """1~4회차의 30도 시도·15도/외곽 우회를 선택하며 기존 2회차 설정을 유지한다."""
+        if run not in (1,2,3,4):raise ValueError('run must be 1..4')
         mission = SiteMission.load(self.mission_dir, load_mesh=False)
+        mission.settings['fallback_after_30'] = '10' if run==3 else '15'
         mission.settings['max_speed_m_s'] = .15
         mission.settings['descent_speed_scale'] = .7 if run == 2 else 1.
         if run == 2:
@@ -133,6 +135,8 @@ class Navigation:
             runtime.route = '15'
             runtime.visits['entry15'] = 'active'
             runtime._phase('entry15', 'to_entry15', 0.)
+        elif run == 4:
+            runtime._begin_outer_ascent(0.)
         return runtime
 
     def imu(self, stamp: float, dt: float, gyro: object, force: object, wheel_speed: float) -> bool:
@@ -228,7 +232,7 @@ class Navigation:
     def start(self, run: int, now: float) -> bool:
         """명시 START는 정지·정상 추적·출발 구역을 요구한다."""
         status = self.status(now)
-        if self.active or run not in (1, 2) or not status['orb_ok'] or not status['in_region1'] or status['stationary_s'] < 3.:
+        if self.active or run not in (1,2,3,4) or not status['orb_ok'] or not status['in_region1'] or status['stationary_s'] < 3.:
             return False
         if self.async_plan:
             self.async_plan.close()

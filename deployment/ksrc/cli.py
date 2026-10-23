@@ -50,7 +50,7 @@ def parser() -> argparse.ArgumentParser:
         start.add_argument('--policy-script', type=Path, default=Path('/home/pi/ksrc/pi/policy/run_policy.py'))
         start.add_argument('--policy', type=Path, default=Path('/home/pi/ksrc/pi/policy/res8_mlp_v3vo_rc4000'))
         start.add_argument('--seconds', type=float, default=3600.)
-    for name in ('status', 'anchor', 'start1', 'start2', 'estop', 'stop', 'logs'):
+    for name in ('status', 'anchor', 'start1', 'start2', 'start3', 'start4', 'estop', 'stop', 'logs'):
         commands.add_parser(name)
     view = commands.add_parser('view', help='읽기 전용 한국어 상태 요약')
     view.add_argument('--watch', action='store_true', help='한 화면을 1초마다 갱신; Ctrl+C는 보기만 종료')
@@ -367,8 +367,8 @@ def main() -> None:
         print(path.read_text() if path.exists() else 'status unavailable; see supervisor.log')
         if (state / 'stopped.json').exists():
             print('SESSION STOPPED (above status is historical)')
-    elif args.command in ('start1', 'start2', 'estop'):
-        control(4 if args.command == 'estop' else 3, 1 if args.command == 'start1' else 2)
+    elif args.command in ('start1', 'start2', 'start3', 'start4', 'estop'):
+        control(4 if args.command == 'estop' else 3, 2 if args.command == 'estop' else int(args.command.removeprefix('start')))
         print('sent', args.command, '; confirm with status')
     elif args.command == 'anchor':
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as output:

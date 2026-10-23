@@ -47,7 +47,7 @@ def test_old_sequence_and_stale_start():
 def test_no_record_before_run_and_nonfinite_rejected():
     session = Session((0., 0., 0.))
     session.ingest(packet(), now=0.)
-    assert session.snapshot(now=0.)['tracks'] == [[], []]
+    assert session.snapshot(now=0.)['tracks'] == [[], [], [], []]
     with pytest.raises(ValueError):
         decode_packet(json.dumps(dict(packet(), v=float('nan'))).encode())
 

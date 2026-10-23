@@ -130,6 +130,12 @@ class RegionMission:
         self.visits['return'] = 'active';self.visits['entry10'] = 'active'
         self.route, self.direction = '10', 'down';self._phase('return10', 'descending', stamp)
 
+    def _begin_outer_ascent(self, stamp: float) -> None:
+        """구역1에서 외곽 6→7→8→9→10→4 순서로 상승한다."""
+        self.route,self.direction='10','up'
+        self.visits['entry10']='active'
+        self._phase('outer6','outer_ascending',stamp)
+
     @staticmethod
     def _bearing(xy: np.ndarray, point) -> float:
         """xy에서 point를 향하는 방위각(rad)."""
@@ -203,7 +209,7 @@ class RegionMission:
             edge = (1, 3) if self._belief_output['current_region'] == 1 else (3, 4)
             return center+normal*(clearance+.14), [1, 3, 4], edge, False
         if self.stage == 'retreat15':return np.array([3.85, 1.2]), [1, 3, 4], (3, 1), True
-        if self.stage == 'summit':return np.asarray(self.mission.summit), [2, 4] if self.route == '30' else [3, 4], None, False
+        if self.stage == 'summit':return np.asarray(self.mission.summit), ([4] if self.route=='10' else [2,4] if self.route=='30' else [3,4]), None, False
         goals = {'return10': ([6.1, -.4], [4, 10], (4, 10)),
                  'return9': ([6.1, -1.2], [10, 9], (10, 9)),
                  'return8': ([5.25, -1.2], [9, 8], (9, 8)),
@@ -274,9 +280,10 @@ class RegionMission:
         self.progress.append((stamp, xy.copy(), self.effort))
         window = max(3., float(self.settings.get('stuck_window_s', 8.)))
         while len(self.progress) >= 2 and stamp-self.progress[1][0] >= window:self.progress.popleft()
-        if self.state == 'ascending':
+        if self.state in ('ascending','outer_ascending'):
             oldest, first_xy, first_effort = self.progress[0]
-            normal = self._portal_normal(1, 2 if self.route == '30' else 3)
+            normal = (self._portal_normal(*edge) if self.state=='outer_ascending'
+                      else self._portal_normal(1,2 if self.route=='30' else 3))
             # 옆 미끄러짐은 통로를 통과하는 등판 진행으로 세지 않는다.
             progress = max(0., max(float((p-first_xy)@normal) for _, p, _ in self.progress))
             motion = max(float(np.linalg.norm(p-first_xy)) for _, p, _ in self.progress)
@@ -288,7 +295,7 @@ class RegionMission:
             if (self.progress_anchor is None or self.command['vx_m_s'] <= 0.
                     or along-self.progress_anchor >= self.settings.get('min_progress_m', .025)):
                 self.progress_anchor, self.progress_stamp, self.progress_effort = along, stamp, self.effort
-            patience = max(window, float(self.settings.get('ascent15_no_progress_s', 30.))) if self.route == '15' else window
+            patience = max(window, float(self.settings.get('ascent15_no_progress_s', 30.))) if self.route in ('15','10') else window
             no_progress = stamp-self.progress_stamp
             effort_since_progress = self.effort-self.progress_effort
             self.failure_evidence.update(no_progress_s=no_progress, no_progress_limit_s=patience,
@@ -307,6 +314,11 @@ class RegionMission:
                                              trial30_forward_limit_s=forward_limit,trial30_elapsed_limit_s=elapsed_limit,
                                              policy_stop=bool(policy_stop and not tilted))
             if stalled or tilted or policy_stop:
+                if self.state=='outer_ascending':
+                    reason='outer_ascent_tilt_limit' if tilted else 'outer_ascent_no_progress'
+                    self.route_status['10']['up']='failed';self.state='failed'
+                    self._event('mission_failed',stamp,reason=reason)
+                    return self._stop(reason)
                 self._fail_ascent(stamp,'tilt_limit' if tilted else 'trial_budget' if policy_stop else 'no_progress')
                 target, regions, edge, reverse = self._goal()
                 distance = float(np.linalg.norm(xy-target))
@@ -323,7 +335,15 @@ class RegionMission:
             elif self.stage == 'ascent30':
                 self.route_status['30']['up'] = 'succeeded';self._phase('summit', 'to_summit', stamp)
             elif self.stage == 'retreat30':
-                self.route = '15';self.visits['entry15'] = 'active';self._phase('entry15', 'to_entry15', stamp)
+                if self.settings.get('fallback_after_30')=='10':self._begin_outer_ascent(stamp)
+                else:self.route = '15';self.visits['entry15'] = 'active';self._phase('entry15', 'to_entry15', stamp)
+            elif self.stage.startswith('outer'):
+                stages=['outer6','outer7','outer8','outer9','outer10','outer4']
+                index=stages.index(self.stage)
+                if index==len(stages)-1:
+                    self.route_status['10']['up']='succeeded';self.visits['entry10']='reached'
+                    self._phase('summit','to_summit',stamp)
+                else:self._phase(stages[index+1],'outer_ascending',stamp)
             elif self.stage == 'entry15':
                 self.visits['entry15'] = 'reached';self._phase('ascent15', 'ascending', stamp)
             elif self.stage == 'ascent15':

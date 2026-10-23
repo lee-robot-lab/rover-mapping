@@ -62,10 +62,12 @@ LEFT_CENTER = (170, 190)
 RIGHT_CENTER = (470, 190)
 GRAB_SLACK = 1.4  # click within radius*GRAB_SLACK of center still grabs the pad
 ROTATION_SPEED_SCALE = 0.5  # 패드와 Q/E의 회전 명령만 50%로 제한
-GW_EXTRA_HEIGHT = 220  # --gateway: 창 아래에 버튼·상태 줄(최대 7줄)을 더한다
+GW_EXTRA_HEIGHT = 264  # --gateway: 버튼 두 줄과 상태 줄(최대 7줄)을 더한다
 GW_BUTTONS = {name: (x, HEIGHT + 12, w, 34) for name, x, w in
-              (("orbreset", 16, 108), ("anchor", 132, 96), ("start1", 236, 118), ("start2", 362, 118), ("estop", 488, 136))}
-GW_LABELS = {"orbreset": "ORB RESET", "anchor": "ANCHOR", "start1": "START RUN 1", "start2": "START RUN 2", "estop": "E-STOP (Space)"}
+              (("orbreset", 16, 108), ("anchor", 132, 96), ("estop", 488, 136))}
+GW_BUTTONS.update({f"start{run}": (16 + 156 * (run - 1), HEIGHT + 56, 140, 34) for run in range(1, 5)})
+GW_LABELS = {"orbreset": "ORB RESET", "anchor": "ANCHOR", "estop": "E-STOP (Space)",
+             **{f"start{run}": f"START RUN {run}" for run in range(1, 5)}}
 GW_COLORS = {"ok": (120, 220, 140), "warn": (240, 200, 90), "bad": (240, 110, 110)}
 
 
@@ -255,7 +257,7 @@ def run(args):
                         if gw.anchor_allowed(time.monotonic()):   # 정지 3초·ORB 정상이 아니면 눌러도 보내지 않는다
                             gw.anchor(time.monotonic())
                     else:
-                        gw.start(1 if name == "start1" else 2)
+                        gw.start(int(name.removeprefix("start")))
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if left_pad.contains(event.pos):
                         left_pad.start_drag(event.pos)
@@ -375,7 +377,7 @@ def run(args):
                     label = font.render(GW_LABELS[name], True, (110, 110, 120) if disabled else (230, 230, 235))
                     screen.blit(label, (rect.centerx - label.get_width() // 2, rect.centery - label.get_height() // 2))
                 for row, (text, tone) in enumerate(gw.lines(now)):
-                    screen.blit(font.render(text, True, GW_COLORS[tone]), (16, HEIGHT + 56 + 22 * row))
+                    screen.blit(font.render(text, True, GW_COLORS[tone]), (16, HEIGHT + 100 + 22 * row))
 
             pygame.display.flip()
             clock.tick(60)

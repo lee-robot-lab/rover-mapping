@@ -19,12 +19,13 @@ def main() -> None:
     parser.add_argument('--data', type=Path, default=DEFAULT_OUT)
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=9870)
-    parser.add_argument('--run', type=int, choices=(1, 2), default=1)
+    parser.add_argument('--run', type=int, choices=(1,2,3,4), default=1)
     parser.add_argument('--hold', type=float, default=5., help='출발 위치 유지 시간')
     parser.add_argument('--loop', action='store_true')
     args = parser.parse_args()
     data = np.load(args.data/'predictions.npz')
     mask = data['runs'] == args.run
+    if not mask.any():raise SystemExit(f'no replay data for RUN {args.run}')
     states, times = data['states'][mask], data['times'][mask]
     yaw = np.unwrap(states[:, 2])
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

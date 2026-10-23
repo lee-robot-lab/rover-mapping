@@ -1,5 +1,5 @@
 {
- "comment": "새 경기장(KSRC final board-level sand)용 단계 좌표. 구역 번호는 regions.json(Codex 10-22)과 같다. 좌표 단위 m, 지도 좌표계.",
+ "comment": "\uc0c8 \uacbd\uae30\uc7a5(KSRC final board-level sand)\uc6a9 \ub2e8\uacc4 \uc88c\ud45c. \uad6c\uc5ed \ubc88\ud638\ub294 regions.json(Codex 10-22)\uacfc \uac19\ub2e4. \uc88c\ud45c \ub2e8\uc704 m, \uc9c0\ub3c4 \uc88c\ud45c\uacc4.",
  "regions_file": "regions.json",
  "start_region": 1,
  "goals": {
@@ -165,6 +165,90 @@
     4
    ],
    "edge": null
+  },
+  "outer6": {
+   "target": [
+    1.9,
+    2.75
+   ],
+   "regions": [
+    1,
+    6
+   ],
+   "edge": [
+    1,
+    6
+   ]
+  },
+  "outer7": {
+   "target": [
+    1.0,
+    2.75
+   ],
+   "regions": [
+    6,
+    7
+   ],
+   "edge": [
+    6,
+    7
+   ]
+  },
+  "outer8": {
+   "target": [
+    1.0,
+    1.29
+   ],
+   "regions": [
+    7,
+    8
+   ],
+   "edge": [
+    7,
+    8
+   ]
+  },
+  "outer9": {
+   "target": [
+    1.0,
+    0.43
+   ],
+   "regions": [
+    8,
+    9
+   ],
+   "edge": [
+    8,
+    9
+   ]
+  },
+  "outer10": {
+   "target": [
+    1.9,
+    0.4
+   ],
+   "regions": [
+    9,
+    10
+   ],
+   "edge": [
+    9,
+    10
+   ]
+  },
+  "outer4": {
+   "target": [
+    2.8,
+    0.4
+   ],
+   "regions": [
+    10,
+    4
+   ],
+   "edge": [
+    10,
+    4
+   ]
   }
  },
  "corner_gate": {
