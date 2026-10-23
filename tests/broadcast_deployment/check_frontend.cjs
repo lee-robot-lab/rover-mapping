@@ -19,7 +19,7 @@ setTimeout(()=>{
  if(node('controls').style.display!=='none')throw Error('live controls exposed');
  if((node('run-summary').style.display==='none')===meta.simulation_mode)throw Error('distance summary visibility does not match real/simulation mode');
  for(const id of ['prediction-legend','teleop-legend'])if((node(id).style.display==='none')===meta.simulation_mode)throw Error('real display legend visible: '+id);
- if(!meta.simulation_mode&&node('terrain-label').textContent!=='KSRC TERRAIN')throw Error('footer prediction label visible');
+ if((node('display-footer').style.display==='none')===meta.simulation_mode)throw Error('footer visibility does not match real/simulation mode');
  if(node('speed').textContent!=='0.120')throw Error('display must use measured speed rather than command v');
  state.pose.seq=2;state.pose.speed_m_s=.14;vm.runInContext('update()',sandbox);
  if(node('speed').textContent!=='0.127')throw Error('speed smoothing failed');

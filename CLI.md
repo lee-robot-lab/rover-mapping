@@ -208,7 +208,7 @@ mkdir -p "$TEST_DIR"
 
 ## 4. 중계 화면과 조이스틱 켜기
 
-실기 사이트에서는 하단 RUN1~4·TELEOP 거리 요약 패널을 숨긴다. 거리와 궤적 기록은 계속 저장하며 `--sim`에서는 요약 패널을 표시한다. 실기에서는 LOCAL PREDICTION·TELEOP 범례/문구를 숨기고, TELEOP 궤적은 CURRENT TRACK과 같은 민트색 실선으로 표시한다. 예측선과 모델 계산은 유지한다.
+실기 사이트에서는 하단 RUN1~4·TELEOP 거리 요약 패널을 숨긴다. 거리와 궤적 기록은 계속 저장하며 `--sim`에서는 요약 패널을 표시한다. 실기에서는 하단 푸터(KSRC·OFFLINE 안내) 전체와 LOCAL PREDICTION·TELEOP 범례/문구를 숨기고, TELEOP 궤적은 CURRENT TRACK과 같은 민트색 실선으로 표시한다. 예측선과 모델 계산은 유지한다.
 
 **[노트북 로컬, SSH하지 않은 터미널]** 바구니에서 출발하기 전에 실행한다.
 
