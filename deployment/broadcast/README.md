@@ -91,3 +91,9 @@ OPENBLAS_NUM_THREADS=1 python deployment/broadcast/verify_missions.py
 사이트의 `TELEOP MODEL`은 이 보조 예측, `CACHE MATCH`는 사전 결과 조회를 뜻한다. 정지·순수 회전·stale·지도 밖·계획 불가 시 예측을 숨긴다. 속도는 계속 실제 수신 pose/시뮬 운동에서 표시한다. GUI 상단 `ANCHOR1~4`는 선택한 기준 방향이며 실제 로버를 회전시키는 버튼이 아니다. AUTO는 같은 회차·단계·pose/v/w 캐시만 사용한다. 캐시 밖 AUTO에 수동 모델을 섞지 않는다.
 
 AUTO 캐시는 −Y·−X 두 기준 주행으로 생성한 world pose 결과다. 네 방향 모두 같은 조건으로 조회하며 +Y·+X 출발의 초기 회전에서는 예측이 비어 있을 수 있다. 실제 pose·속도·기록은 유지한다.
+
+## 수동 이동 궤적
+
+TELEOP 중 수신 pose를 노란 점선으로 계속 기록하며 RUN1~4 궤적과 분리한다. 바구니 연결 구간도 수동 기록이며 가짜 RUN1로 넣지 않는다. AUTO 시작/종료, ANCHOR, 송신 세션 변경, 0.5초 수신 공백은 구간 경계다. 화면 TELEOP 거리는 구간 내부 이동만 합산하며 좌표 점프나 AUTO 거리는 포함하지 않는다. `runs.json`에 `teleop_tracks`/`teleop_distance_m`로 저장한다. 중계 재실행 전 과거 수동 궤적의 자동 복원 기능은 없다.
+
+실기와 시뮬의 차이 및 남은 실행 공백은 [리허설 audit](../../docs/experiments/2026-10-24-real-rehearsal-audit.md)에 기록했다.

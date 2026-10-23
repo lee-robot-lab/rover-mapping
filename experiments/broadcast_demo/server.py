@@ -44,6 +44,7 @@ class Broadcast:
         ij = np.indices(self.cost.shape).reshape(2, -1).T
         self.grid_points = self.origin + ij*self.cell
         self.explored = np.zeros((4, len(ij)), dtype=bool)
+        self.teleop_explored=np.zeros(len(ij),dtype=bool)
         self.session = Session(tuple(self.meta['start']))
         self.lookup = Lookup(self.prediction_data['states'], self.prediction_data['runs'])
         self.mission_data = None
@@ -97,10 +98,14 @@ class Broadcast:
                         operator=packet.get('operator')
                         transition=self.live and operator and self.operator and (
                                 operator['anchor_count']!=self.operator['anchor_count']
-                                or operator['run']!=self.operator['run'])
-                        accepted = self.session.ingest(packet,record=not transition)
+                                or operator['run']!=self.operator['run'] or operator['active']!=self.operator['active'])
+                        accepted = self.session.ingest(packet,record=not transition and (not self.live or bool(operator and operator['active'])))
                         if accepted and self.live and 'operator' in packet:
                             self.sync_operator(packet['operator'])
+                            if not operator['active']:
+                                self.session.record_teleop()
+                                self.remember(teleop=True)
+                            else:self.session.break_teleop()
                         annotation = None
                         if accepted and self.session.active:
                             self.remember()
@@ -118,10 +123,11 @@ class Broadcast:
                 except OSError:
                     break
 
-    def remember(self) -> None:
+    def remember(self, teleop: bool = False) -> None:
         pose = self.session.pose()
         delta = self.grid_points-[pose['x'], pose['y']]
-        self.explored[self.session.run-1] |= np.sum(delta*delta, axis=1) <= REVEAL_RADIUS_M**2
+        mask=self.teleop_explored if teleop else self.explored[self.session.run-1]
+        mask |= np.sum(delta*delta, axis=1) <= REVEAL_RADIUS_M**2
 
     def sync_operator(self, operator: dict) -> None:
         """실기에서 수락된 ANCHOR·회차 상태만 따라가며 실기에 명령을 보내지 않는다."""
@@ -142,7 +148,7 @@ class Broadcast:
         elif previous and previous['active'] and not operator['active']:
             self.session.stop()
         elif previous is None and not operator['active'] and operator['anchor_count']==0:
-            self.start(1)
+            self.session.align_to_start()
         elif previous is None and not operator['active']:
             self.phase='ready'
         self.operator=dict(operator)
@@ -167,6 +173,7 @@ class Broadcast:
         with self.session.lock:
             result['explored'] = [np.column_stack((self.grid_points[mask], self.cost.ravel()[mask])).tolist()
                                   for mask in self.explored]
+            result['teleop_explored']=np.column_stack((self.grid_points[self.teleop_explored],self.cost.ravel()[self.teleop_explored])).tolist()
         pose = result['pose']
         if pose:
             xy = np.array([pose['x'], pose['y']])
@@ -192,7 +199,7 @@ class Broadcast:
     def match_prediction(self, pose: dict, run: int) -> tuple:
         """접근 구간과 본 주행을 분리하고 본 주행은 같은 단계의 결과만 선택한다."""
         state=[pose[x] for x in ('x','y','yaw','v','w')]
-        if self.phase=='transfer':return self.prediction_data,self.lookup.find(state,run)
+        if self.phase=='transfer':return self.prediction_data,self.lookup.find(state,1)
         if self.phase=='run' and self.mission_data is not None and (not self.live or (self.operator or {}).get('active')):
             stage=(self.operator or {}).get('stage')
             return self.mission_data,self.mission_lookup.find(state,run,stage=stage)
@@ -204,7 +211,7 @@ class Broadcast:
         (self.log_dir/'runs.json').write_text(content)
         (self.log_dir/f'checkpoint_{time.time_ns()}.json').write_text(content)
         (self.log_dir/'provenance.json').write_text(json.dumps(self.meta, indent=2))
-        np.savez_compressed(self.log_dir/'explored.npz', masks=self.explored,
+        np.savez_compressed(self.log_dir/'explored.npz', masks=self.explored,teleop_mask=self.teleop_explored,
                             cost=self.cost, cell=self.cell, origin=self.origin)
 
     def close(self) -> None:

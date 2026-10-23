@@ -81,7 +81,7 @@ class Lookup:
 
 
 class Session:
-    """최신 패킷을 SE(2) 정렬하고 수신 빈도로 두 RUN의 주행 궤적을 기록한다."""
+    """최신 pose를 정렬하고 네 RUN 및 좌표 단절을 구분한 TELEOP 궤적을 기록한다."""
 
     def __init__(self, start: tuple[float, float, float]) -> None:
         self.start_pose = start
@@ -98,6 +98,35 @@ class Session:
         self.active = False
         self.accepted = self.rejected = 0
         self.retired_sessions = set()
+        self.teleop_tracks=[]
+        self.teleop_distance_m=0.
+        self.teleop_continuous=False
+
+    def break_teleop(self) -> None:
+        """다음 수동 위치를 새 구간으로 시작해 좌표 변경·AUTO 구간을 연결하지 않는다."""
+        self.teleop_continuous=False
+
+    def record_teleop(self) -> None:
+        """수동 이동만 누적하고 정지 중 중복 위치는 생략한다."""
+        with self.lock:
+            p=self.pose()
+            if p is None:return
+            point=[p['x'],p['y'],p.get('speed_m_s',math.hypot(p['v'],p.get('vy_m_s',0.))),p['timestamp']]
+            if not self.teleop_continuous:
+                self.teleop_tracks.append([point]);self.teleop_continuous=True
+                return
+            segment=self.teleop_tracks[-1]
+            distance=math.hypot(point[0]-segment[-1][0],point[1]-segment[-1][1])
+            if distance<.001:return
+            self.teleop_distance_m+=distance
+            segment.append(point)
+
+    def align_to_start(self, align: bool = True) -> None:
+        """기록 모드를 바꾸지 않고 현재 pose를 출발 기준에 정렬한다."""
+        self.rotation = float(wrap(self.start_pose[2]-self.raw['yaw'])) if align else 0.
+        c,s=math.cos(self.rotation),math.sin(self.rotation)
+        self.offset = (np.asarray(self.start_pose[:2])-np.array([[c,-s],[s,c]]) @ [self.raw['x'],self.raw['y']]
+                       if align else np.zeros(2))
 
     def pose(self) -> dict | None:
         if self.raw is None:
@@ -121,6 +150,7 @@ class Session:
             if changed:
                 self.retired_sessions.add(old_source)
                 self.stop(now)
+            if self.received is not None and now-self.received>.5:self.break_teleop()
             self.raw, self.received = packet, now
             self.accepted += 1
             if self.active and record:
@@ -139,10 +169,8 @@ class Session:
                 raise ValueError('fresh pose required to start RUN 1..4')
             if run == 2 and require_history and not self.tracks[0]:
                 raise ValueError('RUN 1 record required')
-            self.rotation = float(wrap(self.start_pose[2]-self.raw['yaw'])) if align else 0.
-            c, s = math.cos(self.rotation), math.sin(self.rotation)
-            self.offset = (np.asarray(self.start_pose[:2])-np.array([[c, -s], [s, c]]) @ [self.raw['x'], self.raw['y']]
-                           if align else np.zeros(2))
+            self.align_to_start(align)
+            self.break_teleop()
             if run == 1:
                 self.tracks, self.distances = [[], [], [], []], [0., 0., 0., 0.]
             else:
@@ -154,6 +182,7 @@ class Session:
 
     def stop(self, now: float | None = None) -> None:
         with self.lock:
+            self.break_teleop()
             if self.active:
                 self.stopped = time.monotonic() if now is None else now
             self.active = False
@@ -166,4 +195,6 @@ class Session:
                         stale=age is None or age > .5, tracks=[list(t) for t in self.tracks],
                         distances=list(self.distances), elapsed_s=0. if self.started is None else
                         (now if self.stopped is None else self.stopped)-self.started,
-                        accepted=self.accepted, rejected=self.rejected)
+                        accepted=self.accepted, rejected=self.rejected,
+                        teleop_tracks=[list(segment) for segment in self.teleop_tracks],
+                        teleop_distance_m=self.teleop_distance_m)

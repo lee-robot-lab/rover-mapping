@@ -80,7 +80,7 @@ cd /home/pi/ksrc_final_20261022/deployment/ksrc
 ./ksrc check
 ```
 
-`check`가 성공한 뒤 새 세션을 만든다. 기본은 S1 plan 분리이며, 실기는 `--real`을 명시한다. 옵션 없는 `start`는 모터 없는 FAKE다.
+`check`는 코드·지도 hash/import 검사이며 실기 센서·서보·모델 정상 판정은 아니다. [실기 리허설 차이와 확인 순서](docs/experiments/2026-10-24-real-rehearsal-audit.md)를 먼저 확인한 뒤, `check`가 성공하면 새 세션을 만든다. 기본은 S1 plan 분리이며, 실기는 `--real`을 명시한다. 옵션 없는 `start`는 모터 없는 FAKE다.
 
 ```bash
 TEST_DIR="state/field_S1_$(date +%Y%m%d_%H%M%S)"
@@ -224,7 +224,7 @@ rsync -a -e 'ssh -o HostKeyAlias=raspberrypi.local' \
   pi@192.168.0.101:/home/pi/ksrc_final_20261022/deployment/ksrc/state/ ~/ksrc-field-logs/
 ```
 
-노트북 중계 원자료는 `~/rover-mapping/outputs/broadcast_sessions/`에 저장된다. 이 폴더도 필요하면 별도 보관한다.
+노트북 중계 원자료는 `~/rover-mapping/outputs/broadcast_sessions/`에 저장된다. `runs.json`의 `teleop_tracks`는 수동 구간별 궤적, `teleop_distance_m`는 수동 이동 거리다. 화면에서는 노란 점선으로 표시하며 RUN 기록과 분리한다. ANCHOR·재접속·0.5초 수신 공백·AUTO 전환 때 선을 끊고, RUN1을 새로 시작해도 같은 중계 세션의 수동 기록은 보존한다. 이 폴더도 필요하면 별도 보관한다.
 
 ## 8. 상태 관찰·재접속·부하 기록 — 선택
 
