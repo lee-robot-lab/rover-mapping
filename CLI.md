@@ -1,10 +1,41 @@
-# 현장 CLI — 배포부터 RUN1~4까지
+# 실기 리허설 CLI — 배포·AUTO·응급 TELEOP·로그
 
-기준 브랜치: **`claude/sim-realism-rl-replay`**. 2026-10-23 Pi 백업 `cmwcmw57/pi-backup@7e2f955`의 경로·설정·정책 인터페이스와 대조했다. 아래의 **노트북 로컬**과 **Pi SSH**를 구분해서 실행한다.
+정리일: **2026-10-24**. 기준 브랜치: **`claude/sim-realism-rl-replay`**. 2026-10-23 Pi 백업 `cmwcmw57/pi-backup@7e2f955`의 경로·설정·정책 인터페이스와 대조했다. 아래의 **노트북 로컬**과 **Pi SSH**를 구분해서 실행한다.
 
 켜는 프로그램은 Pi의 주행 스택 하나와 노트북의 중계+조이스틱 launcher 하나다. 별도 `udp_spi_bridge.py`·`run_policy.py`는 중복 실행하지 않는다. 현장에는 같은 AP 연결이 필요하며 외부 서버·VPN·인터넷은 필요 없다. Git 업데이트와 의존성 설치는 현장에 가기 전에 끝낸다.
 
 > `start --real`은 실제 SPI·모터 제어를 연다. 시뮬레이션 검증 후 바퀴를 띄운 시험부터 진행한다. 실제 출발 위치·방향을 확인한 뒤 START를 누른다. 현장에 정지 담당자를 둔다.
+
+
+**운용 기준은 AUTO 주행, 응급상황에서 E-STOP 후 TELEOP 인계다.** `start --real`은 스택만 켜고, GUI `START RUN n`이 실제 AUTO를 시작한다. 사이트는 중계 화면이며 로버를 조작하지 않는다. 중간 TELEOP 회피 후 그 위치에서 AUTO를 이어가는 resume 기능은 없다.
+
+| 구분 | 이번에 확인한 범위 | 실기에서 남은 확인 |
+|---|---|---|
+| 기구학 시뮬 | 네 방향×RUN1~4 완주, 화면·상태 전이 | 바퀴·모래·경사·실제 센서/구동 |
+| `./ksrc check` | import·runtime/grid hash | 실기 설치·모델 로드·센서·서보 정상 |
+| 중계 | 로컬 UDP→HTTP·예측·기록 | 실제 AP/SSH 지연과 Pi 세션 교체 |
+
+실기 리허설 전에 [차이와 미해결 항목](docs/experiments/2026-10-24-real-rehearsal-audit.md)을 확인한다. 아래 읽기 전용 검사와 현장 시험 순서는 검증 공백을 확인하기 위한 절차이며, 코드의 자동 preflight가 보강됐다는 뜻은 아니다.
+
+| 터미널 | 실제 실행 위치 | 역할 |
+|---|---|---|
+| A | 노트북에서 SSH 접속한 Pi | 스택 시작·정지·세션 관리 |
+| B | 별도 SSH로 접속한 Pi, 선택 | `view --watch`·로그 관찰 |
+| C | 노트북 로컬, SSH 아님 | 중계+조이스틱·로그 다운로드 |
+
+### 첫 실기 리허설의 통과 순서
+
+| 순서 | 시험 | 확인해야 다음 단계로 진행 |
+|---|---|---|
+| 1 | 위의 Pi 파일·import·모델 검사 | 실제 interpreter·ROS·정책 경로 정상 |
+| 2 | 바퀴를 띄운 TELEOP | 수신 명령/seq echo·네 서보 상태·구동 오류·실제 반응 일치 |
+| 3 | E-STOP과 수동 인계 | 요청 수락뿐 아니라 실제 정지, 이후 TELEOP 가능 |
+| 4 | 실제 평지 짧은 왕복·ANCHOR | 실제 배치와 추정 위치·방향이 맞음 |
+| 5 | 정지 상태 ORB reset/복구 | 명령0 유지·좌표 연결·센서 age 확인 |
+| 6 | RUN1~4를 한 회차씩 시험 | 중단 이유·후퇴·상승·하행·복귀와 로그 확인 |
+| 7 | OBS 포함 연속 리허설 | 실제 AP 지연·응급 인계·다음 회차·종료/로그 회수 확인 |
+
+GUI `READY`만으로2단계의 서보·구동 정상 판정을 대신하지 않는다. 중계 `POSE CONNECTED`도 캡처→화면 지연 전체가 검증됐다는 뜻은 아니다.
 
 ## 1. 노트북 코드 준비 — 인터넷이 되는 곳
 
@@ -24,7 +55,7 @@ git pull --ff-only origin claude/sim-realism-rl-replay
 git log -1 --oneline
 ```
 
-**Python 환경:** numpy와 pygame가 있는 기존 환경을 사용한다. 현재 개발 노트북은 `/home/su/rover/.venv-mapping/bin/python`이다. 다른 노트북에서 새로 준비할 때만 아래를 실행한다.
+**Python 환경:** numpy·scipy·OpenCV·pygame가 있는 기존 환경을 사용한다. 현재 개발 노트북은 `/home/su/rover/.venv-mapping/bin/python`이다. 다른 노트북에서 새로 준비할 때만 아래를 실행한다.
 
 ```bash
 cd ~/rover-mapping
@@ -44,7 +75,11 @@ Pi 주소 예시는 `192.168.0.101`이다. 실제 AP에서 할당된 주소로 �
 ssh -o HostKeyAlias=raspberrypi.local pi@192.168.0.101
 ```
 
-기존 스택이 실행 중이면 GUI E-STOP으로 정지를 확인하고, **[Pi SSH]**에서 기존 세션을 종료한다. 기존 세션이 없으면 이 종료 블록은 생략한다.
+기존 스택이 실행 중이면 GUI E-STOP으로 정지를 확인하고, **[Pi SSH]**에서 기존 세션을 종료한다. 먼저 실제 실행 프로세스의 `--state-dir`과 `latest_test.txt`를 대조한다. 실패한 시작 시도가 pointer를 바꿨을 수 있으므로 다른 폴더를 정지시키지 않는다. 기존 세션이 없으면 종료 블록은 생략한다.
+
+```bash
+pgrep -af 'cli.py.*_supervise'
+```
 
 ```bash
 cd /home/pi/ksrc_final_20261022/deployment/ksrc
@@ -77,22 +112,91 @@ ssh -o BatchMode=yes -o HostKeyAlias=raspberrypi.local pi@192.168.0.101 'echo SS
 
 ```bash
 cd /home/pi/ksrc_final_20261022/deployment/ksrc
-./ksrc check
 ```
 
-`check`는 코드·지도 hash/import 검사이며 실기 센서·서보·모델 정상 판정은 아니다. [실기 리허설 차이와 확인 순서](docs/experiments/2026-10-24-real-rehearsal-audit.md)를 먼저 확인한 뒤, `check`가 성공하면 새 세션을 만든다. 기본은 S1 plan 분리이며, 실기는 `--real`을 명시한다. 옵션 없는 `start`는 모터 없는 FAKE다.
+### 3.1 첫 배포·설정 변경 후: 읽기 전용 의존성 확인
+
+**[Pi SSH]** 아래는 Pi의 파일·import·CPU 모델 계산만 확인하며 SPI 장치를 열거나 정책 주행 프로그램을 실행하지 않는다. 노트북에서 실행하지 않는다. 한 검사라도 실패하면 원인을 해결한 뒤 스택을 시작한다.
+
+실제 wrapper가 사용할 Python을 명시한다. 경로가 다르면 **Pi에서 확인된 interpreter**로 바꾼다. `/home/pi/venv`가 없다고 임의의 시스템 Python으로 계속 진행하지 않는다.
+
+```bash
+export KSRC_PYTHON=/home/pi/venv/bin/python
+test -x "$KSRC_PYTHON" && "$KSRC_PYTHON" --version && ./ksrc check
+```
+
+실기 시작 경로와 같은 `local/deps`를 적용해 정책·모델·보정 원본을 확인한다.
+
+```bash
+PYTHONNOUSERSITE=1 PYTHONPATH="$PWD/local/deps" "$KSRC_PYTHON" - <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+import cv2
+import numpy
+import scipy
+import spidev
+import torch
+sys.path.insert(0, '/home/pi/ksrc/pi/policy')
+import student_runtime  # 공통 C library·관측 계약 import; SpiLink를 생성하지 않음
+prefix = Path('/home/pi/ksrc/pi/policy/res8_mlp_v3vo_rc4000')
+meta = json.loads(prefix.with_suffix('.json').read_text())
+assert meta['action_dim'] == 8
+torch.set_num_threads(1)
+model = torch.jit.load(str(prefix.with_suffix('.pt')), map_location='cpu').eval()
+obs = torch.zeros(1, int(meta['obs_dim']))
+with torch.no_grad():
+    if meta.get('recurrent'):
+        result = model(obs, torch.zeros(*meta['hidden_shape']))[0]
+    else:
+        result = model(obs)
+assert result.shape[-1] == 8 and bool(torch.isfinite(result).all())
+config = json.loads(Path('local/real.json').read_text())
+assert config['source'] == 'REAL_CAMERA_URDF_IMU'
+assert config.get('inputs'), 'calibration source hashes missing'
+for name, expected in config['inputs'].items():
+    path = Path(name)
+    assert path.is_file(), f'missing calibration input: {path}'
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == expected, f'changed calibration input: {path}'
+print('Pi Python/import/model/calibration-input check OK:', sys.executable)
+PY
+```
+
+이 검사는 생성된 `real.json`과 `orb.yaml`의 전체 설정 일치나 실제 장치 상태까지 판정하지는 않는다.
+
+ROS import와 CLI가 호출하는 카메라·ORB 파일을 확인한다.
+
+```bash
+bash ros_env.sh "$KSRC_PYTHON" -c 'import rclpy; print("Pi ROS import OK")'
+(
+  set -e
+  test -x /opt/ros/jazzy/lib/realsense2_camera/realsense2_camera_node
+  test -x /home/pi/handheld_mapping/ros2_ws/install/orbslam3_ros2/lib/orbslam3_ros2/orbslam3_stereo_inertial
+  test -r /home/pi/handheld_mapping/runtime/ORBvoc.txt
+  test -r local/orb.yaml
+  echo 'Camera/ORB paths OK'
+)
+```
+
+Pi의 기존 ROS 설정은 Jazzy 기준이다. 노트북의 Humble 환경과 섞지 않는다. 모델 로드 성공도 센서·명령 적용·배터리·서보 정상을 뜻하지 않는다.
+
+### 3.2 실기 스택 시작
+
+기본은 S1 plan 분리다. 실기는 `--real`을 명시하며 옵션 없는 `start`는 모터 없는 FAKE다.
 
 ```bash
 TEST_DIR="state/field_S1_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$TEST_DIR"
-printf '%s\n' "$TEST_DIR" > state/latest_test.txt
-./ksrc --state-dir "$TEST_DIR" start --real
-./ksrc --state-dir "$TEST_DIR" view
+./ksrc --state-dir "$TEST_DIR" start --real && {
+  printf '%s\n' "$TEST_DIR" > state/latest_test.txt
+  ./ksrc --state-dir "$TEST_DIR" view
+}
 ```
 
-확인: `started REAL supervisor ...`, `대기 / TELEOP`, 센서 정상. 시작 직후 `초기화 중`이면 잠시 뒤 `view`를 다시 실행한다. `start`는 프로그램을 켜는 명령이고 **RUN을 시작하지 않는다**. 기본 세션 최대 시간은 1시간이다.
+확인: `started REAL supervisor ...`, `대기 / TELEOP`, 센서 정상. 시작 직후 `초기화 중`이면 잠시 뒤 `view`를 다시 실행한다. `start`는 프로그램을 켜는 명령이고 **RUN을 시작하지 않는다**. 기본 세션 최대 시간은 1시간이다. `latest_test.txt`는 시작 명령이 성공했을 때만 갱신하며, 센서 정상 여부는 이후 `view`로 확인한다.
 
-같은 `state/` 아래 대기 중인 이전 세션은 자동 종료될 수 있다. AUTO 중이거나 상태를 알 수 없는 다른 세션은 자동 종료하지 않는다. 오류가 나면 아래 [문제 해결](#10-문제-해결)을 따른다. 스택이 실행 중인 상태에서 배포 파일을 덮어쓰지 않는다.
+같은 `state/` 아래 대기 중인 이전 세션은 자동 종료될 수 있다. AUTO 중이거나 상태를 알 수 없는 다른 세션은 자동 종료하지 않는다. 오류가 나면 아래 [문제 해결](#11-문제-해결)을 따른다. 스택이 실행 중인 상태에서 배포 파일을 덮어쓰지 않는다.
 
 ## 4. 중계 화면과 조이스틱 켜기
 
@@ -198,7 +302,27 @@ START 후 GUI의 `MODE AUTO  RUN n  <단계>`를 확인한다. CLI의 `sent star
 ./ksrc --state-dir "$TEST_DIR" start4
 ```
 
-## 7. 정지·종료·로그 회수
+## 7. 응급상황: E-STOP → 실제 정지 확인 → TELEOP
+
+평소에는 AUTO를 유지한다. 조이스틱 이동 키로 AUTO 경로를 수정하려 하지 않는다.
+
+1. GUI에 포커스를 두고 **Space 또는 E-STOP**을 누른다. GUI에 접근하지 못하면 Pi SSH에서 아래 `estop`을 사용한다.
+2. GUI/Pi가 **TELEOP·명령0**으로 바뀌고 **실제 바퀴가 정지**했는지 확인한다. 화면의 버튼 클릭·요청 송신만으로 정지 완료를 판정하지 않는다.
+3. E-STOP 유지 시간이 지난 뒤 수동 입력을 조금씩 준다. 운영상 **최소1초** 기다리고, 창 포커스와 현재모드를 확인한다.
+4. TELEOP으로 필요한 이동·회수만 한다. 노란 점선·TELEOP 거리는 수동 구간으로 기록된다.
+
+**[Pi SSH, GUI 대신 쓰는 정지 요청]**
+
+```bash
+./ksrc --state-dir "$TEST_DIR" estop
+./ksrc --state-dir "$TEST_DIR" view
+```
+
+이 코드는 UDP 소프트웨어 정지다. 명령/통신이 작동하지 않는 상황의 물리 정지 수단과 담당자는 현장에서 확인한다.
+
+**중간 AUTO resume은 없다.** 다시 AUTO를 시작하려면 실제 출발점으로 돌아가 선택 방향에 맞추고3초 정지한 뒤 새 START를 요청한다. 중간 위치에서 ANCHOR를 눌러 READY만 맞추지 않는다. 임무 종료라면 8단계로 간다.
+
+## 8. 정지·종료·로그 회수
 
 먼저 GUI Space/E-STOP으로 TELEOP과 실제 정지를 확인한다. GUI 대신 **[Pi SSH]**에서 정지 요청할 수도 있다.
 
@@ -226,7 +350,7 @@ rsync -a -e 'ssh -o HostKeyAlias=raspberrypi.local' \
 
 노트북 중계 원자료는 `~/rover-mapping/outputs/broadcast_sessions/`에 저장된다. `runs.json`의 `teleop_tracks`는 수동 구간별 궤적, `teleop_distance_m`는 수동 이동 거리다. 화면에서는 노란 점선으로 표시하며 RUN 기록과 분리한다. ANCHOR·재접속·0.5초 수신 공백·AUTO 전환 때 선을 끊고, RUN1을 새로 시작해도 같은 중계 세션의 수동 기록은 보존한다. 이 폴더도 필요하면 별도 보관한다.
 
-## 8. 상태 관찰·재접속·부하 기록 — 선택
+## 9. 상태 관찰·재접속·부하 기록 — 선택
 
 별도 Pi SSH 터미널 또는 재접속한 터미널에서 기존 세션을 읽는다. 새 `start`를 호출하지 않는다. 터미널마다 변수는 다시 설정한다.
 
@@ -253,7 +377,7 @@ cat "$TEST_DIR/load/finished.txt"
 
 스택 종료와 부하 수집 종료 시점은 다를 수 있다. 판정 기준·S0/S1 비교는 [TESTS_BEFORE_FIELD.md](TESTS_BEFORE_FIELD.md), [FIELD_TESTS.md](FIELD_TESTS.md)를 참고한다.
 
-## 9. 로버 없이 조이스틱 시뮬레이션·화면 시연
+## 10. 로버 없이 조이스틱 시뮬레이션·화면 시연
 
 ### 조이스틱으로 RUN1~4 시험
 
@@ -269,7 +393,7 @@ cd ~/rover-mapping
 
 이 모드는 배포 MPPI·상태기·gateway를 사용하고 사이트에 `KINEMATIC SIMULATION`을 표시한다. 위치는 이상적 SE2 운동이며, 수동 이동의 충돌·바퀴 접촉·모래·센서 오차·실기 통신을 재현하지 않는다. ORB는 정상으로 가정하며 ORB RESET 시험은 포함하지 않는다. 시뮬 ANCHOR는 출발점15cm 이내·선택 방향8° 이내에서3초 정지했을 때만 적용한다. 가상 로버를 강제로 회전시키지 않으므로 화살표 회전 키로 먼저 맞춘다.
 
-4회차 자동 연결 검증을 다시 실행하려면 아래를 쓴다. GUI 없이 로컬 UDP→HTTP로 시험하고 `outputs/run_variants/broadcast_missions.json`에 결과를 저장한다.
+네 방향×4회차(16조합) 자동 연결 검증을 다시 실행하려면 아래를 쓴다. GUI 없이 로컬 UDP→HTTP로 시험하고 `outputs/run_variants/broadcast_missions.json`에 결과를 저장한다.
 
 ```bash
 OPENBLAS_NUM_THREADS=1 .venv-broadcast/bin/python deployment/broadcast/verify_missions.py
@@ -288,7 +412,7 @@ cd ~/rover-mapping
 
 실기 중계는 pose·속도·궤적을 표시한다. 속도는 pose 차분 기반 추정에 표시 평활화만 적용하며 임의 노이즈는 넣지 않는다. AUTO의 사전 MPPI/슬립 캐시는 **바구니→RUN 진입과 RUN1~4 본 주행**을 지원한다. 본 주행은 회차·주행 단계와 위치·방향·속도 범위가 일치할 때만 표시한다. 회전·관찰 등 계획이 없는 단계, stale, 캐시 범위 밖에서는 예측을 숨기고 pose 기록은 계속한다. 슬립은 미교정 모델 추정값이며 실측 바퀴 슬립이 아니다. TELEOP에서도 이동 중에는 노트북의 **읽기 전용 MPPI 보조 예측**과 슬립 모델을 표시한다. 현재 pose·전후/좌우 속도·요속도에서 최대30cm/3초 원호를 국소 목표로 계산하며, 미션 목표나 제어 명령으로 사용하지 않는다. 사이트에는 `TELEOP MODEL`로 구분한다. 정지·순수 제자리 회전·stale·지도 밖·안전한 계획 불가 시 예측을 숨긴다. 시뮬 GROUND SPEED가 일정한 것은 물리 저항 없이 명령대로 이동하기 때문이며 표시 노이즈는 없다. 상세 범위는 [중계 배포 안내](deployment/broadcast/README.md).
 
-## 10. 문제 해결
+## 11. 문제 해결
 
 | 화면/증상 | 확인·조치 |
 |---|---|
@@ -303,6 +427,18 @@ cd ~/rover-mapping
 | `TEST_DIR`를 잊음 | Pi 배포 폴더에서 `TEST_DIR="$(cat state/latest_test.txt)"` 복원. 다른 세션이 실행 중이면 위 방법으로 확인 |
 | 화면이 멈춘 듯함 | `view --watch`·`tail -f`는 Ctrl+C로 보기만 종료. E-STOP과 별개 |
 | HTTP/UDP 포트 사용 중 | 이전 launcher를 종료. 실기·demo·조이스틱을 중복 실행하지 않기 |
+
+## 아직 보강하지 않은 부분
+
+| 항목 | 현재 한계 | 리허설에서의 해석 |
+|---|---|---|
+| SSH 지연 | 원격 전송 후 버퍼에서 밀린 pose를 수신 시각 기준으로 fresh 처리할 수 있음 | 화면 age만으로 실기 지연을 판정하지 않기 |
+| Pi 세션 교체 | 이전 operator/정렬 상태가 남을 가능성 | Pi 세션 변경 시 중계 상태를 확인하고 필요하면 종료·재연결 |
+| 하위 건강 정보 | 서보/구동 fault가 upper READY에 모두 반영되지 않음 | 하위 로그·실제 바퀴 반응을 별도로 확인 |
+| 시간동기·VO | 실제 표본 시각/노이즈 특성이 기구학 입력과 다름 | Pi 센서 age·VO 유효율·구동 결과로 검증 |
+| 위치·지형 | READY와 hash 일치가 현장 맵 배치 정확도의 증거는 아님 | 출발점·방향·실제 이동을 눈으로 대조 |
+
+위 항목은 문서로 해결된 것이 아니다. 구현 범위와 근거는 [실기 audit](docs/experiments/2026-10-24-real-rehearsal-audit.md)에 있다.
 
 ## 검증 범위
 
