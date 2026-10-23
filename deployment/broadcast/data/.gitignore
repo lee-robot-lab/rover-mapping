@@ -6,3 +6,7 @@
 !predictions.npz
 !teleop_cache.npz
 !packing_verification.json
+
+!mission_cache.npz
+!mission_coverage.json
+!mission_verification.json

@@ -43,6 +43,11 @@ class Broadcast:
         self.explored = np.zeros((4, len(ij)), dtype=bool)
         self.session = Session(tuple(self.meta['start']))
         self.lookup = Lookup(self.prediction_data['states'], self.prediction_data['runs'])
+        self.mission_data = None
+        if (root/'mission_cache.npz').exists():
+            with np.load(root/'mission_cache.npz') as stored:
+                self.mission_data = {key: stored[key] for key in stored.files}
+            self.mission_lookup = Lookup(self.mission_data['states'],self.mission_data['runs'],self.mission_data['stages'])
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.bind((udp_host, udp_port))
         self.socket.settimeout(.2)
@@ -97,9 +102,10 @@ class Broadcast:
                         if accepted and self.session.active:
                             self.remember()
                             pose = self.session.pose()
-                            key = self.lookup.find([pose[x] for x in ('x', 'y', 'yaw', 'v', 'w')], self.session.run)
+                            prediction_data,key = self.match_prediction(pose,self.session.run)
                             if key is not None:
-                                annotation = dict(cache_index=key, slip_model=float(self.prediction_data['slips'][key]))
+                                annotation = dict(cache_index=key,cache_phase=self.phase,
+                                    slip_model=float(prediction_data['slips'][key]) if abs(pose['v'])>=.01 else None)
                         log.write(json.dumps(dict(packet, accepted=accepted, run=self.session.run,
                             model=annotation, received_monotonic=time.monotonic()))+'\n')
                 except socket.timeout:
@@ -134,6 +140,8 @@ class Broadcast:
             self.session.stop()
         elif previous is None and not operator['active'] and operator['anchor_count']==0:
             self.start(1)
+        elif previous is None and not operator['active']:
+            self.phase='ready'
         self.operator=dict(operator)
 
     def start(self, run: int, require_history: bool = True, align: bool = True) -> None:
@@ -166,15 +174,24 @@ class Broadcast:
                     p = self.origin+np.array([i, j])*self.cell
                     if np.linalg.norm(p-xy) <= REVEAL_RADIUS_M:
                         result['cells'].append([*p.tolist(), float(self.cost[i, j])])
-            if result['active'] and not result['stale'] and not (self.live and self.phase!='transfer'):
-                key = self.lookup.find([pose[x] for x in ('x', 'y', 'yaw', 'v', 'w')], result['run'])
+            if result['active'] and not result['stale']:
+                prediction_data,key = self.match_prediction(pose,result['run'])
                 if key is not None:
-                    result['prediction'] = dict(candidates=self.prediction_data['candidates'][key].tolist(),
-                        selected=self.prediction_data['chosen'][key].tolist(), costs=self.prediction_data['costs'][key].tolist(),
-                        slip=float(self.prediction_data['slips'][key]) if abs(pose['v'])>=.01 else None,
-                        simulated_compute_ms=float(self.prediction_data['compute_ms'][key]),
-                        lookup_distance_m=float(np.linalg.norm(self.prediction_data['states'][key, :2]-xy)))
+                    result['prediction'] = dict(candidates=prediction_data['candidates'][key].tolist(),
+                        selected=prediction_data['chosen'][key].tolist(), costs=prediction_data['costs'][key].tolist(),
+                        slip=float(prediction_data['slips'][key]) if abs(pose['v'])>=.01 else None,
+                        simulated_compute_ms=float(prediction_data['compute_ms'][key]),
+                        lookup_distance_m=float(np.linalg.norm(prediction_data['states'][key, :2]-xy)))
         return result
+
+    def match_prediction(self, pose: dict, run: int) -> tuple:
+        """접근 구간과 본 주행을 분리하고 본 주행은 같은 단계의 결과만 선택한다."""
+        state=[pose[x] for x in ('x','y','yaw','v','w')]
+        if self.phase=='transfer':return self.prediction_data,self.lookup.find(state,run)
+        if self.phase=='run' and self.mission_data is not None:
+            stage=(self.operator or {}).get('stage')
+            return self.mission_data,self.mission_lookup.find(state,run,stage=stage)
+        return None,None
 
     def save(self) -> None:
         snapshot = self.session.snapshot()
@@ -255,8 +272,10 @@ def main() -> None:
     parser.add_argument('--udp-host', default='127.0.0.1')
     parser.add_argument('--udp-port', type=int, default=9870)
     parser.add_argument('--live', action='store_true', help='실기 pose·회차 수신 전용; 시뮬 재생 금지')
+    parser.add_argument('--simulation',action='store_true',help='조이스틱 기구학 시뮬레이션 표시')
     args = parser.parse_args()
     app = Broadcast(args.data, args.udp_host, args.udp_port, live=args.live)
+    app.meta['simulation_mode']=args.simulation
     server = ThreadingHTTPServer((args.http_host, args.http_port), Handler)
     server.app = app
     print(f'Broadcast http://{args.http_host}:{args.http_port} UDP {args.udp_host}:{args.udp_port}', flush=True)

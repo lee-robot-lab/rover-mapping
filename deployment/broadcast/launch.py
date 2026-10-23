@@ -21,10 +21,14 @@ def commands(args: argparse.Namespace) -> list[list[str]]:
             '--udp-port',str(args.udp_port)]
     if args.demo:return [server]
     server+=['--live']
+    simulation=getattr(args,'sim',False)
+    if simulation:server+=['--simulation']
     relay=[python,str(ROOT/'deployment/broadcast/relay.py'),'--pi',args.pi,
            '--remote-root',args.remote_root,'--udp-port',str(args.udp_port)]
     if args.state_dir:relay+=['--state-dir',args.state_dir]
-    host=args.pi.rsplit('@',1)[-1]
+    host='127.0.0.1' if simulation else args.pi.rsplit('@',1)[-1]
+    if simulation:
+        relay=[python,str(ROOT/'deployment/broadcast/simulate.py'),'--udp-port',str(args.udp_port)]
     joystick=[python,str(ROOT/'teleop/ksrc_snapshot/pi/teleop/teleop_joystick.py'),
               '--udp',host+':5006','--gateway','--grid-keys','--rate','50',
               '--max-lin','0.15','--max-ang','0.8']
@@ -37,7 +41,9 @@ def main() -> None:
     parser.add_argument('--remote-root',default='/home/pi/ksrc_final_20261022/deployment/ksrc')
     parser.add_argument('--state-dir',default='')
     parser.add_argument('--http-port',type=int,default=8765);parser.add_argument('--udp-port',type=int,default=9870)
-    parser.add_argument('--demo',action='store_true',help='로버 없이 시뮬 재생 화면만 실행')
+    mode=parser.add_mutually_exclusive_group()
+    mode.add_argument('--demo',action='store_true',help='로버 없이 시뮬 재생 화면만 실행')
+    mode.add_argument('--sim',action='store_true',help='로컬 기구학 로버 + 실제 MPPI + 조이스틱 + 사이트 실행')
     parser.add_argument('--no-browser',action='store_true');parser.add_argument('--dry-run',action='store_true')
     args=parser.parse_args();jobs=commands(args)
     if args.dry_run:
@@ -59,6 +65,8 @@ def main() -> None:
         print('중계 화면:',url,flush=True)
         if not args.no_browser:webbrowser.open(url)
         while processes[0].poll() is None:
+            if args.sim and processes[1].poll() is not None:
+                raise RuntimeError('kinematic simulator exited; see log above')
             if not args.demo and processes[-1].poll() is not None:break
             time.sleep(.2)
     except KeyboardInterrupt:pass

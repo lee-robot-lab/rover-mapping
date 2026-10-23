@@ -35,6 +35,9 @@ def decode_packet(data: bytes) -> dict:
                     or type(op.get('anchor_count')) is not int or op['anchor_count']<0):
                 raise ValueError('invalid operator state')
             result['operator']={key:op[key] for key in ('active','run','anchor_count')}
+            if 'stage' in op:
+                if not isinstance(op['stage'],str) or len(op['stage'])>64:raise ValueError('invalid stage')
+                result['operator']['stage']=op['stage']
             result['operator']['done']=bool(op.get('done'))
         if 'session_id' in value:
             if not isinstance(value['session_id'], str) or not 1 <= len(value['session_id']) <= 128:
@@ -52,15 +55,18 @@ def wrap(angle: float | np.ndarray) -> Any:
 class Lookup:
     """위치·방향·속도·회전율이 저장 범위 안인 경우에만 사전 예측 인덱스를 반환한다."""
 
-    def __init__(self, states: np.ndarray, runs: np.ndarray) -> None:
+    def __init__(self, states: np.ndarray, runs: np.ndarray, stages: np.ndarray | None = None) -> None:
         self.states, self.runs = states, runs
+        self.stages = stages
 
-    def find(self, state: list[float], run: int) -> int | None:
+    def find(self, state: list[float], run: int, stage: str | None = None) -> int | None:
         delta = self.states - np.asarray(state)
         delta[:, 2] = wrap(delta[:, 2])
         distance = np.linalg.norm(delta[:, :2], axis=1)
         valid = ((self.runs == run) & (distance <= .04) & (np.abs(delta[:, 2]) <= np.deg2rad(5))
                  & (np.abs(delta[:, 3]) <= .08) & (np.abs(delta[:, 4]) <= .3))
+        if self.stages is not None:
+            valid &= self.stages == stage
         if not valid.any():
             return None
         score = (delta / [.2, .2, np.deg2rad(25), .08, .3])**2

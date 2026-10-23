@@ -242,9 +242,31 @@ cat "$TEST_DIR/load/finished.txt"
 
 스택 종료와 부하 수집 종료 시점은 다를 수 있다. 판정 기준·S0/S1 비교는 [TESTS_BEFORE_FIELD.md](TESTS_BEFORE_FIELD.md), [FIELD_TESTS.md](FIELD_TESTS.md)를 참고한다.
 
-## 9. 로버 없이 화면 시연
+## 9. 로버 없이 조이스틱 시뮬레이션·화면 시연
 
-**[노트북 로컬]** 실기 launcher와 동시에 실행하지 않는다.
+### 조이스틱으로 RUN1~4 시험
+
+**[노트북 로컬]** 최신 의존성을 준비한 뒤 실행한다. Pi·VPN·ROS·SSH 없이 로컬에서만 동작한다. 실기 launcher 또는 다른 simulator와 동시에 실행하지 않는다.
+
+```bash
+cd ~/rover-mapping
+.venv-broadcast/bin/python -m pip install -r deployment/broadcast/requirements.txt
+.venv-broadcast/bin/python deployment/broadcast/launch.py --sim
+```
+
+브라우저 `http://127.0.0.1:8765`와 실제 조이스틱 GUI가 열린다. **가상 로버는 RUN 출발점 `(3.60, 2.82), −y`에서 시작**한다. 정지 3초 후 START RUN1~4 중 하나를 누른다. 수동 이동·Shift·Space/E-STOP도 동일하게 시험한다. 회차가 끝나면 TELEOP으로 시작 위치·−y 방향을 맞추고 3초 정지한 뒤 다음 회차를 시작한다. 처음부터 다시 배치하려면 E-STOP 후 launcher를 종료하고 `--sim`으로 다시 켠다.
+
+이 모드는 배포 MPPI·상태기·gateway를 사용하고 사이트에 `KINEMATIC SIMULATION`을 표시한다. 위치는 이상적 SE2 운동이며, 수동 이동의 충돌·바퀴 접촉·모래·센서 오차·실기 통신을 재현하지 않는다. ORB는 정상으로 가정하며 ORB RESET 시험은 포함하지 않는다. ANCHOR는 출발점 15cm 이내에서 3초 정지했을 때만 적용한다.
+
+4회차 자동 연결 검증을 다시 실행하려면 아래를 쓴다. GUI 없이 로컬 UDP→HTTP로 시험하고 `outputs/run_variants/broadcast_missions.json`에 결과를 저장한다.
+
+```bash
+OPENBLAS_NUM_THREADS=1 .venv-broadcast/bin/python deployment/broadcast/verify_missions.py
+```
+
+### 바구니 연결 구간 재생
+
+**[노트북 로컬]** 실기·조이스틱 simulator와 동시에 실행하지 않는다.
 
 ```bash
 cd ~/rover-mapping
@@ -253,7 +275,7 @@ cd ~/rover-mapping
 
 사이트의 **▶ 시뮬 재생**을 누르면 바구니→RUN 진입 구간 약 36초를 재생한다. 다시 누르면 처음부터, STOP은 재생을 중단한다. RUN1~4 전체 주행 영상 재생은 아니다.
 
-실기 중계는 pose·속도·궤적을 표시한다. 속도는 pose 차분 기반 추정에 표시 평활화만 적용하며 임의 노이즈는 넣지 않는다. 사전 MPPI/슬립 캐시는 **바구니→RUN 진입 구간만** 지원한다. 본 주행·캐시 범위 밖에서는 예측을 숨기고 실제 pose 기록은 계속한다. 슬립은 미교정 모델 추정값이며 실측 바퀴 슬립이 아니다. 상세 범위는 [중계 배포 안내](deployment/broadcast/README.md).
+실기 중계는 pose·속도·궤적을 표시한다. 속도는 pose 차분 기반 추정에 표시 평활화만 적용하며 임의 노이즈는 넣지 않는다. 사전 MPPI/슬립 캐시는 **바구니→RUN 진입과 RUN1~4 본 주행**을 지원한다. 본 주행은 회차·주행 단계와 위치·방향·속도 범위가 일치할 때만 표시한다. 회전·관찰 등 계획이 없는 단계, stale, 캐시 범위 밖에서는 예측을 숨기고 pose 기록은 계속한다. 슬립은 미교정 모델 추정값이며 실측 바퀴 슬립이 아니다. 상세 범위는 [중계 배포 안내](deployment/broadcast/README.md).
 
 ## 10. 문제 해결
 
