@@ -50,3 +50,11 @@ def test_lateral_pose_speed_and_anchor_id_are_preserved():
     assert packet['v']==pytest.approx(0.)
     assert packet['vy_m_s']==pytest.approx(.1)
     assert packet['operator']['anchor_id']==4
+
+
+def test_relay_transmits_planning_map_identity():
+    from experiments.broadcast_demo.core import decode_packet
+    import json
+    state=relay.Telemetry()
+    packet=state.packet(row(0,site_identity='a'*64))
+    assert decode_packet(json.dumps(packet).encode())['site_identity']=='a'*64

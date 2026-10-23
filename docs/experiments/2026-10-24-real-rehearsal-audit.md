@@ -56,7 +56,7 @@ runner의 하위 VO는 연속 pose 두 개 차분을 최신 frame 시각으로 �
 
 ## 7. 현재 장애물·코스트·슬립의 의미
 
-실기 카메라는 IR 좌우640×480@15로 실행하며 depth는 OFF다. ros_inputs는 ORB pose/state·IR1을 전달한다. 벽 관측 보정은 있지만, 매번 새 장애물을 depth로 측정해 지도를 갱신하는 구조로 보면 안 된다. 기본 MPPI 제약과 화면 코스트는 저장 지형을 사용한다.
+실기 카메라는 IR 좌우640×480@15로 실행하며 depth는 OFF다. ros_inputs는 ORB pose/state·IR1을 전달한다. 벽 관측 보정은 있지만, 매번 새 장애물을 depth로 측정해 지도를 갱신하는 구조로 보면 안 된다. 기본 MPPI 제약과 화면 코스트는 저장 지형을 사용한다. 현재 선택은 rocks10(10cm 돌 4개)이며, 배경에는 숨기고 pose 반경35cm 안의 돌만 위치 기반으로 표시한다. 실제 카메라 검출을 의미하지 않는다.
 
 AUTO 화면 예측은 같은 RUN/stage/pose/v/w의 사전 MPPI 조회다. 실제 Pi가 그 순간 계산한 candidate 배열을 전송받는 것은 아니다. TELEOP은 노트북의 별도 국소 MPPI 모델이며 제어에 반영하지 않는다. 후보 색은 평균 지도 경사이지 실제 MPPI 목적함수 수치가 아니다.
 
@@ -73,7 +73,7 @@ RUN2의30도 생략·15도 직행·정상관찰생략·하행0.7배는 회차 �
 - SSH file_age는 Pi가 전송할 때 계산한다. 노트북에서 오래 지연돼 도착한 packet은 Session의 수신 시각 기준으로 fresh가 될 수 있다. 0.5초 stale는 '노트북에 새 packet이 안 온 시간'을 검사하며 실기 capture→화면 지연의 보장은 아니다.
 - relay 재접속과 실제 Pi 세션 교체를 구분하는 상태가 부족하다. 송신ID 변경은 Session을 멈추지만 operator/phase/좌표 변환 전체를 새 Pi session 기준으로 재초기화하지 않는다. 같은 RUN 상태로 새 stack이 들어오는 경우 이전 정렬·기록을 이어갈 가능성을 확인해야 한다.
 - stale flag가 떠도 AUTO active·elapsed·마지막 속도가 표시상 남을 수 있다. stale 화면을 실제 정지로 해석하면 안 된다.
-- 현재 파일의 cache/map hash는 일치하지만 server 시작 시 전체 identity를 fail-closed 검증하지 않고, provenance는 transfer manifest 중심이다. 실기 기록에 mission/cache hash·site identity를 명시하는 개선이 남아 있다.
+- rocks10 통합에서 live server 시작 시 배포 site·terrain manifest·mission cache의 identity 대조를 추가했다. Pi 상태의 identity도 전달하며 불일치면 예측을 숨긴다. provenance에는 mission coverage와 원본 파일 hash를 포함한다. 구형 Pi가 identity를 보내지 않으면 MAP UNVERIFIED로 표시하며 호환 입력은 허용하므로 Pi 버전을 확인해야 한다.
 
 이번 추가로 TELEOP 궤적은 AUTO와 분리하고 ANCHOR·수신공백0.5초·송신ID 변경 때 선을 끊는다. 위의 Pi session 전체 상태 초기화·SSH end-to-end age 문제를 해결한 것은 아니다.
 

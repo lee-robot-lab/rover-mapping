@@ -32,6 +32,11 @@ def decode_packet(data: bytes) -> dict:
             speed=float(value['speed_m_s'])
             if not math.isfinite(speed) or speed<0:raise ValueError('invalid ground speed')
             result['speed_m_s']=speed
+        if value.get('site_identity') is not None:
+            identity=value['site_identity']
+            if not isinstance(identity,str) or len(identity)!=64 or any(c not in '0123456789abcdef' for c in identity):
+                raise ValueError('invalid site identity')
+            result['site_identity']=identity
         if 'operator' in value:
             op=value['operator']
             if (not isinstance(op,dict) or type(op.get('active')) is not bool

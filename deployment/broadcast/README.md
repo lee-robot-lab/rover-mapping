@@ -82,7 +82,7 @@ OPENBLAS_NUM_THREADS=1 python deployment/broadcast/verify_missions.py
 
 두 번째 명령은 GUI 없이 4회차를 가상 주행하고 실제 UDP→HTTP 경로의 완주·표시 일치율·로컬 조회 시간을 확인한다. Pi 네트워크 지연 검증과는 구분한다.
 
-이번 로컬 연결 시험은 네 출발방향×RUN1~4의16조합 모두 complete였다. AUTO 캐시 일치율90.2~100%, HTTP 조회 p95 약73ms(1,481회)이며 캐시 밖은 숨긴다. TELEOP 전후/좌우 이동의 UDP→HTTP30회 시험은 p95 약17ms, 모델 계산 p95 약11ms였다. [검증 기록](data/mission_verification.json)에 저장했다. 로컬 기구학·표시 시험이며 Pi 네트워크 지연을 뜻하지 않는다. 캐시는55,075개 상태, 약41.2MiB다.
+rocks10 로컬 연결 시험은 네 출발방향×RUN1~4의16조합 모두 complete였다. AUTO 캐시 일치율90.2~100%, HTTP 조회 p95 약59ms(1,483회)이며 캐시 밖은 숨긴다. TELEOP 전후/좌우 이동의 UDP→HTTP30회 시험은 p95 약15ms, 모델 계산 p95 약10ms였다. [검증 기록](data/mission_verification.json)에 저장했다. 로컬 기구학·표시 시험이며 Pi 네트워크 지연을 뜻하지 않는다. 캐시는55,024개 상태, 약40.9MiB다.
 
 ## TELEOP 보조 예측
 
@@ -97,3 +97,30 @@ AUTO 캐시는 −Y·−X 두 기준 주행으로 생성한 world pose 결과다
 TELEOP 중 수신 pose를 노란 점선으로 계속 기록하며 RUN1~4 궤적과 분리한다. 바구니 연결 구간도 수동 기록이며 가짜 RUN1로 넣지 않는다. AUTO 시작/종료, ANCHOR, 송신 세션 변경, 0.5초 수신 공백은 구간 경계다. 화면 TELEOP 거리는 구간 내부 이동만 합산하며 좌표 점프나 AUTO 거리는 포함하지 않는다. `runs.json`에 `teleop_tracks`/`teleop_distance_m`로 저장한다. 중계 재실행 전 과거 수동 궤적의 자동 복원 기능은 없다.
 
 실기와 시뮬의 차이 및 남은 실행 공백은 [리허설 audit](../../docs/experiments/2026-10-24-real-rehearsal-audit.md)에 기록했다.
+
+## 선택된 장애물 맵
+
+실기 MPPI·TELEOP 예측·본 주행 캐시는 `rocks10`(10cm 돌 4개)을 사용한다. `deployment/ksrc/mission/planning_map.json`, `data/manifest.json`의 `planning_map`, `data/mission_coverage.json`의 site identity가 일치해야 한다. 사이트 시작 시 identity를 대조하며, 수신한 Pi 맵이 다르면 pose는 표시하고 예측은 숨긴다.
+
+배경 지도는 돌 없는 기존 이미지를 유지한다. 돌 표시는 현재 pose의 반경35cm 안에서만 나타나며 stale·맵 불일치 때는 숨긴다. 카메라 검출이 아닌 위치 기반 표시다. 로컬 코스트는 선택한 장애물 격자를 투영하며 표시용 경사/35 정규화 값이다.
+
+맵을 교체하면 numpy/scipy/OpenCV 환경에서 아래 두 작업을 모두 수행하고 UDP→HTTP 검증까지 다시 실행한다. 바구니 전이 구간 캐시는 별도이며 기존 전이 구간에 대한 캐시다.
+
+```bash
+python deployment/broadcast/update_planning_terrain.py
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python deployment/broadcast/build_mission_cache.py
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python deployment/broadcast/verify_missions.py
+```
+
+### 돌 표시만 숨기기
+
+실행 명령에 `--hide-stones`를 추가한다. 기본은 주변35cm 돌 표시 ON이며, 파라미터가 있으면 메인·미니맵의 돌 원만 숨긴다. MPPI 장애물 회피·코스트·궤적·슬립 계산은 유지한다. 실기·시뮬·재생 모드 모두 사용할 수 있다.
+
+```bash
+# 실제 연결: 돌 표시 OFF
+python deployment/broadcast/launch.py --pi pi@192.168.0.101 --hide-stones
+# 로컬 시뮬: 돌 표시 OFF
+python deployment/broadcast/launch.py --sim --hide-stones
+```
+
+주변 돌을 표시하려면 `--hide-stones`를 빼고 실행한다. 사이트 중계 표시 설정이므로 Pi 주행 스택의 재시작은 필요 없다.

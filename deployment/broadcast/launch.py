@@ -19,6 +19,7 @@ def commands(args: argparse.Namespace) -> list[list[str]]:
     python=sys.executable
     server=[python,'-m','experiments.broadcast_demo.server','--http-port',str(args.http_port),
             '--udp-port',str(args.udp_port)]
+    if getattr(args,'hide_stones',False):server+=['--hide-stones']
     if args.demo:return [server]
     server+=['--live']
     simulation=getattr(args,'sim',False)
@@ -41,6 +42,7 @@ def main() -> None:
     parser.add_argument('--remote-root',default='/home/pi/ksrc_final_20261022/deployment/ksrc')
     parser.add_argument('--state-dir',default='')
     parser.add_argument('--http-port',type=int,default=8765);parser.add_argument('--udp-port',type=int,default=9870)
+    parser.add_argument('--hide-stones',action='store_true',help='돌 표시만 숨김; MPPI·코스트 계산은 유지')
     mode=parser.add_mutually_exclusive_group()
     mode.add_argument('--demo',action='store_true',help='로버 없이 시뮬 재생 화면만 실행')
     mode.add_argument('--sim',action='store_true',help='로컬 기구학 로버 + 실제 MPPI + 조이스틱 + 사이트 실행')

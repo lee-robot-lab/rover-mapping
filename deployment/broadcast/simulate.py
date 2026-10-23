@@ -60,7 +60,7 @@ class KinematicRover:
         angle=math.atan2(math.sin(self.pose[2]-self.start_pose[2]),math.cos(self.pose[2]-self.start_pose[2]))
         aligned=np.linalg.norm(self.pose[:2]-self.start_pose[:2])<=.08 and abs(angle)<=math.radians(8)
         rt=self.runtime
-        return dict(stationary_s=self.time-self.still_since,orb_ok=True,in_region1=bool(aligned),
+        return dict(site_identity=self.nav.mission.site.identity,stationary_s=self.time-self.still_since,orb_ok=True,in_region1=bool(aligned),
                     start_aligned=bool(aligned),active=self.active,run=self.gateway.run_id,
                     stage=rt.stage if rt else 'ready',reason=rt.state if rt else 'simulation_ready',
                     done=bool(rt and not self.active),recovering=False,anchor_count=self.anchor_count,anchor_id=self.anchor_id)
@@ -88,7 +88,7 @@ class KinematicRover:
     def packet(self, seq: int) -> dict:
         status=self.status()
         return dict(seq=seq,session_id=self.session,timestamp=self.time,x=float(self.pose[0]),y=float(self.pose[1]),
-                    yaw=float(self.pose[2]),v=self.command[0],w=self.command[2],
+                    site_identity=status.get('site_identity'),yaw=float(self.pose[2]),v=self.command[0],w=self.command[2],
                     speed_m_s=math.hypot(*self.command[:2]),vy_m_s=self.command[1],
                     operator={key:status[key] for key in ('active','run','stage','anchor_count','anchor_id')})
 

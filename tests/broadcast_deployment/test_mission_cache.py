@@ -26,7 +26,7 @@ def test_lookup_separates_overlapping_ascent_and_descent():
 
 @pytest.fixture
 def cache_root(tmp_path):
-    for name in ('manifest.json','terrain.npz','terrain.png','predictions.npz','teleop_cache.npz'):
+    for name in ('mission_coverage.json','manifest.json','terrain.npz','terrain.png','predictions.npz','teleop_cache.npz'):
         (tmp_path/name).symlink_to(DEFAULT_OUT/name)
     states=np.array([[3.6,2.82,0.,.05,0.]]*4)
     paths=np.array([[[3.6,2.82],[3.62,2.82]]]*4)

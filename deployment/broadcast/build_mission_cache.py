@@ -110,9 +110,11 @@ def build() -> None:
     assert size<95*1024**2,'asset exceeds Git per-file budget'
     hashes={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in
             [ROOT/'deployment/ksrc/runner.py',ROOT/'deployment/ksrc/mission/scenario.json',
+             ROOT/'deployment/ksrc/mission/mission.json',ROOT/'deployment/ksrc/mission/planning_map.json',
+             ROOT/'deployment/ksrc/mission/site/site.json',ROOT/'deployment/ksrc/mission/site/grid.npz',
              ROOT/'deployment/ksrc/runtime/ksrc_runtime/handheld_mapping/region_mission.py',
              ROOT/'deployment/ksrc/runtime/ksrc_runtime/handheld_mapping/terrain_mppi.py']}
-    summary=dict(runs={str(r):report[f'1:{r}'] for r in range(1,5)},
+    summary=dict(site_identity=site.identity,planning_map='rocks10',runs={str(r):report[f'1:{r}'] for r in range(1,5)},
         anchor2_runs={str(r):report[f'2:{r}'] for r in range(1,5)},
         anchor_presets_rad={'1':-math.pi/2,'2':-math.pi},states=len(arrays['states']),bytes=size,wall_s=time.perf_counter()-begin_all,
         lateral_offsets_m=[-.08,-.04,0.,.04,.08],yaw_offsets_deg=[-20,-10,0,10,20],

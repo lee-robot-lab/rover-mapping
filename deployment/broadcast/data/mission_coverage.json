@@ -1,8 +1,10 @@
 {
+  "site_identity": "a0b2de3335d538566c235f8764d50bcb1e71e7eb3109f44530ecb62c1efdc426",
+  "planning_map": "rocks10",
   "runs": {
     "1": {
       "state": "complete",
-      "sim_s": 215.10000000000002,
+      "sim_s": 214.9,
       "stages": [
         {
           "stage": "entry30",
@@ -34,43 +36,43 @@
         },
         {
           "stage": "look_face",
-          "sim_s": 92.2
+          "sim_s": 92.10000000000001
         },
         {
           "stage": "look_hold",
-          "sim_s": 92.80000000000001
+          "sim_s": 92.9
         },
         {
           "stage": "look_back",
-          "sim_s": 96.9
+          "sim_s": 97.0
         },
         {
           "stage": "look_exit",
-          "sim_s": 128.20000000000002
+          "sim_s": 128.3
         },
         {
           "stage": "return10",
-          "sim_s": 133.70000000000002
+          "sim_s": 133.8
         },
         {
           "stage": "return9",
-          "sim_s": 144.5
+          "sim_s": 144.3
         },
         {
           "stage": "return8",
-          "sim_s": 158.0
+          "sim_s": 157.8
         },
         {
           "stage": "return7",
-          "sim_s": 169.9
+          "sim_s": 169.70000000000002
         },
         {
           "stage": "return6",
-          "sim_s": 187.9
+          "sim_s": 187.70000000000002
         },
         {
           "stage": "return1",
-          "sim_s": 200.9
+          "sim_s": 200.70000000000002
         }
       ],
       "tried": 8400,
@@ -118,7 +120,7 @@
     },
     "3": {
       "state": "complete",
-      "sim_s": 189.8,
+      "sim_s": 190.0,
       "stages": [
         {
           "stage": "entry30",
@@ -166,15 +168,15 @@
         },
         {
           "stage": "look_face",
-          "sim_s": 109.5
+          "sim_s": 109.0
         },
         {
           "stage": "look_hold",
-          "sim_s": 110.4
+          "sim_s": 110.5
         },
         {
           "stage": "look_back",
-          "sim_s": 114.5
+          "sim_s": 114.60000000000001
         },
         {
           "stage": "look_exit",
@@ -186,19 +188,19 @@
         },
         {
           "stage": "descent15",
-          "sim_s": 162.10000000000002
+          "sim_s": 162.3
         },
         {
           "stage": "return15",
-          "sim_s": 185.5
+          "sim_s": 185.70000000000002
         }
       ],
-      "tried": 7350,
-      "cached": 7350
+      "tried": 7325,
+      "cached": 7325
     },
     "4": {
       "state": "complete",
-      "sim_s": 164.5,
+      "sim_s": 165.0,
       "stages": [
         {
           "stage": "outer6",
@@ -234,41 +236,41 @@
         },
         {
           "stage": "look_face",
-          "sim_s": 84.10000000000001
+          "sim_s": 83.60000000000001
         },
         {
           "stage": "look_hold",
-          "sim_s": 84.9
+          "sim_s": 85.0
         },
         {
           "stage": "look_back",
-          "sim_s": 89.0
+          "sim_s": 89.10000000000001
         },
         {
           "stage": "look_exit",
-          "sim_s": 120.30000000000001
+          "sim_s": 120.4
         },
         {
           "stage": "descent15_entry",
-          "sim_s": 125.9
+          "sim_s": 126.0
         },
         {
           "stage": "descent15",
-          "sim_s": 136.5
+          "sim_s": 136.9
         },
         {
           "stage": "return15",
-          "sim_s": 160.10000000000002
+          "sim_s": 160.5
         }
       ],
-      "tried": 6300,
-      "cached": 6300
+      "tried": 6275,
+      "cached": 6275
     }
   },
   "anchor2_runs": {
     "1": {
       "state": "complete",
-      "sim_s": 209.60000000000002,
+      "sim_s": 209.70000000000002,
       "stages": [
         {
           "stage": "entry30",
@@ -304,43 +306,43 @@
         },
         {
           "stage": "look_hold",
-          "sim_s": 87.10000000000001
+          "sim_s": 87.4
         },
         {
           "stage": "look_back",
-          "sim_s": 91.2
+          "sim_s": 91.5
         },
         {
           "stage": "look_exit",
-          "sim_s": 122.5
+          "sim_s": 122.80000000000001
         },
         {
           "stage": "return10",
-          "sim_s": 128.1
+          "sim_s": 128.4
         },
         {
           "stage": "return9",
-          "sim_s": 138.8
+          "sim_s": 138.9
         },
         {
           "stage": "return8",
-          "sim_s": 152.3
+          "sim_s": 152.4
         },
         {
           "stage": "return7",
-          "sim_s": 164.3
+          "sim_s": 164.4
         },
         {
           "stage": "return6",
-          "sim_s": 182.4
+          "sim_s": 182.5
         },
         {
           "stage": "return1",
-          "sim_s": 195.4
+          "sim_s": 195.5
         }
       ],
-      "tried": 8225,
-      "cached": 8225
+      "tried": 8250,
+      "cached": 8250
     },
     "2": {
       "state": "complete",
@@ -384,7 +386,7 @@
     },
     "3": {
       "state": "complete",
-      "sim_s": 184.70000000000002,
+      "sim_s": 185.3,
       "stages": [
         {
           "stage": "entry30",
@@ -432,31 +434,31 @@
         },
         {
           "stage": "look_face",
-          "sim_s": 104.7
+          "sim_s": 104.4
         },
         {
           "stage": "look_hold",
-          "sim_s": 105.4
+          "sim_s": 105.7
         },
         {
           "stage": "look_back",
-          "sim_s": 109.5
+          "sim_s": 109.80000000000001
         },
         {
           "stage": "look_exit",
-          "sim_s": 140.70000000000002
+          "sim_s": 141.0
         },
         {
           "stage": "descent15_entry",
-          "sim_s": 146.3
+          "sim_s": 146.6
         },
         {
           "stage": "descent15",
-          "sim_s": 157.0
+          "sim_s": 157.5
         },
         {
           "stage": "return15",
-          "sim_s": 180.4
+          "sim_s": 181.0
         }
       ],
       "tried": 7175,
@@ -464,7 +466,7 @@
     },
     "4": {
       "state": "complete",
-      "sim_s": 159.10000000000002,
+      "sim_s": 159.5,
       "stages": [
         {
           "stage": "outer6",
@@ -500,44 +502,44 @@
         },
         {
           "stage": "look_face",
-          "sim_s": 78.7
+          "sim_s": 78.4
         },
         {
           "stage": "look_hold",
-          "sim_s": 79.60000000000001
+          "sim_s": 79.9
         },
         {
           "stage": "look_back",
-          "sim_s": 83.7
+          "sim_s": 84.0
         },
         {
           "stage": "look_exit",
-          "sim_s": 115.0
+          "sim_s": 115.30000000000001
         },
         {
           "stage": "descent15_entry",
-          "sim_s": 120.60000000000001
+          "sim_s": 120.9
         },
         {
           "stage": "descent15",
-          "sim_s": 131.20000000000002
+          "sim_s": 131.8
         },
         {
           "stage": "return15",
-          "sim_s": 154.8
+          "sim_s": 155.3
         }
       ],
-      "tried": 6150,
-      "cached": 6150
+      "tried": 6125,
+      "cached": 6124
     }
   },
   "anchor_presets_rad": {
     "1": -1.5707963267948966,
     "2": -3.141592653589793
   },
-  "states": 55075,
-  "bytes": 43182173,
-  "wall_s": 415.7696074930009,
+  "states": 55024,
+  "bytes": 42850404,
+  "wall_s": 357.5523642449989,
   "lateral_offsets_m": [
     -0.08,
     -0.04,
@@ -561,8 +563,12 @@
   "slip": "uncalibrated directional traction model; no measured wheel slip",
   "candidate_points": 31,
   "source_sha256": {
-    "deployment/ksrc/runner.py": "234ec8b7bf1c43f9a6baa2bd4c56ef65e6fe76061a00bc58845e8b5cd506bdba",
+    "deployment/ksrc/runner.py": "f5f251a9ef22d30a7c087c02a9d75425c12372e5c2b434d0bec34ceea65114ad",
     "deployment/ksrc/mission/scenario.json": "980ab73406947e95a890f02f9269f240bb85ef8fe3410ad375f62b59c121ca27",
+    "deployment/ksrc/mission/mission.json": "8c85ff89646b6630c48df91d65a08e634d9b3bf053b13efafe8f3d5002b4f0ad",
+    "deployment/ksrc/mission/planning_map.json": "35a0807409cd894b7379027be31b899f9a23edc8446734b8e812d2af95764832",
+    "deployment/ksrc/mission/site/site.json": "34b1fb3eefd260b081cc898fd42b1a0cbfda7c69249a086fdb29bc45851e5ac4",
+    "deployment/ksrc/mission/site/grid.npz": "c4a554a6d00fdaff049970a5e25de5226f557e1ec216cc421e8cde0b07fc0014",
     "deployment/ksrc/runtime/ksrc_runtime/handheld_mapping/region_mission.py": "36aabfe0a34d81f46f688c5b9f6b8f6e45defd38e8b7372fabc6e3c2e61dde9b",
     "deployment/ksrc/runtime/ksrc_runtime/handheld_mapping/terrain_mppi.py": "1cc2a91955c3b17905d20d483661e07b7c4e04a3615eb9fedb4038bf7de529db"
   }

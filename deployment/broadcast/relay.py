@@ -73,7 +73,7 @@ class Telemetry:
                     w=math.atan2(math.sin(yaw-pa),math.cos(yaw-pa))/dt
             self.previous=(x,y,yaw,stamp,anchor);self.seq+=1
             return dict(seq=self.seq,session_id=self.session_id,timestamp=time.time(),x=x,y=y,yaw=yaw,
-                        v=v,w=w,vy_m_s=vy,speed_m_s=speed,velocity_source='pose_difference',
+                        site_identity=status.get('site_identity'),v=v,w=w,vy_m_s=vy,speed_m_s=speed,velocity_source='pose_difference',
                         operator=dict(active=bool(status.get('active')),run=int(status.get('run',0)),
                                       anchor_count=anchor,done=bool(status.get('done')),
                                       anchor_id=int(status.get('anchor_id',1)),

@@ -25,14 +25,23 @@ REVEAL_RADIUS_M = .35
 class Broadcast:
     """네트워크 수신과 화면 조회를 분리하고 원본 패킷·각 RUN 기록을 보존한다."""
 
-    def __init__(self, root: Path, udp_host: str, udp_port: int, live: bool = False) -> None:
+    def __init__(self, root: Path, udp_host: str, udp_port: int, live: bool = False, hide_stones: bool = False) -> None:
         self.root = root
         self.meta = json.loads((root/'manifest.json').read_text())
         self.meta['live']=live
+        self.hide_stones=hide_stones
+        self.meta['hide_stones']=hide_stones
         self.live=live
         self.phase=self.meta.get('phase','transfer')
         self.operator=None
-        self.teleop_prediction=TeleopPrediction(SiteMission.load(ROOT/'deployment/ksrc/mission',load_mesh=False).site) if live else None
+        site=SiteMission.load(ROOT/'deployment/ksrc/mission',load_mesh=False).site if live else None
+        self.site_identity=site.identity if site else None
+        self.teleop_prediction=TeleopPrediction(site) if live else None
+        if live and self.meta.get('planning_map'):
+            coverage=json.loads((root/'mission_coverage.json').read_text())
+            if any(identity!=self.site_identity for identity in (self.meta['planning_map']['site_identity'],coverage.get('site_identity'))):
+                raise ValueError('planning map / terrain / mission cache mismatch; rebuild broadcast assets')
+            self.meta['mission_coverage']=coverage
         with np.load(root/'predictions.npz') as stored:
             self.data = {key: stored[key] for key in stored.files}
         self.prediction_data = self.data
@@ -168,8 +177,12 @@ class Broadcast:
         result['phase']=self.phase
         result['operator']=self.operator
         result['demo_playing'] = self.demo_process is not None and self.demo_process.poll() is None
+        result['site_identity']=self.site_identity
+        incoming=(self.session.raw or {}).get('site_identity')
+        result['map_match']=None if incoming is None else incoming==self.site_identity
         result['prediction'] = None
         result['cells'] = []
+        result['obstacles'] = []
         with self.session.lock:
             result['explored'] = [np.column_stack((self.grid_points[mask], self.cost.ravel()[mask])).tolist()
                                   for mask in self.explored]
@@ -177,6 +190,11 @@ class Broadcast:
         pose = result['pose']
         if pose:
             xy = np.array([pose['x'], pose['y']])
+            planning=self.meta.get('planning_map',{})
+            result['obstacles']=[dict(x=x,y=y,diameter_m=planning['stone_diameter_m'])
+                for x,y in planning.get('stone_centers_xy_m',[])
+                if not self.hide_stones and not result['stale'] and result['map_match'] is not False
+                and np.linalg.norm(np.asarray([x,y])-xy)<=REVEAL_RADIUS_M]
             index = np.floor((xy-self.origin)/self.cell).astype(int)
             radius_cells = int(np.ceil(REVEAL_RADIUS_M/self.cell))
             for i in range(max(0, index[0]-radius_cells), min(self.cost.shape[0], index[0]+radius_cells+1)):
@@ -184,7 +202,7 @@ class Broadcast:
                     p = self.origin+np.array([i, j])*self.cell
                     if np.linalg.norm(p-xy) <= REVEAL_RADIUS_M:
                         result['cells'].append([*p.tolist(), float(self.cost[i, j])])
-            if not result['stale'] and (result['active'] or self.live):
+            if not result['stale'] and result['map_match'] is not False and (result['active'] or self.live):
                 prediction_data,key = self.match_prediction(pose,result['run'])
                 if key is not None:
                     result['prediction'] = dict(candidates=prediction_data['candidates'][key].tolist(),
@@ -198,6 +216,7 @@ class Broadcast:
 
     def match_prediction(self, pose: dict, run: int) -> tuple:
         """접근 구간과 본 주행을 분리하고 본 주행은 같은 단계의 결과만 선택한다."""
+        if self.live and pose.get('site_identity',self.site_identity)!=self.site_identity:return None,None
         state=[pose[x] for x in ('x','y','yaw','v','w')]
         if self.phase=='transfer':return self.prediction_data,self.lookup.find(state,1)
         if self.phase=='run' and self.mission_data is not None and (not self.live or (self.operator or {}).get('active')):
@@ -285,8 +304,9 @@ def main() -> None:
     parser.add_argument('--udp-port', type=int, default=9870)
     parser.add_argument('--live', action='store_true', help='실기 pose·회차 수신 전용; 시뮬 재생 금지')
     parser.add_argument('--simulation',action='store_true',help='조이스틱 기구학 시뮬레이션 표시')
+    parser.add_argument('--hide-stones',action='store_true',help='돌 표시만 숨김; MPPI·코스트 계산은 유지')
     args = parser.parse_args()
-    app = Broadcast(args.data, args.udp_host, args.udp_port, live=args.live)
+    app = Broadcast(args.data, args.udp_host, args.udp_port, live=args.live, hide_stones=args.hide_stones)
     app.meta['simulation_mode']=args.simulation
     server = ThreadingHTTPServer((args.http_host, args.http_port), Handler)
     server.app = app

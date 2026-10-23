@@ -56,6 +56,7 @@ def main() -> None:
                         state=json.load(response)
                     latencies.append((time.perf_counter()-before)*1000)
                     assert state['run']==run and abs(state['pose']['x']-sim.pose[0])<1e-5
+                    assert state['map_match'] is True
                     if state['active'] and sim.runtime.stage in app.mission_data['stages']:
                         counts['checked']+=1;counts['matched']+=int(state['prediction'] is not None)
                     assert len(state['tracks'])==4

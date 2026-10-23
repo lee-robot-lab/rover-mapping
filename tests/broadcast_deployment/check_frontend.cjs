@@ -24,5 +24,7 @@ setTimeout(()=>{
  state.active=false;state.operator={active:false};state.teleop_tracks=[[[3.6,1.7,0,0],[3.6,1.6,.1,1]],[[3.5,1.5,0,2]]];state.teleop_distance_m=.1;state.prediction={source:'teleop_model',slip:.1,costs:[1],candidates:[[[3.6,1.7],[3.6,1.6]]],selected:[[3.6,1.7],[3.6,1.6]]};vm.runInContext('update()',sandbox);
  if(node('run').textContent!=='TELEOP'||node('prediction').textContent!=='TELEOP MODEL')throw Error('manual prediction label missing');
  if(node('teleopdistance').textContent!=='0.10 m')throw Error('manual distance missing');
- console.log('Live frontend + measured speed + TELEOP model/tracks OK');
+ state.obstacles=[{x:2.458,y:.85,diameter_m:.1}];state.map_match=false;vm.runInContext('update()',sandbox);
+ if(node('status').textContent!=='MAP MISMATCH')throw Error('map mismatch label missing');
+ console.log('Live frontend + measured speed + TELEOP model/tracks + obstacle/map status OK');
 },100);

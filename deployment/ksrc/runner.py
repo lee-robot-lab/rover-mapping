@@ -226,7 +226,8 @@ class Navigation:
         yaw = math.atan2(self.checkpoint[1, 0], self.checkpoint[0, 0])
         heading_error = abs((yaw - self.anchor_yaw + math.pi) % (2 * math.pi) - math.pi)
         aligned = np.linalg.norm(self.checkpoint[:2, 3] - self.prior[:2, 3]) <= .08 and heading_error <= math.radians(8.)
-        return dict(orb_ok=bool(fresh and not self.recovering), stationary_s=stationary_s,
+        return dict(site_identity=self.mission.site.identity,
+                    orb_ok=bool(fresh and not self.recovering), stationary_s=stationary_s,
                     in_region1=bool(inside and aligned), start_aligned=bool(aligned), active=self.active, recovering=self.recovering,
                     run=self.run_id, stage=self.runtime.stage, reason=self.reason, anchor_count=self.anchor_count,anchor_id=self.anchor_id,
                     done=self.runtime.state in ('complete', 'failed'), recovery_count=self.recovery_count,

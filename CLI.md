@@ -9,6 +9,14 @@
 
 **운용 기준은 AUTO 주행, 응급상황에서 E-STOP 후 TELEOP 인계다.** `start --real`은 스택만 켜고, GUI `START RUN n`이 실제 AUTO를 시작한다. 사이트는 중계 화면이며 로버를 조작하지 않는다. 중간 TELEOP 회피 후 그 위치에서 AUTO를 이어가는 resume 기능은 없다.
 
+### 현재 선택한 MPPI 맵
+
+실기 MPPI·사이트 TELEOP 예측·RUN1~4 캐시는 **`rocks10`(지름 10cm 돌 4개)**을 사용한다. `deployment/ksrc/mission/planning_map.json`에 선택 근거와 격자 hash가 있다. site identity는 `a0b2de3335d538566c235f8764d50bcb1e71e7eb3109f44530ecb62c1efdc426`이다. 기존 RUN 정책·출발점·네 방향 앵커는 유지한다. 이 배포는 실제 장소나 Isaac 장면에 돌을 새로 생성하지 않는다.
+
+사이트 배경에는 돌을 미리 그리지 않는다. 현재 로버 위치에서 **35cm 이내**의 돌만 표시하며 범위를 벗어나거나 pose가 stale이면 숨긴다. 이는 카메라 검출이 아닌 저장 지도와 위치에 따른 표시다. 주변 코스트와 탐사 기록은 별도로 유지한다.
+
+Pi와 노트북은 같은 Git 버전으로 업데이트한다. 사이트 `MAP MISMATCH`는 수신한 Pi의 site identity가 다르다는 뜻이며 예측선을 숨긴다. `MAP UNVERIFIED`면 Pi 상태에 identity가 없으므로 Pi 배포본을 확인한다. 로컬 terrain·캐시의 identity가 다르면 사이트 시작 자체를 거부한다. `./ksrc check`는 별도 Pi 실기 검사와 함께 수행한다.
+
 | 구분 | 이번에 확인한 범위 | 실기에서 남은 확인 |
 |---|---|---|
 | 기구학 시뮬 | 네 방향×RUN1~4 완주, 화면·상태 전이 | 바퀴·모래·경사·실제 센서/구동 |
@@ -210,6 +218,19 @@ cd ~/rover-mapping
 브라우저 `http://127.0.0.1:8765`와 조이스틱 GUI가 열린다. GUI에서 `MODE TELEOP`, `laptop link OK`를 확인한다. 기존 조이스틱 창은 종료하고 하나만 사용한다. Pi 경로가 다르면 `--remote-root /actual/deployment/ksrc`, 세션을 직접 지정하려면 `--state-dir state/field_...`를 추가한다.
 
 조이스틱은 UDP **5006**, 중계는 읽기 전용 SSH relay를 사용한다. 중계 서버는 노트북 HTTP 8765 / UDP 9870을 사용한다. Pi의 수락된 START·ANCHOR 상태를 받아 기록을 전환하며, 사이트에서 실기 RUN을 시작하지 않는다.
+
+### 돌 표시만 숨기기
+
+실행 명령에 `--hide-stones`를 추가한다. 기본은 주변35cm 돌 표시 ON이며, 파라미터가 있으면 메인·미니맵의 돌 원만 숨긴다. MPPI 장애물 회피·코스트·궤적·슬립 계산은 유지한다. 실기·시뮬·재생 모드 모두 사용할 수 있다.
+
+```bash
+# 실제 연결: 돌 표시 OFF
+python deployment/broadcast/launch.py --pi pi@192.168.0.101 --hide-stones
+# 로컬 시뮬: 돌 표시 OFF
+python deployment/broadcast/launch.py --sim --hide-stones
+```
+
+주변 돌을 표시하려면 `--hide-stones`를 빼고 실행한다. 사이트 중계 표시 설정이므로 Pi 주행 스택의 재시작은 필요 없다.
 
 ### 조작 키와 버튼
 
@@ -442,6 +463,6 @@ cd ~/rover-mapping
 
 ## 검증 범위
 
-기존 Pi의 FAKE 연결·plan 분리·정상 종료·정책 기록 확인과 이번 노트북 검증을 구분한다. 이번 RUN3/4 관련 테스트는 **168개 통과**했고, 15° 하행 변경 후 배포 MPPI+점기구학 시험은 RUN3 189.8초/RUN4 164.5초(시뮬 시간)에 복귀 완료했다. 바퀴 접촉·모래·센서 오차를 포함한 물리 시험이나 실제 모터 주행·현장 완주 검증은 아니다. 이번 변경을 실제 Pi에 업데이트해 실행한 검증도 아직 하지 않았다.
+기존 Pi의 FAKE 연결·plan 분리·정상 종료·정책 기록 확인과 이번 노트북 검증을 구분한다. rocks10 배포 연결과 돌 표시 파라미터까지 포함한 관련 회귀 검사는 **183개 통과**했다. 바퀴 접촉·모래·센서 오차를 포함한 물리 시험이나 실제 모터 주행·현장 완주 검증은 아니다. 이번 변경을 실제 Pi에 업데이트해 실행한 검증도 아직 하지 않았다.
 
 네 출발 방향×RUN1~4의16조합은 기구학 UDP→HTTP 시험에서 모두 완료됐다. AUTO 캐시는 −Y·−X 두 기준 주행의 world pose를 사용하므로 +Y·+X 초기 회전은 일치하는 예측이 없을 수 있다. 이때 추정값을 채워 넣지 않고 숨긴다. TELEOP은 별도 읽기 전용 모델을 사용한다.
