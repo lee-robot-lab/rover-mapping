@@ -6,7 +6,7 @@
 const fs=require('fs'),vm=require('vm'),nodes=new Map();
 const context=new Proxy({},{get:()=>()=>{}});
 function node(id){if(!nodes.has(id))nodes.set(id,{textContent:'',style:{},classList:{toggle(){}},clientWidth:1000,clientHeight:500,getContext:()=>context});return nodes.get(id)}
-const meta={live:true,phase:'transfer',extent:[0,0,4,8.12],start:[2.659,5.573,-1.33],cell:.04};
+const meta={live:true,simulation_mode:process.argv.includes('--simulation'),phase:'transfer',extent:[0,0,4,8.12],start:[2.659,5.573,-1.33],cell:.04};
 const state={pose:{x:2.659,y:5.573,yaw:-1.33,v:.1,w:0,speed_m_s:.12,seq:1},prediction:null,
   run:1,active:true,stale:false,phase:'transfer',elapsed_s:1,age_s:.1,accepted:1,rejected:0,bad_packets:0,
   tracks:[[],[]],distances:[0,0],explored:[[],[]]};
@@ -17,6 +17,7 @@ vm.createContext(sandbox);const html=fs.readFileSync('experiments/broadcast_demo
 vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],sandbox);
 setTimeout(()=>{
  if(node('controls').style.display!=='none')throw Error('live controls exposed');
+ if((node('run-summary').style.display==='none')===meta.simulation_mode)throw Error('distance summary visibility does not match real/simulation mode');
  if(node('speed').textContent!=='0.120')throw Error('display must use measured speed rather than command v');
  state.pose.seq=2;state.pose.speed_m_s=.14;vm.runInContext('update()',sandbox);
  if(node('speed').textContent!=='0.127')throw Error('speed smoothing failed');
