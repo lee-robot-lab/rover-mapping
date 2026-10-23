@@ -24,6 +24,10 @@ def decode_packet(data: bytes) -> dict:
         if not all(math.isfinite(x) for x in result.values()):
             raise ValueError('nonfinite telemetry')
         result['seq'] = value['seq']
+        if 'vy_m_s' in value:
+            lateral=float(value['vy_m_s'])
+            if not math.isfinite(lateral):raise ValueError('invalid lateral speed')
+            result['vy_m_s']=lateral
         if 'speed_m_s' in value:
             speed=float(value['speed_m_s'])
             if not math.isfinite(speed) or speed<0:raise ValueError('invalid ground speed')
@@ -35,6 +39,9 @@ def decode_packet(data: bytes) -> dict:
                     or type(op.get('anchor_count')) is not int or op['anchor_count']<0):
                 raise ValueError('invalid operator state')
             result['operator']={key:op[key] for key in ('active','run','anchor_count')}
+            if 'anchor_id' in op:
+                if type(op['anchor_id']) is not int or op['anchor_id'] not in (1,2,3,4):raise ValueError('invalid anchor preset')
+                result['operator']['anchor_id']=op['anchor_id']
             if 'stage' in op:
                 if not isinstance(op['stage'],str) or len(op['stage'])>64:raise ValueError('invalid stage')
                 result['operator']['stage']=op['stage']

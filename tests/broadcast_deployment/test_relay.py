@@ -39,3 +39,14 @@ def test_runner_restart_in_same_folder_resets_time_epoch():
     assert restarted['session_id']!=first['session_id']
     assert restarted['v']==0.
     assert state.packet(row(1.2,.02))['v']==pytest.approx(.1)
+
+
+def test_lateral_pose_speed_and_anchor_id_are_preserved():
+    from experiments.broadcast_demo.core import decode_packet
+    import json
+    state=relay.Telemetry();state.packet(row(0))
+    status=row(.2,anchor_id=4);status['pose'][1][3]=.02
+    packet=decode_packet(json.dumps(state.packet(status)).encode())
+    assert packet['v']==pytest.approx(0.)
+    assert packet['vy_m_s']==pytest.approx(.1)
+    assert packet['operator']['anchor_id']==4

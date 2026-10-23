@@ -36,8 +36,11 @@ def slip_estimate(site, xy: np.ndarray, yaw: float, v: float, gradients: tuple) 
 def build() -> None:
     rows={key:[] for key in ('states','runs','stages','times','candidates','chosen','costs','slips','compute_ms')}
     report={};begin_all=time.perf_counter()
-    for run in range(1,5):
-        rt=runner.Navigation(ROOT/'deployment/ksrc/mission',fake_config()).new_runtime(run)
+    for anchor,run in [(a,r) for a in (1,2) for r in range(1,5)]:
+        nav=runner.Navigation(ROOT/'deployment/ksrc/mission',fake_config())
+        nav.anchor_id=anchor
+        if anchor==2:nav.anchor_yaw=-math.pi
+        rt=nav.new_runtime(run)
         rt.safety=None
         site=rt.mission.site
         height=site.height_m.copy();valid=np.isfinite(height)
@@ -89,7 +92,7 @@ def build() -> None:
             result=rt.update(sample,now_s=stamp)
             if last_stage!=rt.stage:
                 stage_changes.append(dict(stage=rt.stage,sim_s=stamp))
-                print(f'RUN{run} {stamp:.1f}s {rt.stage}: {len(rows["states"])-start_count} states',flush=True)
+                print(f'ANCHOR{anchor} RUN{run} {stamp:.1f}s {rt.stage}: {len(rows["states"])-start_count} states',flush=True)
                 last_stage=rt.stage
             if rt.state in ('complete','failed'):break
             v,w=result['command']['vx_m_s'],result['command']['yaw_rate_rad_s']
@@ -97,7 +100,7 @@ def build() -> None:
             mid=pose[2]+w*.05
             pose[:2]+=.1*np.array([v*math.cos(mid)-vy*math.sin(mid),v*math.sin(mid)+vy*math.cos(mid)])
             pose[2]=math.atan2(math.sin(pose[2]+w*.1),math.cos(pose[2]+w*.1))
-        report[str(run)]=dict(state=rt.state,sim_s=stamp,stages=stage_changes,tried=tried,cached=len(rows['states'])-start_count)
+        report[f'{anchor}:{run}']=dict(state=rt.state,sim_s=stamp,stages=stage_changes,tried=tried,cached=len(rows['states'])-start_count)
         if rt.state!='complete':raise RuntimeError(f'RUN{run} incomplete: {rt.state}/{rt.stage}')
     arrays={key:np.asarray(value,dtype='U32' if key=='stages' else np.int16 if key=='runs'
                           else np.float16 if key in ('candidates','chosen') else np.float32) for key,value in rows.items()}
@@ -109,7 +112,9 @@ def build() -> None:
             [ROOT/'deployment/ksrc/runner.py',ROOT/'deployment/ksrc/mission/scenario.json',
              ROOT/'deployment/ksrc/runtime/ksrc_runtime/handheld_mapping/region_mission.py',
              ROOT/'deployment/ksrc/runtime/ksrc_runtime/handheld_mapping/terrain_mppi.py']}
-    summary=dict(runs=report,states=len(arrays['states']),bytes=size,wall_s=time.perf_counter()-begin_all,
+    summary=dict(runs={str(r):report[f'1:{r}'] for r in range(1,5)},
+        anchor2_runs={str(r):report[f'2:{r}'] for r in range(1,5)},
+        anchor_presets_rad={'1':-math.pi/2,'2':-math.pi},states=len(arrays['states']),bytes=size,wall_s=time.perf_counter()-begin_all,
         lateral_offsets_m=[-.08,-.04,0.,.04,.08],yaw_offsets_deg=[-20,-10,0,10,20],
         position_tolerance_m=.04,yaw_tolerance_deg=5,velocity_tolerance_m_s=.08,yaw_rate_tolerance_rad_s=.3,
         costs='mean map slope along candidate, for display color only; not MPPI objective',

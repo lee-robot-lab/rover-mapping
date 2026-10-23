@@ -31,7 +31,10 @@ class KinematicRover:
         self.time=self.still_since=self.run_origin=self.next_plan=0.
         self.runtime=None;self.active=False;self.command=(0.,0.,0.);self.anchor_count=1
         self.session=uuid.uuid4().hex
-        self.gateway=Gateway(self.send,on_start=self.start,on_stop=self.stop,on_anchor=self.anchor)
+        self.anchor_id=1
+        self.gateway=Gateway(self.send,on_start=self.start,on_stop=self.stop,on_anchor=self.anchor,
+                             on_anchor2=lambda:self.anchor(preset=2),on_anchor3=lambda:self.anchor(preset=3),
+                             on_anchor4=lambda:self.anchor(preset=4))
 
     def send(self, vx: float, vy: float, w: float) -> None:
         self.command=(vx,vy,w)
@@ -43,8 +46,14 @@ class KinematicRover:
     def stop(self) -> None:
         self.active=False;self.command=(0.,0.,0.)
 
-    def anchor(self) -> None:
-        if self.time-self.still_since>=3. and np.linalg.norm(self.pose[:2]-self.start_pose[:2])<.15:
+    def anchor(self, preset: int = 1) -> None:
+        if preset not in (1,2,3,4) or self.active:return
+        yaw={1:float(self.nav.mission.start[2]),2:-math.pi,3:math.pi/2,4:0.}[preset]
+        error=math.atan2(math.sin(self.pose[2]-yaw),math.cos(self.pose[2]-yaw))
+        if (self.time-self.still_since>=3. and np.linalg.norm(self.pose[:2]-self.start_pose[:2])<.15
+                and abs(error)<=math.radians(8)):
+            self.anchor_id=self.nav.anchor_id=preset;self.nav.anchor_yaw=yaw
+            self.start_pose[2]=yaw
             self.pose=self.start_pose.copy();self.anchor_count+=1
 
     def status(self) -> dict:
@@ -54,7 +63,7 @@ class KinematicRover:
         return dict(stationary_s=self.time-self.still_since,orb_ok=True,in_region1=bool(aligned),
                     start_aligned=bool(aligned),active=self.active,run=self.gateway.run_id,
                     stage=rt.stage if rt else 'ready',reason=rt.state if rt else 'simulation_ready',
-                    done=bool(rt and not self.active),recovering=False,anchor_count=self.anchor_count)
+                    done=bool(rt and not self.active),recovering=False,anchor_count=self.anchor_count,anchor_id=self.anchor_id)
 
     def step(self, dt: float) -> None:
         self.time+=dt
@@ -80,8 +89,8 @@ class KinematicRover:
         status=self.status()
         return dict(seq=seq,session_id=self.session,timestamp=self.time,x=float(self.pose[0]),y=float(self.pose[1]),
                     yaw=float(self.pose[2]),v=self.command[0],w=self.command[2],
-                    speed_m_s=math.hypot(*self.command[:2]),
-                    operator={key:status[key] for key in ('active','run','stage','anchor_count')})
+                    speed_m_s=math.hypot(*self.command[:2]),vy_m_s=self.command[1],
+                    operator={key:status[key] for key in ('active','run','stage','anchor_count','anchor_id')})
 
 
 def main() -> None:

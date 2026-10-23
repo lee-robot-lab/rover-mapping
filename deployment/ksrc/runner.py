@@ -58,6 +58,7 @@ def gateway_payload(status: dict) -> bytes:
     """gateway 수신 제한(256 B) 안에 들어가도록 조이스틱 화면에 필요한 필드만 압축해 만든다."""
     message = {key: status[key] for key in GATEWAY_STATUS_KEYS}
     message.update(stationary_s=round(status['stationary_s'], 1), reason=str(status['reason'])[:30])
+    message['anchor_id']=status.get('anchor_id',1)
     return json.dumps(message, separators=(',', ':')).encode()
 
 
@@ -78,6 +79,7 @@ class Navigation:
     def __init__(self, mission_dir: Path, config: dict, plan_cpu: str | None = None) -> None:
         self.mission_dir, self.config, self.plan_cpu = Path(mission_dir), config, plan_cpu
         self.mission = SiteMission.load(self.mission_dir, load_mesh=False)
+        self.anchor_id,self.anchor_yaw=1,float(self.mission.start[2])
         self.scenario = json.loads((self.mission_dir / 'scenario.json').read_text())
         regions = json.loads((self.mission_dir / self.scenario['regions_file']).read_text())
         self.scenario.update(regions=regions['regions'], portals=regions['portals'])
@@ -122,6 +124,7 @@ class Navigation:
         """1~4회차의 30도 시도·15도/외곽 우회를 선택하며 기존 2회차 설정을 유지한다."""
         if run not in (1,2,3,4):raise ValueError('run must be 1..4')
         mission = SiteMission.load(self.mission_dir, load_mesh=False)
+        mission.start[2]=self.anchor_yaw
         mission.settings['fallback_after_30'] = '10' if run==3 else '15'
         mission.settings['descent_route'] = '15' if run in (3,4) else '10'
         mission.settings['max_speed_m_s'] = .15
@@ -221,11 +224,11 @@ class Navigation:
         stationary_s = 0. if self.stationary_since is None or now - self.last_imu > .1 else max(0., now - self.stationary_since)
         inside = self.runtime.graph.distance(1, self.checkpoint[:2, 3]) <= 0.
         yaw = math.atan2(self.checkpoint[1, 0], self.checkpoint[0, 0])
-        heading_error = abs((yaw - self.mission.start[2] + math.pi) % (2 * math.pi) - math.pi)
+        heading_error = abs((yaw - self.anchor_yaw + math.pi) % (2 * math.pi) - math.pi)
         aligned = np.linalg.norm(self.checkpoint[:2, 3] - self.prior[:2, 3]) <= .08 and heading_error <= math.radians(8.)
         return dict(orb_ok=bool(fresh and not self.recovering), stationary_s=stationary_s,
                     in_region1=bool(inside and aligned), start_aligned=bool(aligned), active=self.active, recovering=self.recovering,
-                    run=self.run_id, stage=self.runtime.stage, reason=self.reason, anchor_count=self.anchor_count,
+                    run=self.run_id, stage=self.runtime.stage, reason=self.reason, anchor_count=self.anchor_count,anchor_id=self.anchor_id,
                     done=self.runtime.state in ('complete', 'failed'), recovery_count=self.recovery_count,
                     pose_age_s=None if not math.isfinite(self.last_frame) else max(0., now - self.last_frame),
                     imu_age_s=None if not math.isfinite(self.last_imu) else max(0., now - self.last_imu))
@@ -289,17 +292,20 @@ class Navigation:
         """STOP 이후 ORB가 복구돼도 AUTO를 재개하지 않는다."""
         self.active, self.reason = False, reason
 
-    def anchor(self, now: float) -> bool:
+    def anchor(self, now: float, preset: int = 1) -> bool:
         """사용자가 실제 출발 pose에 정렬한 뒤 정지 상태에서 preset을 다시 기준으로 삼는다."""
         status = self.status(now)
-        if self.active or not status['orb_ok'] or status['stationary_s'] < 3.:
+        if type(preset) is not int or preset not in (1,2,3,4) or self.active or not status['orb_ok'] or status['stationary_s'] < 3.:
             return False
+        self.anchor_id=preset
+        self.anchor_yaw={1:float(self.mission.start[2]),2:-math.pi,3:math.pi/2,4:0.}[preset]
+        self.prior[:3,:3]=Rotation.from_euler('z',self.anchor_yaw).as_matrix()
         self.checkpoint = self.prior.copy()
         self.estimator = self.new_estimator(self.prior, now)
         self.last_frame_matrix = self.last_vo = None
         self.reason = 'anchored_at_preset'
         self.anchor_count += 1
-        self.events.append(dict(type='operator_anchor', stamp_s=now, pose=self.prior.tolist()))
+        self.events.append(dict(type='operator_anchor', stamp_s=now, pose=self.prior.tolist(),anchor_id=preset))
         return True
 
     def orb_reset(self, now: float) -> bool:
@@ -434,7 +440,7 @@ def main() -> None:
                                 elif data.get('op') == 'STOP':
                                     nav.stop()
                                 elif data.get('op') == 'ANCHOR':
-                                    nav.anchor(now)
+                                    nav.anchor(now,preset=data.get('preset',1))
                                 elif data.get('op') == 'ORB_RESET':
                                     if nav.orb_reset(now):
                                         (args.state_dir / 'restart_orb').touch()   # ORB 프로세스는 supervisor가 재시작한다

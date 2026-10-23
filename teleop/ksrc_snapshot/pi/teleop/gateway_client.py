@@ -8,7 +8,9 @@ import math
 import struct
 
 CTL = struct.Struct("<4sIB3f")   # control_gateway의 KCTL 형식: 순서번호, 동작, 값 3개
-HEARTBEAT, START, ESTOP, ANCHOR, ORB_RESET = 1, 3, 4, 5, 6   # 번호는 control_gateway와 같다(2는 쓰지 않는다)
+HEARTBEAT, START, ESTOP, ANCHOR, ORB_RESET, ANCHOR2, ANCHOR3, ANCHOR4 = 1, 3, 4, 5, 6, 7, 8, 9
+ANCHOR_OPS = {1: ANCHOR, 2: ANCHOR2, 3: ANCHOR3, 4: ANCHOR4}
+ANCHOR_LABELS = {1: 'ANCHOR1 -Y', 2: 'ANCHOR2 -X', 3: 'ANCHOR3 +Y', 4: 'ANCHOR4 +X'}
 ESTOP_REPEAT = 3                 # UDP 손실에 대비해 비상 정지를 연달아 보낸다
 STATUS_FRESH_S = 1.5
 ANCHOR_REPLY_S = 1.5             # 이 시간 안에 anchor_count가 늘지 않으면 거절된 것으로 본다
@@ -49,8 +51,10 @@ class GatewayClient:
             raise ValueError("run must be 1, 2, 3, or 4")
         self._send(START, float(run))
 
-    def anchor(self, now):
-        self._send(ANCHOR)
+    def anchor(self, now: float, preset: int = 1) -> None:
+        if preset not in (1, 2, 3, 4):
+            raise ValueError('preset must be 1, 2, 3, or 4')
+        self._send(ANCHOR_OPS[preset])
         self.anchor_wait, self.anchor_result = (now, self.status.get("anchor_count")), None
 
     def orb_reset(self, now):
@@ -81,8 +85,11 @@ class GatewayClient:
         s = self.status
         mode, run = s.get("mode", "?"), s.get("run", s.get("run_id"))
         stage = f"  {s['stage']}" if s.get("stage") else ""
+        anchor = ANCHOR_LABELS.get(s.get('anchor_id'))
         out = [(f"MODE {mode}" + (f"  RUN {run}{stage}  (joystick ignored)" if mode == "AUTO" else ""),
                 "ok" if mode == "TELEOP" else "warn")]
+        if anchor:
+            out[0] = (out[0][0] + f'  {anchor}', out[0][1])
         out.append(("laptop link OK" if s.get("link_ok") else "laptop link LOST (AUTO keeps running)", "ok" if s.get("link_ok") else "warn"))
         if s.get("recovering"):
             out.append(("ORB recovering - robot holds still", "warn"))
@@ -120,7 +127,8 @@ class GatewayClient:
         if self.anchor_wait:
             out.append(("ANCHOR sent...", "warn"))
         elif self.anchor_result == "applied":
-            out.append(("ANCHOR applied (current pose = start preset)", "ok"))
+            label = ANCHOR_LABELS.get(s.get('anchor_id'), 'ANCHOR')
+            out.append((f"{label} applied (current pose = start preset)", "ok"))
         elif self.anchor_result == "rejected":
             out.append(("ANCHOR rejected: hold still 3 s with ORB tracking, then press again", "bad"))
         elif self.anchor_result == "sent":

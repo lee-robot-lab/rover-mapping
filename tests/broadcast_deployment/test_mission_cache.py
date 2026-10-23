@@ -58,3 +58,20 @@ def test_live_mission_prediction_uses_received_pose_and_correct_run(cache_root,r
         app.session.received-=1.
         assert app.state()['prediction'] is None
     finally:app.close()
+
+
+def test_teleop_model_is_visible_without_start_and_never_becomes_auto(cache_root):
+    app=Broadcast(cache_root,'127.0.0.1',0,live=True)
+    try:
+        app.session.ingest(dict(seq=1,timestamp=0.,x=3.6,y=1.7,yaw=-np.pi/2,v=.1,w=0.,speed_m_s=.09))
+        app.sync_operator(dict(active=False,run=0,anchor_count=1,stage='ready'))
+        state=app.state()
+        assert state['prediction'] is not None
+        assert state['prediction']['source']=='teleop_model'
+        assert not app.session.active and app.session.run==0
+        assert state['pose']['speed_m_s']==.09
+        app.session.raw['v']=0.
+        assert app.state()['prediction'] is None
+        app.session.raw['v']=.1;app.session.received-=1.
+        assert app.state()['prediction'] is None
+    finally:app.close()

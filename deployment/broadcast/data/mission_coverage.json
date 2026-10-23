@@ -265,9 +265,279 @@
       "cached": 6300
     }
   },
-  "states": 27725,
-  "bytes": 21649614,
-  "wall_s": 203.49978331199964,
+  "anchor2_runs": {
+    "1": {
+      "state": "complete",
+      "sim_s": 209.60000000000002,
+      "stages": [
+        {
+          "stage": "entry30",
+          "sim_s": 0.0
+        },
+        {
+          "stage": "ascent30",
+          "sim_s": 5.6000000000000005
+        },
+        {
+          "stage": "retreat30",
+          "sim_s": 16.900000000000002
+        },
+        {
+          "stage": "entry15",
+          "sim_s": 25.8
+        },
+        {
+          "stage": "ascent15",
+          "sim_s": 37.300000000000004
+        },
+        {
+          "stage": "summit",
+          "sim_s": 61.7
+        },
+        {
+          "stage": "look_go",
+          "sim_s": 71.5
+        },
+        {
+          "stage": "look_face",
+          "sim_s": 86.60000000000001
+        },
+        {
+          "stage": "look_hold",
+          "sim_s": 87.10000000000001
+        },
+        {
+          "stage": "look_back",
+          "sim_s": 91.2
+        },
+        {
+          "stage": "look_exit",
+          "sim_s": 122.5
+        },
+        {
+          "stage": "return10",
+          "sim_s": 128.1
+        },
+        {
+          "stage": "return9",
+          "sim_s": 138.8
+        },
+        {
+          "stage": "return8",
+          "sim_s": 152.3
+        },
+        {
+          "stage": "return7",
+          "sim_s": 164.3
+        },
+        {
+          "stage": "return6",
+          "sim_s": 182.4
+        },
+        {
+          "stage": "return1",
+          "sim_s": 195.4
+        }
+      ],
+      "tried": 8225,
+      "cached": 8225
+    },
+    "2": {
+      "state": "complete",
+      "sim_s": 154.70000000000002,
+      "stages": [
+        {
+          "stage": "ascent15",
+          "sim_s": 0.0
+        },
+        {
+          "stage": "summit",
+          "sim_s": 24.700000000000003
+        },
+        {
+          "stage": "return10",
+          "sim_s": 34.6
+        },
+        {
+          "stage": "return9",
+          "sim_s": 46.300000000000004
+        },
+        {
+          "stage": "return8",
+          "sim_s": 63.900000000000006
+        },
+        {
+          "stage": "return7",
+          "sim_s": 84.80000000000001
+        },
+        {
+          "stage": "return6",
+          "sim_s": 109.7
+        },
+        {
+          "stage": "return1",
+          "sim_s": 132.5
+        }
+      ],
+      "tried": 5800,
+      "cached": 5800
+    },
+    "3": {
+      "state": "complete",
+      "sim_s": 184.70000000000002,
+      "stages": [
+        {
+          "stage": "entry30",
+          "sim_s": 0.0
+        },
+        {
+          "stage": "ascent30",
+          "sim_s": 5.6000000000000005
+        },
+        {
+          "stage": "retreat30",
+          "sim_s": 16.900000000000002
+        },
+        {
+          "stage": "outer6",
+          "sim_s": 25.8
+        },
+        {
+          "stage": "outer7",
+          "sim_s": 38.5
+        },
+        {
+          "stage": "outer8",
+          "sim_s": 46.0
+        },
+        {
+          "stage": "outer9",
+          "sim_s": 63.5
+        },
+        {
+          "stage": "outer10",
+          "sim_s": 70.60000000000001
+        },
+        {
+          "stage": "outer4",
+          "sim_s": 81.5
+        },
+        {
+          "stage": "summit",
+          "sim_s": 89.0
+        },
+        {
+          "stage": "look_go",
+          "sim_s": 89.10000000000001
+        },
+        {
+          "stage": "look_face",
+          "sim_s": 104.7
+        },
+        {
+          "stage": "look_hold",
+          "sim_s": 105.4
+        },
+        {
+          "stage": "look_back",
+          "sim_s": 109.5
+        },
+        {
+          "stage": "look_exit",
+          "sim_s": 140.70000000000002
+        },
+        {
+          "stage": "descent15_entry",
+          "sim_s": 146.3
+        },
+        {
+          "stage": "descent15",
+          "sim_s": 157.0
+        },
+        {
+          "stage": "return15",
+          "sim_s": 180.4
+        }
+      ],
+      "tried": 7175,
+      "cached": 7175
+    },
+    "4": {
+      "state": "complete",
+      "sim_s": 159.10000000000002,
+      "stages": [
+        {
+          "stage": "outer6",
+          "sim_s": 0.0
+        },
+        {
+          "stage": "outer7",
+          "sim_s": 13.0
+        },
+        {
+          "stage": "outer8",
+          "sim_s": 20.400000000000002
+        },
+        {
+          "stage": "outer9",
+          "sim_s": 37.800000000000004
+        },
+        {
+          "stage": "outer10",
+          "sim_s": 44.900000000000006
+        },
+        {
+          "stage": "outer4",
+          "sim_s": 55.7
+        },
+        {
+          "stage": "summit",
+          "sim_s": 63.1
+        },
+        {
+          "stage": "look_go",
+          "sim_s": 63.2
+        },
+        {
+          "stage": "look_face",
+          "sim_s": 78.7
+        },
+        {
+          "stage": "look_hold",
+          "sim_s": 79.60000000000001
+        },
+        {
+          "stage": "look_back",
+          "sim_s": 83.7
+        },
+        {
+          "stage": "look_exit",
+          "sim_s": 115.0
+        },
+        {
+          "stage": "descent15_entry",
+          "sim_s": 120.60000000000001
+        },
+        {
+          "stage": "descent15",
+          "sim_s": 131.20000000000002
+        },
+        {
+          "stage": "return15",
+          "sim_s": 154.8
+        }
+      ],
+      "tried": 6150,
+      "cached": 6150
+    }
+  },
+  "anchor_presets_rad": {
+    "1": -1.5707963267948966,
+    "2": -3.141592653589793
+  },
+  "states": 55075,
+  "bytes": 43182173,
+  "wall_s": 415.7696074930009,
   "lateral_offsets_m": [
     -0.08,
     -0.04,
@@ -291,7 +561,7 @@
   "slip": "uncalibrated directional traction model; no measured wheel slip",
   "candidate_points": 31,
   "source_sha256": {
-    "deployment/ksrc/runner.py": "60a88c9584312b9d5636bde28a585614e7e9a8928271405ca092d340a31a3769",
+    "deployment/ksrc/runner.py": "234ec8b7bf1c43f9a6baa2bd4c56ef65e6fe76061a00bc58845e8b5cd506bdba",
     "deployment/ksrc/mission/scenario.json": "980ab73406947e95a890f02f9269f240bb85ef8fe3410ad375f62b59c121ca27",
     "deployment/ksrc/runtime/ksrc_runtime/handheld_mapping/region_mission.py": "36aabfe0a34d81f46f688c5b9f6b8f6e45defd38e8b7372fabc6e3c2e61dde9b",
     "deployment/ksrc/runtime/ksrc_runtime/handheld_mapping/terrain_mppi.py": "1cc2a91955c3b17905d20d483661e07b7c4e04a3615eb9fedb4038bf7de529db"

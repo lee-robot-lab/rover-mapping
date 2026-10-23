@@ -255,7 +255,7 @@ def test_runner_status_reaches_the_joystick_screen_end_to_end():
     assert 'READY: START allowed' in screen(3.5, 10.)
     client.anchor(10.1)
     assert nav.anchor(3.5)
-    assert 'ANCHOR applied (current pose = start preset)' in screen(3.5, 10.2)
+    assert 'ANCHOR1 -Y applied (current pose = start preset)' in screen(3.5, 10.2)
     assert nav.start(1, 3.5)
     nav.runtime.state, nav.active, nav.reason = 'complete', False, 'complete'
     assert 'RUN 1 COMPLETE - back to TELEOP' in screen(3.5, 11.)

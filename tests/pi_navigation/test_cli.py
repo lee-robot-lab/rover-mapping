@@ -48,6 +48,30 @@ def test_start_command_sends_selected_run(monkeypatch, run):
     assert sent == [(3, run)]
 
 
+@pytest.mark.parametrize('command, preset', [('anchor', 1), ('anchor1', 1), ('anchor2', 2),
+                                           ('anchor3', 3), ('anchor4', 4)])
+def test_anchor_command_sends_selected_preset_to_runner(monkeypatch, command, preset):
+    import cli
+    packets = []
+
+    class CaptureSocket:
+        """실행 중인 로버에 닿지 않도록 CLI의 UDP 전송만 기록한다."""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def sendto(self, payload, destination):
+            packets.append((json.loads(payload), destination))
+
+    monkeypatch.setattr(sys, 'argv', ['ksrc', command])
+    monkeypatch.setattr(cli.socket, 'socket', lambda *_: CaptureSocket())
+    cli.main()
+    assert packets == [({'op': 'ANCHOR', 'preset': preset}, ('127.0.0.1', 5010))]
+
+
 def test_stop_returns_after_owned_processes_finish(tmp_path):
     command = [sys.executable, str(DEPLOY / 'cli.py'), '--state-dir', str(tmp_path)]
     started = subprocess.run([*command, 'start', '--seconds', '30', '--policy-script', str(tmp_path / 'missing.py')],

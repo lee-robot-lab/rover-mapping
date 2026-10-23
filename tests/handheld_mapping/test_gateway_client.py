@@ -104,6 +104,21 @@ def test_anchor_packet_is_readable_by_the_gateway():
     assert [cg.parse_ctl(d)[1] for d, _ in sock.packets] == [cg.ANCHOR]
 
 
+@pytest.mark.parametrize('preset, op', [(1, 5), (2, 7), (3, 8), (4, 9)])
+def test_anchor_preset_selects_its_wire_operation(preset, op):
+    sock = Capture()
+    gc.GatewayClient(sock, ('pi', 5006)).anchor(0., preset=preset)
+    assert [gc.CTL.unpack(data)[2:] for data, _ in sock.packets] == [(op, 0., 0., 0.)]
+
+
+@pytest.mark.parametrize('preset', [0, 5, 1.5, '2', None])
+def test_anchor_rejects_invalid_preset_without_sending(preset):
+    sock = Capture()
+    with pytest.raises(ValueError):
+        gc.GatewayClient(sock, ('pi', 5006)).anchor(0., preset=preset)
+    assert not sock.packets
+
+
 def test_heartbeat_is_sent_only_every_interval():
     sock = Capture()
     client = gc.GatewayClient(sock, ('pi', 5006), heartbeat_s=.2)
@@ -150,6 +165,20 @@ def test_anchor_feedback_applied_then_cleared_when_auto_starts():
     assert 'RUN 1  entry30' in texts_of(client, 2.1)[0][0]
     client.consume(teleop(anchor_count=5), 3.)
     assert not any('ANCHOR' in t for t, _ in texts_of(client, 3.1))      # 이전 회차의 anchor 결과가 남지 않는다
+
+
+@pytest.mark.parametrize('preset, label', [(1, 'ANCHOR1 -Y'), (2, 'ANCHOR2 -X'),
+                                          (3, 'ANCHOR3 +Y'), (4, 'ANCHOR4 +X')])
+def test_current_anchor_preset_is_visible_from_gateway_status(preset, label):
+    client = gc.GatewayClient(Capture(), ('pi', 5006))
+    client.consume(teleop(anchor_count=4, anchor_id=preset), 1.)
+    assert label in texts_of(client, 1.1)[0][0]
+    client.anchor(1., preset=preset)
+    client.consume(teleop(anchor_count=5, anchor_id=preset), 1.2)
+    assert any(label in text and 'applied' in text and tone == 'ok'
+               for text, tone in texts_of(client, 1.3))
+    client.consume({'mode': 'AUTO', 'run': 1, 'anchor_id': preset}, 2.)
+    assert label in texts_of(client, 2.1)[0][0]
 
 
 def test_anchor_feedback_rejected_when_count_does_not_change():
@@ -224,6 +253,22 @@ def post_click(window, name):
     pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=pygame.Rect(*window.module.GW_BUTTONS[name]).center, button=1))
 
 
+def test_anchor_buttons_follow_map_axes_in_a_cross():
+    import teleop_joystick as joystick
+    boxes = joystick.GW_BUTTONS
+    centers = {name: (x + width / 2, y + height / 2)
+               for name, (x, y, width, height) in boxes.items()}
+    assert centers['anchor4'][0] == centers['anchor2'][0]
+    assert centers['anchor3'][1] == centers['anchor'][1]
+    assert centers['anchor3'][0] < centers['anchor4'][0] < centers['anchor'][0]
+    assert centers['anchor4'][1] < centers['anchor'][1] < centers['anchor2'][1]
+    assert centers['start1'][1] > centers['anchor2'][1]
+    assert joystick.GW_LABELS['anchor'] == 'ANCHOR1 -Y'
+    assert joystick.GW_LABELS['anchor2'] == 'ANCHOR2 -X'
+    assert joystick.GW_LABELS['anchor3'] == 'ANCHOR3 +Y'
+    assert joystick.GW_LABELS['anchor4'] == 'ANCHOR4 +X'
+
+
 def test_window_sends_heartbeat_estop_and_start(window):
     pygame = window.pygame
     assert any(op == cg.HEARTBEAT for op, _ in collect(window.gateway, 1.))
@@ -245,15 +290,20 @@ def reply_status(window, **fields):
     window.gateway.sendto(json.dumps(dict({'mode': 'TELEOP', 'missing': [], 'link_ok': True}, **fields)).encode(), address)
 
 
-def test_anchor_button_is_ignored_until_stationary_and_orb_ok(window):
+@pytest.mark.parametrize('name, op', [('anchor', 5), ('anchor2', 7), ('anchor3', 8), ('anchor4', 9)])
+def test_anchor_button_is_ignored_until_stationary_and_orb_ok(window, name, op):
     reply_status(window, missing=['stationary_s', 'in_region1'], stationary_s=1.0)
     time.sleep(.3)
-    post_click(window, 'anchor')
-    assert not any(op == cg.ANCHOR for op, _ in collect(window.gateway, .5))      # 정지 3초 전에는 눌러도 보내지 않는다
+    post_click(window, name)
+    assert not any(sent == op for sent, _ in collect(window.gateway, .5))      # 정지 3초 전에는 눌러도 보내지 않는다
     reply_status(window, missing=['in_region1'], stationary_s=3.4)                  # 출발 구역은 anchor 조건이 아니다
     time.sleep(.3)
-    post_click(window, 'anchor')
-    assert any(op == cg.ANCHOR for op, _ in collect(window.gateway, .6))
+    post_click(window, name)
+    assert any(sent == op for sent, _ in collect(window.gateway, .6))
+    reply_status(window, mode='AUTO', run=1)
+    time.sleep(.3)
+    post_click(window, name)
+    assert not any(sent == op for sent, _ in collect(window.gateway, .5))
 
 
 def test_orb_reset_button_sends_in_teleop_and_is_ignored_in_auto(window):

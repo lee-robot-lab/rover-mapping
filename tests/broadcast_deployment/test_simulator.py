@@ -41,3 +41,15 @@ def test_start_and_estop_follow_real_gateway(run,stage):
     assert sim.gateway.mode=='TELEOP'
     assert not sim.packet(2)['operator']['active']
     assert sim.command==(0.,0.,0.)
+
+
+def test_anchor2_requires_actual_sim_heading_and_updates_start_check():
+    module=load_sim();sim=module.KinematicRover();sim.step(3.1)
+    sim.anchor(preset=2)
+    assert sim.anchor_id==1  # truth pose is still -y, do not teleport the heading
+    sim.pose[2]=-np.pi
+    sim.anchor(preset=2)
+    sim.step(.02)
+    assert sim.anchor_id==2 and sim.status()['in_region1']
+    assert sim.gateway.control(module.START,(4,0.,0.),sim.time)
+    assert sim.runtime.mission.start[2]==pytest.approx(-np.pi)

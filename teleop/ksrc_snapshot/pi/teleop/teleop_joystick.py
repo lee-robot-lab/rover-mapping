@@ -62,12 +62,17 @@ LEFT_CENTER = (170, 190)
 RIGHT_CENTER = (470, 190)
 GRAB_SLACK = 1.4  # click within radius*GRAB_SLACK of center still grabs the pad
 ROTATION_SPEED_SCALE = 0.5  # 패드와 Q/E의 회전 명령만 50%로 제한
-GW_EXTRA_HEIGHT = 264  # --gateway: 버튼 두 줄과 상태 줄(최대 7줄)을 더한다
+GW_EXTRA_HEIGHT = 352  # --gateway: 4방향 anchor 십자·시작 버튼과 상태 줄을 더한다
 GW_BUTTONS = {name: (x, HEIGHT + 12, w, 34) for name, x, w in
-              (("orbreset", 16, 108), ("anchor", 132, 96), ("estop", 488, 136))}
-GW_BUTTONS.update({f"start{run}": (16 + 156 * (run - 1), HEIGHT + 56, 140, 34) for run in range(1, 5)})
-GW_LABELS = {"orbreset": "ORB RESET", "anchor": "ANCHOR", "estop": "E-STOP (Space)",
+              (("orbreset", 16, 108), ("anchor4", 270, 136), ("estop", 488, 136))}
+GW_BUTTONS.update({"anchor3": (132, HEIGHT + 56, 136, 34),
+                   "anchor": (408, HEIGHT + 56, 136, 34),
+                   "anchor2": (270, HEIGHT + 100, 136, 34)})
+GW_BUTTONS.update({f"start{run}": (16 + 156 * (run - 1), HEIGHT + 144, 140, 34) for run in range(1, 5)})
+GW_LABELS = {"orbreset": "ORB RESET", "anchor": "ANCHOR1 -Y", "anchor2": "ANCHOR2 -X",
+             "anchor3": "ANCHOR3 +Y", "anchor4": "ANCHOR4 +X", "estop": "E-STOP (Space)",
              **{f"start{run}": f"START RUN {run}" for run in range(1, 5)}}
+GW_ARROWS = {"anchor4": (0, -1), "anchor3": (-1, 0), "anchor2": (0, 1), "anchor": (1, 0)}
 GW_COLORS = {"ok": (120, 220, 140), "warn": (240, 200, 90), "bad": (240, 110, 110)}
 
 
@@ -253,9 +258,9 @@ def run(args):
                     elif name == "orbreset":
                         if gw.orb_reset_allowed(time.monotonic()):   # AUTO 중에는 눌러도 보내지 않는다
                             gw.orb_reset(time.monotonic())
-                    elif name == "anchor":
+                    elif name in GW_ARROWS:
                         if gw.anchor_allowed(time.monotonic()):   # 정지 3초·ORB 정상이 아니면 눌러도 보내지 않는다
-                            gw.anchor(time.monotonic())
+                            gw.anchor(time.monotonic(), preset=1 if name == "anchor" else int(name.removeprefix("anchor")))
                     else:
                         gw.start(int(name.removeprefix("start")))
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -371,13 +376,20 @@ def run(args):
 
             if gw is not None:
                 for name, rect in gw_rects.items():
-                    disabled = (name == "anchor" and not gw.anchor_allowed(now)) or (name == "orbreset" and not gw.orb_reset_allowed(now))   # 회색: 지금은 누를 수 없다
+                    disabled = (name in GW_ARROWS and not gw.anchor_allowed(now)) or (name == "orbreset" and not gw.orb_reset_allowed(now))   # 회색: 지금은 누를 수 없다
                     pygame.draw.rect(screen, (150, 50, 50) if name == "estop" else (38, 40, 46) if disabled else (50, 70, 100), rect)
                     pygame.draw.rect(screen, (80, 80, 88) if disabled else (140, 140, 150), rect, 1)
                     label = font.render(GW_LABELS[name], True, (110, 110, 120) if disabled else (230, 230, 235))
+                    if name in GW_ARROWS:
+                        dx, dy = GW_ARROWS[name]
+                        x, y = rect.left + 10, rect.centery
+                        pygame.draw.polygon(screen, (110, 110, 120) if disabled else (230, 230, 235),
+                                            [(x + 6 * dx, y + 6 * dy),
+                                             (x - 4 * dx + 5 * dy, y - 4 * dy - 5 * dx),
+                                             (x - 4 * dx - 5 * dy, y - 4 * dy + 5 * dx)])
                     screen.blit(label, (rect.centerx - label.get_width() // 2, rect.centery - label.get_height() // 2))
                 for row, (text, tone) in enumerate(gw.lines(now)):
-                    screen.blit(font.render(text, True, GW_COLORS[tone]), (16, HEIGHT + 100 + 22 * row))
+                    screen.blit(font.render(text, True, GW_COLORS[tone]), (16, HEIGHT + 188 + 22 * row))
 
             pygame.display.flip()
             clock.tick(60)

@@ -16,6 +16,8 @@ import time
 import numpy as np
 from experiments.broadcast_demo.core import Session, Lookup, decode_packet
 from experiments.broadcast_demo.paths import DEFAULT_OUT, ROOT
+from deployment.broadcast.teleop_prediction import TeleopPrediction
+from ksrc_runtime.handheld_mapping.site_mission import SiteMission
 
 REVEAL_RADIUS_M = .35
 
@@ -30,6 +32,7 @@ class Broadcast:
         self.live=live
         self.phase=self.meta.get('phase','transfer')
         self.operator=None
+        self.teleop_prediction=TeleopPrediction(SiteMission.load(ROOT/'deployment/ksrc/mission',load_mesh=False).site) if live else None
         with np.load(root/'predictions.npz') as stored:
             self.data = {key: stored[key] for key in stored.files}
         self.prediction_data = self.data
@@ -174,21 +177,23 @@ class Broadcast:
                     p = self.origin+np.array([i, j])*self.cell
                     if np.linalg.norm(p-xy) <= REVEAL_RADIUS_M:
                         result['cells'].append([*p.tolist(), float(self.cost[i, j])])
-            if result['active'] and not result['stale']:
+            if not result['stale'] and (result['active'] or self.live):
                 prediction_data,key = self.match_prediction(pose,result['run'])
                 if key is not None:
                     result['prediction'] = dict(candidates=prediction_data['candidates'][key].tolist(),
                         selected=prediction_data['chosen'][key].tolist(), costs=prediction_data['costs'][key].tolist(),
                         slip=float(prediction_data['slips'][key]) if abs(pose['v'])>=.01 else None,
                         simulated_compute_ms=float(prediction_data['compute_ms'][key]),
-                        lookup_distance_m=float(np.linalg.norm(prediction_data['states'][key, :2]-xy)))
+                        lookup_distance_m=float(np.linalg.norm(prediction_data['states'][key, :2]-xy)),source='offline_cache')
+                elif self.live and self.operator and not self.operator['active']:
+                    result['prediction']=self.teleop_prediction.predict(pose)
         return result
 
     def match_prediction(self, pose: dict, run: int) -> tuple:
         """접근 구간과 본 주행을 분리하고 본 주행은 같은 단계의 결과만 선택한다."""
         state=[pose[x] for x in ('x','y','yaw','v','w')]
         if self.phase=='transfer':return self.prediction_data,self.lookup.find(state,run)
-        if self.phase=='run' and self.mission_data is not None:
+        if self.phase=='run' and self.mission_data is not None and (not self.live or (self.operator or {}).get('active')):
             stage=(self.operator or {}).get('stage')
             return self.mission_data,self.mission_lookup.find(state,run,stage=stage)
         return None,None

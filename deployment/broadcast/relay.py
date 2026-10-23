@@ -55,7 +55,7 @@ class Telemetry:
             source=status['_source_session']
             if source!=self.source:
                 self.previous=None;self.source=source;self.session_id=uuid.uuid4().hex;self.seq=0
-            v=w=speed=0.
+            v=w=speed=vy=0.
             anchor=int(status.get('anchor_count',0))
             if self.previous:
                 px,py,pa,pt,previous_anchor=self.previous;dt=stamp-pt
@@ -68,13 +68,15 @@ class Telemetry:
                         self.previous=(x,y,yaw,stamp,anchor)
                         return None
                     v=(dx*math.cos(yaw)+dy*math.sin(yaw))/dt
+                    vy=(-dx*math.sin(yaw)+dy*math.cos(yaw))/dt
                     speed=math.hypot(dx,dy)/dt
                     w=math.atan2(math.sin(yaw-pa),math.cos(yaw-pa))/dt
             self.previous=(x,y,yaw,stamp,anchor);self.seq+=1
             return dict(seq=self.seq,session_id=self.session_id,timestamp=time.time(),x=x,y=y,yaw=yaw,
-                        v=v,w=w,speed_m_s=speed,velocity_source='pose_difference',
+                        v=v,w=w,vy_m_s=vy,speed_m_s=speed,velocity_source='pose_difference',
                         operator=dict(active=bool(status.get('active')),run=int(status.get('run',0)),
                                       anchor_count=anchor,done=bool(status.get('done')),
+                                      anchor_id=int(status.get('anchor_id',1)),
                                       stage=str(status.get('stage',''))))
         except (KeyError,TypeError,ValueError,IndexError,OverflowError):return None
 

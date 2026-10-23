@@ -189,3 +189,7 @@ rsync -a -e 'ssh -o HostKeyAlias=raspberrypi.local' pi@"$PI_AP_IP":/home/pi/ksrc
 새 단계는 `outer6→outer7→outer8→outer9→outer10→outer4→summit`. 외곽 상승 중 과도한기울기·정체는 임무 실패·정지로 처리하며30/15도 경사로 잘못 후퇴하지 않는다. 중계도1~4회차를 수신하고 각각의 궤적을 보존한다. 본 주행의 사전 MPPI/슬립 표시 캐시는 노트북의 `deployment/broadcast/data/mission_cache.npz`에 제공하며, 회차·단계·pose/v/w가 맞는 경우에만 표시한다.
 
 모터 없는 검증은 `python deployment/ksrc/validation/run_variants_kinematic.py`. 실제 MPPI+점기구학으로 RUN3/4의 정상·복귀 완료를 확인했으나, 센서 오차·바퀴 접촉·모래·실기 완주 검증은 아니다. 실기 적용 전 시뮬레이션과 바퀴를 띄운 시험을 권장한다. 2026-10-23 Pi 백업 `cmwcmw57/pi-backup@7e2f955`와 대조했다. 기존 배포 HEAD와 65개 파일이 동일했고, 차이는 gateway의 상태 응답 소스 포트 수정과 ORIGIN 기록이었다. 저수준 정책은 `/home/pi/ksrc/pi/policy/run_policy.py`, 모델은 같은 폴더의 `res8_mlp_v3vo_rc4000`을 계속 사용한다. `SpiLink.exchange/exchange_res`, 보정 축, UDP 명령 형식은 연결 가능한 구조로 확인했다. 백업을 실제 Pi에서 실행한 검증은 아니다. 업데이트·리허설 순서는 [CLI.md](../../CLI.md)를 따른다.
+
+## 네 출발 방향 ANCHOR
+
+출발좌표(3.60,2.82)m에서 ANCHOR1(−Y/−90°), ANCHOR2(−X/−180°), ANCHOR3(+Y/+90°), ANCHOR4(+X/0°)를 선택한다. `./ksrc --state-dir "$TEST_DIR" anchor1`~`anchor4`이며 기존 `anchor`는1별칭이다. 실제 방향을 맞추고 정지3초·정상센서 조건에서만 요청한다. 선택 후 START 위치·방향검사는 해당 preset 기준이다. AUTO 중 보정은 거절하며 ANCHOR가 로버를 회전시키지는 않는다.

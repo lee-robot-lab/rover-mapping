@@ -21,5 +21,7 @@ setTimeout(()=>{
  state.pose.seq=2;state.pose.speed_m_s=.14;vm.runInContext('update()',sandbox);
  if(node('speed').textContent!=='0.127')throw Error('speed smoothing failed');
  if(state.pose.v!==.1||state.pose.speed_m_s!==.14)throw Error('smoothing altered input');
- console.log('Live frontend + measured speed smoothing OK');
+ state.active=false;state.operator={active:false};state.prediction={source:'teleop_model',slip:.1,costs:[1],candidates:[[[3.6,1.7],[3.6,1.6]]],selected:[[3.6,1.7],[3.6,1.6]]};vm.runInContext('update()',sandbox);
+ if(node('run').textContent!=='TELEOP'||node('prediction').textContent!=='TELEOP MODEL')throw Error('manual prediction label missing');
+ console.log('Live frontend + measured speed smoothing + TELEOP model OK');
 },100);

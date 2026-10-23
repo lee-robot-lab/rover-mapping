@@ -43,7 +43,7 @@
     "runtime/ksrc_runtime/handheld_mapping/__init__.py": "44b21c4d9a91b613b12afef3f4fd149a657bc65a85160ab9c1dfb6605eaf0f28",
     "runtime/ksrc_runtime/handheld_mapping/color.py": "2b4d7f8e1139b82b82c99e9429ae06d52c334a26983546d551073461c7ca8772",
     "runtime/ksrc_runtime/handheld_mapping/compare.py": "d9d5cf37842f97d67b97f8abf22eea6ab70abd0c55a9a8218fc55a0c12b2b36b",
-    "runtime/ksrc_runtime/handheld_mapping/control_gateway.py": "1c06716695e9c96d9a9e67bd7d82e4ef44ba78ae81347c2937d0e0674f5876d5",
+    "runtime/ksrc_runtime/handheld_mapping/control_gateway.py": "6a4504823e7603c6bcdbbe8d111cb4ebfbc908358d54848b866f5cb4d3d4e967",
     "runtime/ksrc_runtime/handheld_mapping/costmap.py": "9020c6ac6b02229226677f15def6d364a080e61f0b0c83a77d440fdac52fc683",
     "runtime/ksrc_runtime/handheld_mapping/coverage_path.py": "eb9c1216c6a792741a85f4b076ae5ffd52ad836533ecef21fcdd41d4b9f2861f",
     "runtime/ksrc_runtime/handheld_mapping/depth_filter.py": "cf3161712d4ccb1844c326c9e2e66b7cfdc3b4d003bd5484d4ac5cfde9a3e16c",
@@ -85,6 +85,7 @@
     "SiteMap.load(load_mesh=False) verifies grid and metadata; excludes unused mesh file hash",
     "control_gateway: ANCHOR op (5) forwards the joystick ANCHOR button to the runner; snapshot passes runner stage/run/reason/anchor_count to the screen; ORB_RESET op (6) forwards the joystick ORB RESET button (TELEOP only); status replies are sent from the teleop socket (same source port the GUI sent to); velocity path unchanged",
     "2026-10-23: RUN3 fallback after 30-degree retreat uses outer ascent 1-6-7-8-9-10-4; RUN4 starts outer ascent; START accepts only runs 1..4. RUN1/2 policies unchanged.",
-    "2026-10-23: RUN3/4 descend via region4-3-1 (15-degree ramp), then return to start; RUN1/2 outer descent unchanged."
+    "2026-10-23: RUN3/4 descend via region4-3-1 (15-degree ramp), then return to start; RUN1/2 outer descent unchanged.",
+    "2026-10-23: Four start-heading presets at same position: ANCHOR1/-y/op5, ANCHOR2/-x/op7, ANCHOR3/+y/op8, ANCHOR4/+x/op9. AUTO and fresh sensor/stationary guards retained; status carries anchor_id."
   ]
 }
