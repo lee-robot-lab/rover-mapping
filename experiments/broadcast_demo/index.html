@@ -15,7 +15,7 @@ index.html
 <footer><span>KSRC TERRAIN / LOCAL HORIZON 3.0 s</span><span id="source">OFFLINE PREDICTION · UDP POSE / 10 Hz DISPLAY</span></footer>
 <script>
 const $=id=>document.getElementById(id), canvas=$('map'), ctx=canvas.getContext('2d'), terrain=new Image();
-let meta=null, state=null, busy=false, zoomSpan=2.4, displaySpeed=null, lastSpeedSeq=null; 
+let meta=null, state=null, busy=false, zoomSpan=2.4, displaySpeed=null, lastSpeedSeq=null;
 terrain.src='/terrain.png';
 async function command(path){try{const r=await fetch(path,{method:'POST'}),v=await r.json();if(!r.ok)throw Error(v.error);$('error').textContent='';}catch(e){$('error').textContent=e.message}}
 function line(points,color,width,dash=[]){if(!points?.length)return;ctx.beginPath();points.forEach((p,i)=>{const q=project(p);i?ctx.lineTo(...q):ctx.moveTo(...q)});ctx.strokeStyle=color;ctx.lineWidth=width;ctx.setLineDash(dash);ctx.stroke();ctx.setLineDash([])}
@@ -28,7 +28,7 @@ function draw(){if(!meta||!state)return;const ratio=devicePixelRatio||1,w=canvas
  project=p=>[ox+(ymax-p[1])*s,oy+(xmax-p[0])*s];
  if(terrain.complete&&terrain.naturalWidth){ctx.save();ctx.setTransform(0,-s*(mxmax-mxmin)/terrain.width*ratio,s*(mymax-mymin)/terrain.height*ratio,0,(ox+(ymax-mymax)*s)*ratio,(oy+(xmax-mxmin)*s)*ratio);ctx.globalAlpha=.78;ctx.drawImage(terrain,0,0);ctx.restore();}
  ctx.strokeStyle='#88b6cc16';ctx.lineWidth=1;for(let y=Math.ceil(ymin*2)/2;y<=ymax;y+=.5)line([[xmin,y],[xmax,y]],'#8aacbf16',1);for(let x=Math.ceil(xmin*2)/2;x<=xmax;x+=.5)line([[x,ymin],[x,ymax]],'#8aacbf16',1);
- 
+
  for(let r=0;r<2;r++)for(const [x,y,c]of (state.explored?.[r]||[])){const p=project([x,y]);ctx.fillStyle=`hsla(${160*(1-c)},85%,55%,${r+1===state.run?.12+c*.25:.08})`;ctx.fillRect(p[0]-meta.cell*s/2,p[1]-meta.cell*s/2,meta.cell*s+1,meta.cell*s+1);}
  state.tracks.forEach((track,i)=>line(track,i+1===state.run?'#58e7c6':'#a1b0c2',i+1===state.run?3:2,i+1===state.run?[]:[5,5]));
  const pred=state.prediction;if(pred){ctx.save();ctx.lineCap='round';ctx.lineJoin='round';const lo=Math.min(...pred.costs),hi=Math.max(...pred.costs);pred.candidates.forEach((p,i)=>{const c=(pred.costs[i]-lo)/Math.max(.001,hi-lo);line(p,`hsla(${160*(1-c)},90%,68%,.58)`,3)});line(pred.selected,'#071019',9);line(pred.selected,'#fff',5.5);ctx.restore();}
