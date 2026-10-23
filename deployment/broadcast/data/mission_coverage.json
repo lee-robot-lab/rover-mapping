@@ -118,7 +118,7 @@
     },
     "3": {
       "state": "complete",
-      "sim_s": 232.9,
+      "sim_s": 189.8,
       "stages": [
         {
           "stage": "entry30",
@@ -181,36 +181,24 @@
           "sim_s": 145.8
         },
         {
-          "stage": "return10",
+          "stage": "descent15_entry",
           "sim_s": 151.4
         },
         {
-          "stage": "return9",
-          "sim_s": 162.20000000000002
+          "stage": "descent15",
+          "sim_s": 162.10000000000002
         },
         {
-          "stage": "return8",
-          "sim_s": 175.70000000000002
-        },
-        {
-          "stage": "return7",
-          "sim_s": 187.70000000000002
-        },
-        {
-          "stage": "return6",
-          "sim_s": 205.70000000000002
-        },
-        {
-          "stage": "return1",
-          "sim_s": 218.8
+          "stage": "return15",
+          "sim_s": 185.5
         }
       ],
-      "tried": 9525,
-      "cached": 9525
+      "tried": 7350,
+      "cached": 7350
     },
     "4": {
       "state": "complete",
-      "sim_s": 207.4,
+      "sim_s": 164.5,
       "stages": [
         {
           "stage": "outer6",
@@ -261,37 +249,25 @@
           "sim_s": 120.30000000000001
         },
         {
-          "stage": "return10",
+          "stage": "descent15_entry",
           "sim_s": 125.9
         },
         {
-          "stage": "return9",
-          "sim_s": 136.8
+          "stage": "descent15",
+          "sim_s": 136.5
         },
         {
-          "stage": "return8",
-          "sim_s": 150.3
-        },
-        {
-          "stage": "return7",
-          "sim_s": 162.3
-        },
-        {
-          "stage": "return6",
-          "sim_s": 180.3
-        },
-        {
-          "stage": "return1",
-          "sim_s": 193.3
+          "stage": "return15",
+          "sim_s": 160.10000000000002
         }
       ],
-      "tried": 8475,
-      "cached": 8475
+      "tried": 6300,
+      "cached": 6300
     }
   },
-  "states": 32075,
-  "bytes": 25163420,
-  "wall_s": 206.51845146300002,
+  "states": 27725,
+  "bytes": 21649614,
+  "wall_s": 203.49978331199964,
   "lateral_offsets_m": [
     -0.08,
     -0.04,
@@ -315,9 +291,9 @@
   "slip": "uncalibrated directional traction model; no measured wheel slip",
   "candidate_points": 31,
   "source_sha256": {
-    "deployment/ksrc/runner.py": "1ff63c2550e0b7b08e1ea499036acb2c340168be3d54ef0139330e118f23e4aa",
-    "deployment/ksrc/mission/scenario.json": "7f31f543c58794bd967d5fddf276b89528517f804ae23e11ecd09188e68a2651",
-    "deployment/ksrc/runtime/ksrc_runtime/handheld_mapping/region_mission.py": "9d959b40412c5670befe311827ed31238144f9001cb30c511d4f8b98d735c9e5",
+    "deployment/ksrc/runner.py": "60a88c9584312b9d5636bde28a585614e7e9a8928271405ca092d340a31a3769",
+    "deployment/ksrc/mission/scenario.json": "980ab73406947e95a890f02f9269f240bb85ef8fe3410ad375f62b59c121ca27",
+    "deployment/ksrc/runtime/ksrc_runtime/handheld_mapping/region_mission.py": "36aabfe0a34d81f46f688c5b9f6b8f6e45defd38e8b7372fabc6e3c2e61dde9b",
     "deployment/ksrc/runtime/ksrc_runtime/handheld_mapping/terrain_mppi.py": "1cc2a91955c3b17905d20d483661e07b7c4e04a3615eb9fedb4038bf7de529db"
   }
 }

@@ -249,6 +249,46 @@
     10,
     4
    ]
+  },
+  "descent15_entry": {
+   "target": [
+    3.6,
+    0.45
+   ],
+   "regions": [
+    4
+   ],
+   "edge": [
+    4,
+    3
+   ]
+  },
+  "descent15": {
+   "target": [
+    3.6,
+    2.65
+   ],
+   "regions": [
+    4,
+    3,
+    1
+   ],
+   "edge": [
+    3,
+    1
+   ],
+   "arrive_m": 0.1
+  },
+  "return15": {
+   "target": [
+    3.6,
+    2.82
+   ],
+   "regions": [
+    1
+   ],
+   "edge": null,
+   "arrive_m": 0.07
   }
  },
  "corner_gate": {

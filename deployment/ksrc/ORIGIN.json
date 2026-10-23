@@ -57,7 +57,7 @@
     "runtime/ksrc_runtime/handheld_mapping/reconstruct.py": "31a6eb975bd73b9ee4b57eac602e541c82ba1f3e002bdb04cca0f8b9d6bdfb5c",
     "runtime/ksrc_runtime/handheld_mapping/recording.py": "c7ebc70fef84ee3d7c1bcb8cfee89900a07a5658b18c90ad6fa50f6a2c81508e",
     "runtime/ksrc_runtime/handheld_mapping/reference.py": "e9ca8c973db3ab68ca7f5630c81f3153320949ceceb2bf503e96ef9dd73a3935",
-    "runtime/ksrc_runtime/handheld_mapping/region_mission.py": "9d959b40412c5670befe311827ed31238144f9001cb30c511d4f8b98d735c9e5",
+    "runtime/ksrc_runtime/handheld_mapping/region_mission.py": "36aabfe0a34d81f46f688c5b9f6b8f6e45defd38e8b7372fabc6e3c2e61dde9b",
     "runtime/ksrc_runtime/handheld_mapping/registration.py": "0fb682d9442ad4102dd5be7007716739f799b40c582e22f1306e8e378f2d8adc",
     "runtime/ksrc_runtime/handheld_mapping/sensor_safety.py": "bed8bee539c96cc8abab0e6daaf9e2a948d0e662b0814c1ccc2132ac6a08f5d3",
     "runtime/ksrc_runtime/handheld_mapping/site_map.py": "499cb9c8c7480507d1ba837e5855ca7f1bd46d0881d6135d2f7e484f203e7405",
@@ -84,6 +84,7 @@
     "experiments namespace renamed to ksrc_runtime",
     "SiteMap.load(load_mesh=False) verifies grid and metadata; excludes unused mesh file hash",
     "control_gateway: ANCHOR op (5) forwards the joystick ANCHOR button to the runner; snapshot passes runner stage/run/reason/anchor_count to the screen; ORB_RESET op (6) forwards the joystick ORB RESET button (TELEOP only); status replies are sent from the teleop socket (same source port the GUI sent to); velocity path unchanged",
-    "2026-10-23: RUN3 fallback after 30-degree retreat uses outer ascent 1-6-7-8-9-10-4; RUN4 starts outer ascent; START accepts only runs 1..4. RUN1/2 policies unchanged."
+    "2026-10-23: RUN3 fallback after 30-degree retreat uses outer ascent 1-6-7-8-9-10-4; RUN4 starts outer ascent; START accepts only runs 1..4. RUN1/2 policies unchanged.",
+    "2026-10-23: RUN3/4 descend via region4-3-1 (15-degree ramp), then return to start; RUN1/2 outer descent unchanged."
   ]
 }

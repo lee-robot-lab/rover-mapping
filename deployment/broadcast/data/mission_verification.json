@@ -21,6 +21,20 @@
       "return6",
       "return1"
     ],
+    "route_status": {
+      "30": {
+        "up": "aborted",
+        "down": "unknown"
+      },
+      "15": {
+        "up": "succeeded",
+        "down": "unknown"
+      },
+      "10": {
+        "up": "unknown",
+        "down": "succeeded"
+      }
+    },
     "checked": 359,
     "matched": 358,
     "match_rate": 0.9972144846796658
@@ -38,13 +52,27 @@
       "return6",
       "return1"
     ],
+    "route_status": {
+      "30": {
+        "up": "unknown",
+        "down": "unknown"
+      },
+      "15": {
+        "up": "succeeded",
+        "down": "unknown"
+      },
+      "10": {
+        "up": "unknown",
+        "down": "succeeded"
+      }
+    },
     "checked": 297,
     "matched": 295,
     "match_rate": 0.9932659932659933
   },
   "3": {
     "state": "complete",
-    "sim_s": 233.39999999999085,
+    "sim_s": 190.1999999999933,
     "stages": [
       "entry30",
       "ascent30",
@@ -61,20 +89,31 @@
       "look_hold",
       "look_back",
       "look_exit",
-      "return10",
-      "return9",
-      "return8",
-      "return7",
-      "return6",
-      "return1"
+      "descent15_entry",
+      "descent15",
+      "return15"
     ],
-    "checked": 395,
-    "matched": 394,
-    "match_rate": 0.9974683544303797
+    "route_status": {
+      "30": {
+        "up": "aborted",
+        "down": "unknown"
+      },
+      "15": {
+        "up": "unknown",
+        "down": "succeeded"
+      },
+      "10": {
+        "up": "succeeded",
+        "down": "unknown"
+      }
+    },
+    "checked": 309,
+    "matched": 307,
+    "match_rate": 0.9935275080906149
   },
   "4": {
     "state": "complete",
-    "sim_s": 207.7999999999923,
+    "sim_s": 164.49999999999477,
     "stages": [
       "outer6",
       "outer7",
@@ -88,22 +127,33 @@
       "look_hold",
       "look_back",
       "look_exit",
-      "return10",
-      "return9",
-      "return8",
-      "return7",
-      "return6",
-      "return1"
+      "descent15_entry",
+      "descent15",
+      "return15"
     ],
-    "checked": 344,
-    "matched": 344,
+    "route_status": {
+      "30": {
+        "up": "unknown",
+        "down": "unknown"
+      },
+      "15": {
+        "up": "unknown",
+        "down": "succeeded"
+      },
+      "10": {
+        "up": "succeeded",
+        "down": "unknown"
+      }
+    },
+    "checked": 257,
+    "matched": 257,
     "match_rate": 1.0
   },
   "http_ms": {
-    "p50": 37.37607999937609,
-    "p95": 60.14253280027333,
-    "maximum": 90.68610699978308,
-    "samples": 1615
+    "p50": 36.07646050022595,
+    "p95": 59.99607345111145,
+    "maximum": 76.03899099922273,
+    "samples": 1442
   },
   "scope": "Local kinematic rover -> UDP -> HTTP only; no Pi/Wi-Fi/SSH latency or wheel/contact physics"
 }

@@ -126,7 +126,12 @@ class RegionMission:
         self._event('region_phase', stamp, stage=stage)
 
     def _begin_descent(self, stamp: float) -> None:
-        """정상에서 바깥 고리 하행(return10…return1)을 시작한다."""
+        """회차 설정에 따라 15도 경사 또는 기존 외곽 고리로 하행한다."""
+        if self.settings.get('descent_route')=='15':
+            self.visits['return']=self.visits['entry15']='active'
+            self.route,self.direction='15','down'
+            self._phase('descent15_entry','descending',stamp)
+            return
         self.visits['return'] = 'active';self.visits['entry10'] = 'active'
         self.route, self.direction = '10', 'down';self._phase('return10', 'descending', stamp)
 
@@ -359,8 +364,12 @@ class RegionMission:
                 self._start_turn('look_face', self._bearing(xy, self.scenario['look']['face']), stamp)
             elif self.stage == 'look_exit':
                 self._begin_descent(stamp)
-            elif self.stage == 'return1':
-                self.visits['return'] = self.visits['entry10'] = 'reached';self.route_status['10']['down'] = 'succeeded'
+            elif self.stage == 'descent15_entry':
+                self._phase('descent15','descending',stamp)
+            elif self.stage == 'descent15':
+                self._phase('return15','descending',stamp)
+            elif self.stage in ('return1','return15'):
+                self.visits['return'] = self.visits['entry'+self.route] = 'reached';self.route_status[self.route]['down'] = 'succeeded'
                 self.state = 'complete';self._event('mission_complete', stamp);return self._stop('complete')
             else:
                 stages = ['return10', 'return9', 'return8', 'return7', 'return6', 'return1']

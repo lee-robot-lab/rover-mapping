@@ -52,9 +52,12 @@ def main() -> None:
                     assert len(state['tracks'])==4
                 if not sim.active:break
             assert sim.runtime.state=='complete',(run,sim.runtime.state,sim.runtime.stage)
+            if run in (3,4):
+                assert stages[-3:]==['descent15_entry','descent15','return15']
+                assert sim.runtime.route_status['15']['down']=='succeeded' and 'return10' not in stages
             counts['match_rate']=counts['matched']/max(1,counts['checked'])
             assert counts['match_rate']>.75,(run,counts)
-            reports[str(run)]=dict(state=sim.runtime.state,sim_s=sim.time-3.1,stages=stages,**counts)
+            reports[str(run)]=dict(state=sim.runtime.state,sim_s=sim.time-3.1,stages=stages,route_status=sim.runtime.route_status,**counts)
             print('RUN',run,reports[str(run)],flush=True)
         reports['http_ms']=dict(p50=float(np.percentile(latencies,50)),p95=float(np.percentile(latencies,95)),
                                 maximum=max(latencies),samples=len(latencies))

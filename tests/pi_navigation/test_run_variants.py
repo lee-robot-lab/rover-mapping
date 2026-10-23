@@ -81,3 +81,28 @@ def test_deployed_gateway_rejects_invalid_run_without_entering_auto(run):
     gateway.runner_status(dict(stationary_s=3.,orb_ok=True,in_region1=True),1.)
     assert not gateway.control(START,(run,0.,0.),1.01)
     assert gateway.mode=='TELEOP' and gateway.last_reject=='run'
+
+
+@pytest.mark.parametrize('run,route,stage',[(1,'10','return10'),(2,'10','return10'),
+                                          (3,'15','descent15_entry'),(4,'15','descent15_entry')])
+def test_descent_policy_preserves_run1_2_and_uses_15_for_run3_4(run,route,stage):
+    runtime=make_runner().new_runtime(run)
+    runtime._begin_descent(10.)
+    assert runtime.route==route and runtime.direction=='down'
+    assert runtime.stage==stage
+
+
+@pytest.mark.parametrize('run',[3,4])
+def test_15_descent_reaches_region1_and_marks_correct_route(run):
+    runtime=make_runner().new_runtime(run);runtime.safety=None;runtime.planner=Planner()
+    runtime._begin_descent(0.)
+    for index,stage in enumerate(('descent15_entry','descent15','return15')):
+        assert runtime.stage==stage
+        target,regions,edge,reverse=runtime._goal()
+        assert not reverse
+        assert 10 not in regions and 6 not in regions
+        assert runtime.graph.distance(4 if index==0 else 1,target)<=1e-6
+        runtime.update(sample(runtime,target,stamp=1+index*.1),now_s=1+index*.1)
+    assert runtime.state=='complete'
+    assert runtime.route_status['15']['down']=='succeeded'
+    assert runtime.route_status['10']['down']=='unknown'

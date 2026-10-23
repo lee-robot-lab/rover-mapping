@@ -123,6 +123,7 @@ class Navigation:
         if run not in (1,2,3,4):raise ValueError('run must be 1..4')
         mission = SiteMission.load(self.mission_dir, load_mesh=False)
         mission.settings['fallback_after_30'] = '10' if run==3 else '15'
+        mission.settings['descent_route'] = '15' if run in (3,4) else '10'
         mission.settings['max_speed_m_s'] = .15
         mission.settings['descent_speed_scale'] = .7 if run == 2 else 1.
         if run == 2:
