@@ -208,7 +208,7 @@ mkdir -p "$TEST_DIR"
 
 ## 4. 중계 화면과 조이스틱 켜기
 
-실기 사이트에서는 하단 RUN1~4·TELEOP 거리 요약 패널을 숨긴다. 거리와 궤적 기록은 계속 저장하며 `--sim`에서는 요약 패널을 표시한다.
+실기 사이트에서는 하단 RUN1~4·TELEOP 거리 요약 패널을 숨긴다. 거리와 궤적 기록은 계속 저장하며 `--sim`에서는 요약 패널을 표시한다. 실기에서는 LOCAL PREDICTION·TELEOP 범례/문구를 숨기고, TELEOP 궤적은 CURRENT TRACK과 같은 민트색 실선으로 표시한다. 예측선과 모델 계산은 유지한다.
 
 **[노트북 로컬, SSH하지 않은 터미널]** 바구니에서 출발하기 전에 실행한다.
 
@@ -371,7 +371,7 @@ rsync -a -e 'ssh -o HostKeyAlias=raspberrypi.local' \
   pi@192.168.0.101:/home/pi/ksrc_final_20261022/deployment/ksrc/state/ ~/ksrc-field-logs/
 ```
 
-노트북 중계 원자료는 `~/rover-mapping/outputs/broadcast_sessions/`에 저장된다. `runs.json`의 `teleop_tracks`는 수동 구간별 궤적, `teleop_distance_m`는 수동 이동 거리다. 화면에서는 노란 점선으로 표시하며 RUN 기록과 분리한다. ANCHOR·재접속·0.5초 수신 공백·AUTO 전환 때 선을 끊고, RUN1을 새로 시작해도 같은 중계 세션의 수동 기록은 보존한다. 이 폴더도 필요하면 별도 보관한다.
+노트북 중계 원자료는 `~/rover-mapping/outputs/broadcast_sessions/`에 저장된다. `runs.json`의 `teleop_tracks`는 수동 구간별 궤적, `teleop_distance_m`는 수동 이동 거리다. 실기 화면에서는 CURRENT TRACK과 같은 민트색 실선(시뮬은 노란 점선)으로 표시하며 RUN 기록과 분리한다. ANCHOR·재접속·0.5초 수신 공백·AUTO 전환 때 선을 끊고, RUN1을 새로 시작해도 같은 중계 세션의 수동 기록은 보존한다. 이 폴더도 필요하면 별도 보관한다.
 
 ## 9. 상태 관찰·재접속·부하 기록 — 선택
 
